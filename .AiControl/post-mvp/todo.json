@@ -1,0 +1,7 @@
+{
+  "nodePath": "post-mvp",
+  "items": [
+    { "id": "p7-1", "text": "Plugin/extension system design", "done": false },
+    { "id": "p7-2", "text": "MCP-like protocol evaluation", "done": false }
+  ]
+}

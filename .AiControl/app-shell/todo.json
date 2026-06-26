@@ -1,0 +1,13 @@
+{
+  "nodePath": "app-shell",
+  "items": [
+    { "id": "p2-1", "text": "Layout shell — ResizablePanelGroup", "done": false },
+    { "id": "p2-2", "text": "Monaco editor integration with IPC read_file", "done": false },
+    { "id": "p2-3", "text": "Tab management — useTabs hook + tab bar", "done": false },
+    { "id": "p2-4", "text": "File tree — momoi-explorer + Tauri adapter", "done": false },
+    { "id": "p2-5", "text": "File tree styling (shadcn theme)", "done": false },
+    { "id": "p2-6", "text": "Git status colors on tree nodes", "done": false },
+    { "id": "p2-7", "text": "Terminal panel — xterm.js + shell plugin", "done": false },
+    { "id": "p2-8", "text": "Context menus (New File, Rename, Delete, etc.)", "done": false }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "nodePath": "settings-polish",
+  "items": [
+    { "id": "p6-1", "text": "Settings UI — tabs for General, LLM, Search, Terminal", "done": false },
+    { "id": "p6-2", "text": "Theme switching — light/dark Tailwind class strategy", "done": false },
+    { "id": "p6-3", "text": "Font/editor settings — Monaco config from IPC", "done": false },
+    { "id": "p6-4", "text": "Auto-update — tauri-plugin-updater", "done": false },
+    { "id": "p6-5", "text": "Error handling — React error boundary + Sentry opt-in", "done": false },
+    { "id": "p6-6", "text": "Keyboard shortcuts — Monaco + global bindings", "done": false },
+    { "id": "p6-7", "text": "Loading/splash screen during init", "done": false }
+  ]
+}

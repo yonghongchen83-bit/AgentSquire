@@ -1,0 +1,20 @@
+{
+  "nodePath": "rust-backbone",
+  "items": [
+    { "id": "p1-1", "text": "Config module — TOML serde, state/config.rs", "done": false },
+    { "id": "p1-2", "text": "Logging setup — tracing subscriber", "done": false },
+    { "id": "p1-3", "text": "SQLite init — rusqlite, migrations", "done": false },
+    { "id": "p1-4", "text": "ConversationStore trait", "done": false },
+    { "id": "p1-5", "text": "SQLite ConversationStore impl", "done": false },
+    { "id": "p1-6", "text": "LlmProvider trait", "done": false },
+    { "id": "p1-7", "text": "OpenAI provider impl", "done": false },
+    { "id": "p1-8", "text": "Anthropic provider impl", "done": false },
+    { "id": "p1-9", "text": "Provider registry", "done": false },
+    { "id": "p1-10", "text": "Tauri IPC commands", "done": false },
+    { "id": "p1-11", "text": "File ops module (read, write, create, delete)", "done": false },
+    { "id": "p1-12", "text": "Grep command (ripgrep)", "done": false },
+    { "id": "p1-13", "text": "Git ops module (git2)", "done": false },
+    { "id": "p1-14", "text": "Terminal/process module (tauri-plugin-shell)", "done": false },
+    { "id": "p1-15", "text": "File watcher adapter (notify crate)", "done": false }
+  ]
+}

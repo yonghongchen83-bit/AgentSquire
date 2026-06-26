@@ -1,0 +1,14 @@
+{
+  "nodePath": "agent-tools",
+  "items": [
+    { "id": "p4-1", "text": "Tool trait — agent/tool.rs", "done": false },
+    { "id": "p4-2", "text": "File read tool", "done": false },
+    { "id": "p4-3", "text": "File write/edit tool", "done": false },
+    { "id": "p4-4", "text": "Code search tool (grep)", "done": false },
+    { "id": "p4-5", "text": "Terminal tool", "done": false },
+    { "id": "p4-6", "text": "Git tool", "done": false },
+    { "id": "p4-7", "text": "Tool registry + injection into ChatRequest", "done": false },
+    { "id": "p4-8", "text": "Tool result rendering in chat stream", "done": false },
+    { "id": "p4-9", "text": "Approve/reject flow for destructive ops", "done": false }
+  ]
+}

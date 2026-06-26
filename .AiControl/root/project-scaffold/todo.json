@@ -1,0 +1,14 @@
+{
+  "nodePath": "project-scaffold",
+  "items": [
+    { "id": "p0-1", "text": "Decide directory structure & write ArchitecturePlanning/project-structure.md", "done": true },
+    { "id": "p0-2", "text": "npm create tauri-app (React + TS + Vite)", "done": true },
+    { "id": "p0-3", "text": "Install Tailwind v4 + configure", "done": true },
+    { "id": "p0-4", "text": "Init shadcn/ui + add base components", "done": true },
+    { "id": "p0-5", "text": "Set up Rust module structure", "done": true },
+    { "id": "p0-6", "text": "Install Rust crates (tokio, serde, tracing)", "done": true },
+    { "id": "p0-7", "text": "Configure Tauri capabilities", "done": true },
+    { "id": "p0-8", "text": "Create src/types/ipc.ts typed contract", "done": true },
+    { "id": "p0-9", "text": "Verify tauri build (Rust + frontend compile)", "done": true }
+  ]
+}

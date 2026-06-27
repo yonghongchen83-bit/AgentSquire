@@ -13,12 +13,14 @@ interface LayoutStore {
   bottomPanelHeight: number
   bottomPanelActiveTab: BottomPanelTab
   uiFontZoom: number
+  projectPath: string
   toggleLeftPanel: () => void
   setLeftPanelView: (view: SidebarView) => void
   toggleRightPanel: () => void
   toggleBottomPanel: () => void
   setBottomPanelTab: (tab: BottomPanelTab) => void
   setUiFontZoom: (zoom: number) => void
+  setProjectPath: (path: string) => void
 }
 
 export const useLayoutStore = create<LayoutStore>((set) => ({
@@ -31,12 +33,14 @@ export const useLayoutStore = create<LayoutStore>((set) => ({
   bottomPanelHeight: 200,
   bottomPanelActiveTab: 'terminal',
   uiFontZoom: 100,
+  projectPath: '',
   toggleLeftPanel: () => set((s) => ({ leftPanelVisible: !s.leftPanelVisible })),
   setLeftPanelView: (view) => set({ leftPanelActiveView: view, leftPanelVisible: true }),
   toggleRightPanel: () => set((s) => ({ rightPanelVisible: !s.rightPanelVisible })),
   toggleBottomPanel: () => set((s) => ({ bottomPanelVisible: !s.bottomPanelVisible })),
   setBottomPanelTab: (tab) => set({ bottomPanelActiveTab: tab }),
   setUiFontZoom: (zoom) => set({ uiFontZoom: Math.max(75, Math.min(150, zoom)) }),
+  setProjectPath: (path) => set({ projectPath: path }),
 }))
 
 interface StatusBarStore {

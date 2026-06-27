@@ -13,6 +13,7 @@ describe('LayoutStore', () => {
       bottomPanelHeight: 200,
       bottomPanelActiveTab: 'terminal',
       uiFontZoom: 100,
+      projectPath: '',
     })
   })
 

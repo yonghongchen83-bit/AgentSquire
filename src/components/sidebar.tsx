@@ -15,18 +15,20 @@ export function Sidebar() {
   const setView = useLayoutStore((s) => s.setLeftPanelView)
   const leftPanelVisible = useLayoutStore((s) => s.leftPanelVisible)
   const toggleLeftPanel = useLayoutStore((s) => s.toggleLeftPanel)
+  const rightPanelVisible = useLayoutStore((s) => s.rightPanelVisible)
+  const toggleRightPanel = useLayoutStore((s) => s.toggleRightPanel)
   const setSettingsOpen = useSettingsStore((s) => s.setOpen)
 
   return (
     <TooltipProvider>
       <div className="flex w-12 flex-col items-center gap-1 bg-[#E8EDF2] py-2 border-r border-border">
         {items.map(({ id, icon: Icon, label }) => {
-          const isActive = activeView === id && leftPanelVisible
+          const isActive = id === 'chat' ? rightPanelVisible : (activeView === id && leftPanelVisible)
           return (
             <Tooltip key={id}>
               <TooltipTrigger asChild>
                 <button
-                  onClick={() => isActive ? toggleLeftPanel() : setView(id)}
+                  onClick={() => id === 'chat' ? toggleRightPanel() : (isActive ? toggleLeftPanel() : setView(id))}
                   className={`flex items-center justify-center w-9 h-9 rounded-md transition-colors ${
                     isActive
                       ? 'bg-[#4A90D9] text-white'

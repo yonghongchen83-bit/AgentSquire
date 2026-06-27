@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FilePlus, FolderPlus, Pencil, Trash2, ExternalLink } from 'lucide-react'
 import { listDirectory, deleteItem, renameItem, createDir, gitStatus, writeFile } from '@/lib/ipc'
 import { useEditorStore } from '@/stores/editor-store'
+import { useLayoutStore } from '@/stores/ui-store'
 import type { FileEntry } from '@/types/ipc'
 import {
   ContextMenu,
@@ -122,6 +123,7 @@ export function FileTree() {
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [gitStatusMap, setGitStatusMap] = useState<Record<string, string>>({})
   const openFile = useEditorStore((s) => s.openFile)
+  const projectPath = useLayoutStore((s) => s.projectPath)
 
   const loadChildren = useCallback(async (dirPath: string): Promise<TreeNode[]> => {
     const entries = await listDirectory(dirPath)
@@ -134,7 +136,8 @@ export function FileTree() {
 
   const refreshTree = useCallback(async () => {
     try {
-      const entries = await listDirectory('.')
+      const root = projectPath || '.'
+      const entries = await listDirectory(root)
       const roots = entries.map((e) => ({
         entry: e,
         children: [] as TreeNode[],
@@ -154,7 +157,7 @@ export function FileTree() {
         }
       } catch {}
     } catch {}
-  }, [])
+  }, [projectPath])
 
   useEffect(() => {
     refreshTree()

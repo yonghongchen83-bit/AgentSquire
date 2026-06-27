@@ -1,6 +1,5 @@
 import { useLayoutStore } from '@/stores/ui-store'
 import { FileTree } from '@/components/file-tree'
-import { ChatPanel } from '@/components/chat-panel'
 import { SearchPanel } from '@/components/search-panel'
 import { GitBranch } from 'lucide-react'
 
@@ -39,7 +38,6 @@ export function LeftSidePanel() {
       )}
       {activeView === 'search' && <SearchPanel />}
       {activeView === 'git' && <GitPlaceholder />}
-      {activeView === 'chat' && <ChatPanel />}
     </div>
   )
 }

@@ -2,75 +2,32 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "tauri:dev",
+      "label": "start-vite",
       "type": "shell",
-      "command": "pnpm",
-      "args": ["tauri", "dev"],
-      "detail": "Start full Tauri dev environment (Vite + Rust backend)",
+      "command": "pnpm dev",
       "isBackground": true,
       "problemMatcher": {
-        "pattern": { "regexp": "^.*$" },
-        "background": { "activeOnStart": true, "beginsPattern": ".", "endsPattern": "." }
+        "pattern": [{ "regexp": ".", "file": 1, "location": 2, "message": 3 }],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "ready in"
+        }
       },
-      "group": { "kind": "build", "isDefault": true }
+      "presentation": { "reveal": "never", "panel": "new" }
     },
     {
-      "label": "tauri:build",
+      "label": "build-rust-debug",
       "type": "shell",
-      "command": "pnpm",
-      "args": ["tauri", "build"],
-      "detail": "Build production bundle for current platform",
+      "command": "$env:TAURI_DEV='true'; cargo build --manifest-path src-tauri/Cargo.toml",
+      "group": "build",
+      "presentation": { "reveal": "silent", "panel": "new" }
+    },
+    {
+      "label": "pre-tauri-debug",
+      "dependsOrder": "parallel",
+      "dependsOn": ["start-vite", "build-rust-debug"],
       "problemMatcher": []
-    },
-    {
-      "label": "frontend:dev",
-      "type": "shell",
-      "command": "pnpm",
-      "args": ["dev"],
-      "detail": "Start Vite dev server only",
-      "isBackground": true,
-      "problemMatcher": {
-        "pattern": { "regexp": "^.*$" },
-        "background": { "activeOnStart": true, "beginsPattern": ".", "endsPattern": "." }
-      }
-    },
-    {
-      "label": "frontend:build",
-      "type": "shell",
-      "command": "pnpm",
-      "args": ["build"],
-      "detail": "Build frontend to dist/",
-      "problemMatcher": []
-    },
-    {
-      "label": "rust:check",
-      "type": "shell",
-      "command": "cargo",
-      "args": ["check"],
-      "options": { "cwd": "${workspaceFolder}/src-tauri" },
-      "detail": "Cargo check for Rust compilation errors (fast)",
-      "problemMatcher": ["$rustc"],
-      "group": "build"
-    },
-    {
-      "label": "rust:build",
-      "type": "shell",
-      "command": "cargo",
-      "args": ["build"],
-      "options": { "cwd": "${workspaceFolder}/src-tauri" },
-      "detail": "Build Rust backend (debug)",
-      "problemMatcher": ["$rustc"],
-      "group": "build"
-    },
-    {
-      "label": "rust:test",
-      "type": "shell",
-      "command": "cargo",
-      "args": ["test"],
-      "options": { "cwd": "${workspaceFolder}/src-tauri" },
-      "detail": "Run all Rust unit and integration tests",
-      "problemMatcher": ["$rustc"],
-      "group": "test"
     }
   ]
 }

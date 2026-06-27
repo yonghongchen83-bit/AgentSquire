@@ -12,6 +12,9 @@ export const config: Options.Testrunner = {
 
   capabilities: [{
     browserName: 'tauri',
+    'tauri:options': {
+      application: './src-tauri/target/debug/squirecli.exe',
+    },
   }],
 
   logLevel: 'info',

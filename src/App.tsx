@@ -45,13 +45,13 @@ function App() {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <ResizablePanelGroup orientation="vertical" className="flex-1" onLayout={persistLayout}>
-          <ResizablePanel id="top-area" defaultSize={75} minSize={20}>
+          <ResizablePanel id="top-area" defaultSize="75%" minSize="20%">
             <ResizablePanelGroup orientation="horizontal" className="h-full" resizeTargetMinimumSize={{ coarse: 24, fine: 8 }} onLayout={persistLayout}>
-              <ResizablePanel id="left-panel" defaultSize={30} minSize={15} maxSize={50}>
+              <ResizablePanel id="left-panel" defaultSize="20%" minSize="15%" maxSize="50%">
                 <LeftSidePanel />
               </ResizablePanel>
               <ResizableHandle id="left-handle" withHandle />
-              <ResizablePanel id="editor-panel" defaultSize={70} minSize={30}>
+              <ResizablePanel id="editor-panel" defaultSize="80%" minSize="30%">
                 <div className="flex flex-col h-full">
                   <TabBar />
                   <div className="flex-1 overflow-hidden">
@@ -62,7 +62,7 @@ function App() {
               {rightPanelVisible && (
                 <>
                   <ResizableHandle id="right-handle" withHandle />
-                  <ResizablePanel id="right-panel" defaultSize={25} minSize={15} maxSize={50}>
+                  <ResizablePanel id="right-panel" defaultSize="25%" minSize="15%" maxSize="50%">
                     <RightSidePanel />
                   </ResizablePanel>
                 </>
@@ -72,7 +72,7 @@ function App() {
           {bottomPanelVisible && (
             <>
               <ResizableHandle id="editor-handle" withHandle />
-              <ResizablePanel id="bottom-panel" defaultSize={25} minSize={10}>
+              <ResizablePanel id="bottom-panel" defaultSize="25%" minSize="10%">
                 <BottomPanel />
               </ResizablePanel>
             </>

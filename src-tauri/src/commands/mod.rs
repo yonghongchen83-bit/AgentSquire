@@ -532,16 +532,9 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
 
     let registry = Arc::new(ProviderRegistry::from_config(&config));
 
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .try_init();
-
     let (file_watcher, mut watcher_rx) = FileWatcher::new();
 
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         while let Ok(event) = watcher_rx.recv().await {
             let _ = app_handle.emit("file-event", event);
         }

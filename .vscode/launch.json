@@ -23,8 +23,8 @@
     },
     {
       "name": "Launch Tauri Dev (Run Only)",
-      "detail": "Run pnpm tauri dev in terminal (no Rust debugger — fastest for frontend work)",
-      "type": "npm",
+      "detail": "Run pnpm tauri dev in integrated terminal (no Rust debugger — fastest for frontend work). Prefer Ctrl+Shift+B task runner.",
+      "type": "node",
       "request": "launch",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["tauri", "dev"],

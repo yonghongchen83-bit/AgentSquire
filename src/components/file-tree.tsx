@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FilePlus, FolderPlus, Pencil, Trash2, ExternalLink } from 'lucide-react'
-import { listDirectory, deleteItem, renameItem, createDir, gitStatus, writeFile } from '@/lib/ipc'
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FilePlus, FolderPlus, Pencil, Trash2, ExternalLink, Copy } from 'lucide-react'
+import { listDirectory, deleteItem, renameItem, createDir, gitStatus, writeFile, onFsChange } from '@/lib/ipc'
 import { useEditorStore } from '@/stores/editor-store'
 import { useLayoutStore } from '@/stores/ui-store'
 import type { FileEntry } from '@/types/ipc'
@@ -108,6 +108,10 @@ function TreeItem({
           <Trash2 className="h-4 w-4 mr-2 text-red-500" />
           <span className="text-red-500">Delete</span>
         </ContextMenuItem>
+        <ContextMenuItem onClick={() => navigator.clipboard.writeText(node.entry.path)}>
+          <Copy className="h-4 w-4 mr-2" />
+          Copy Path
+        </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => {/* reveal in explorer */}}>
           <ExternalLink className="h-4 w-4 mr-2" />
@@ -161,6 +165,13 @@ export function FileTree() {
 
   useEffect(() => {
     refreshTree()
+  }, [refreshTree])
+
+  useEffect(() => {
+    const setup = async () => {
+      (await onFsChange(() => { refreshTree() }))
+    }
+    setup()
   }, [refreshTree])
 
   const handleToggle = async (path: string) => {

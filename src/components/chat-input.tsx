@@ -26,7 +26,7 @@ export function ChatInput({ onSend, onCancel, isStreaming, disabled }: ChatInput
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault()
       handleSend()
     }

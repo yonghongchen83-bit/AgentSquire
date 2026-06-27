@@ -149,6 +149,23 @@ export interface GitDiff {
   hunks: { oldStart: number; newStart: number; content: string }[]
 }
 
+// ─── Output & Errors ────────────────────────────────────
+
+export interface OutputEntry {
+  source: 'stdout' | 'debug' | 'notifications'
+  line: string
+  timestamp: string
+}
+
+export interface ErrorEntry {
+  id: string
+  message: string
+  severity: 'error' | 'warning' | 'info'
+  source?: string
+  timestamp: string
+  stackTrace?: string
+}
+
 // ─── Config ─────────────────────────────────────────────
 
 export interface AppConfig {

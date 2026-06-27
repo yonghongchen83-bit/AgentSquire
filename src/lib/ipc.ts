@@ -90,6 +90,36 @@ export function onStreamError(cb: (error: string) => void) {
   return listen<string>('stream-error', (event) => cb(event.payload))
 }
 
+// ─── Terminal ──────────────────────────────────────────
+
+export async function listTerminals(): Promise<string[]> {
+  return invoke('list_terminals')
+}
+
+export async function spawnTerminal(shell?: string): Promise<string> {
+  return invoke('spawn_terminal', { shell: shell ?? null })
+}
+
+export async function writeStdin(terminalId: string, data: string): Promise<void> {
+  return invoke('write_stdin', { terminalId, data })
+}
+
+export async function resizePty(terminalId: string, cols: number, rows: number): Promise<void> {
+  return invoke('resize_pty', { terminalId, cols, rows })
+}
+
+export async function killTerminal(terminalId: string): Promise<void> {
+  return invoke('kill_terminal', { terminalId })
+}
+
+export function onTerminalOutput(cb: (payload: { terminal_id: string; data: string }) => void) {
+  return listen<{ terminal_id: string; data: string }>('terminal:output', (event) => cb(event.payload))
+}
+
+export function onTerminalExit(cb: (payload: { terminal_id: string; code: number }) => void) {
+  return listen<{ terminal_id: string; code: number }>('terminal:exit', (event) => cb(event.payload))
+}
+
 // ─── Search ────────────────────────────────────────────
 
 export async function searchFiles(
@@ -125,6 +155,32 @@ export async function replaceInFiles(options: ReplaceOptions): Promise<number> {
     caseSensitive: options.case_sensitive ?? false,
     glob: options.glob ?? null,
   })
+}
+
+// ─── File System Events ────────────────────────────────
+
+export function onFsChange(cb: (payload: { path: string; kind: string }) => void) {
+  return listen<{ path: string; kind: string }>('fs:change', (event) => cb(event.payload))
+}
+
+// ─── Output & Errors ────────────────────────────────────
+
+import type { OutputEntry, ErrorEntry } from '@/types/ipc'
+
+export async function getOutput(source: string): Promise<OutputEntry[]> {
+  return invoke('get_output', { source })
+}
+
+export async function getErrors(): Promise<ErrorEntry[]> {
+  return invoke('get_errors')
+}
+
+export function onOutputAppend(cb: (entry: OutputEntry) => void) {
+  return listen<OutputEntry>('output:append', (event) => cb(event.payload))
+}
+
+export function onErrorNew(cb: (entry: ErrorEntry) => void) {
+  return listen<ErrorEntry>('error:new', (event) => cb(event.payload))
 }
 
 // ─── Tool Events ────────────────────────────────────────

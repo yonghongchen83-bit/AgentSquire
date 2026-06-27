@@ -256,6 +256,13 @@ export function SearchPanel() {
                     ))}
                   </div>
                 )}
+                {match.context_after.length > 0 && (
+                  <div className="text-[#6B7B8D] font-mono truncate leading-4 border-l-2 border-[#B0C0D0] pl-1 mt-0.5 space-y-0.5">
+                    {match.context_after.map((ctx, i) => (
+                      <div key={i} className="truncate">{ctx}</div>
+                    ))}
+                  </div>
+                )}
               </button>
             ))}
           </div>

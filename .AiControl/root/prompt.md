@@ -24,5 +24,6 @@ Architecture is fully planned. Now executing phased implementation.
 | `search-panel` | 5 | ripgrep UI, results tree, replace |
 | `settings-polish` | 6 | Config UI, theme, updates, error handling |
 | `post-mvp` | 7 | Plugin system, MCP-like protocol |
+| `UiAutoTestFramework` | T | tauri-driver + WDIO for automated UI verification |
 
 Set `.current` to the active phase node before starting work.

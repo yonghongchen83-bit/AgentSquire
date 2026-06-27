@@ -1,7 +1,7 @@
 # State
 
 Architecture planning complete. 21/21 components decided across 7 ADRs.
-Ready to begin phased implementation.
+UI Auto Test Framework installed for AI-driven verification.
 
 ## Phase Progress
 
@@ -17,6 +17,7 @@ Ready to begin phased implementation.
 | **6 — Settings & Polish** | **✅ Complete** |
 | 7 — Post-MVP | 📅 Planned |
 | **B — Build & Deploy** | **🏗️ In Progress** |
+| **T — UI Auto Test Framework** | **✅ Complete** |
 
 ## Architecture Docs
 
@@ -33,6 +34,15 @@ All design documents live in `ArchitecturePlanning/`:
 - `adr/0006-ripgrep-only-code-search.md`
 - `adr/0007-use-momoi-explorer-for-file-tree.md`
 
+## Test Infrastructure
+
+| Suite | Framework | Count | Command |
+|-------|-----------|-------|---------|
+| Frontend unit | Vitest + RTL | 71 tests | `npm test` |
+| Rust unit | `#[cfg(test)]` | 49 tests | `npm run test:rust` |
+| Rust integration | `src-tauri/tests/` | 4 tests | `npm run test:rust` |
+| **E2E (WebView)** | **WDIO + tauri-driver** | **6 smoke tests** | `npm run test:e2e` |
+
 ## Active Node
 
-Current: `root/build_and_deploy` (Build & Deploy — in progress)
+Current: `root/UiAutoTestFramework` (UI Auto Test Framework — recently set up)

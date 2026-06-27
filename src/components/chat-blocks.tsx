@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import type { Block } from '@/types/ipc'
-import { ChevronDown, ChevronRight, Wrench, Check, X, AlertCircle } from 'lucide-react'
+import { ChevronDown, ChevronRight, Wrench, Check, X, AlertCircle, Copy, FileDown, Diff } from 'lucide-react'
 import { useChatStore } from '@/stores/chat-store'
 
 function TextBlock({ content }: { content: string }) {
@@ -98,10 +98,43 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
 }
 
 function CodeBlock({ block }: { block: Extract<Block, { type: 'code' }> }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(block.content).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }, [block.content])
+
   return (
     <div className="border border-border rounded-md overflow-hidden my-1">
       <div className="flex items-center justify-between px-3 py-1.5 text-xs text-[#6B7B8D] bg-muted">
         <span>{block.language || 'code'}</span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[#D0DCE8] transition-colors"
+            title={copied ? 'Copied!' : 'Copy'}
+          >
+            {copied ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+            <span>{copied ? 'Copied' : 'Copy'}</span>
+          </button>
+          <button
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[#D0DCE8] transition-colors"
+            title="Apply to file (not yet implemented)"
+          >
+            <FileDown className="h-3 w-3" />
+            <span>Apply</span>
+          </button>
+          <button
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[#D0DCE8] transition-colors"
+            title="Diff view (not yet implemented)"
+          >
+            <Diff className="h-3 w-3" />
+            <span>Diff</span>
+          </button>
+        </div>
       </div>
       <pre className="p-3 text-sm font-mono overflow-x-auto bg-[#1A2332] text-[#E8EDF2]">
         <code>{block.content}</code>

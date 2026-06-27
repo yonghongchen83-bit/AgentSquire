@@ -13,7 +13,12 @@ Cross-cutting architecture decisions. See `ArchitecturePlanning/adr/` for full A
 | 7 | **ripgrep only** — no built-in tree-sitter/embeddings/vector DB | 0006 |
 | 8 | **momoi-explorer** — headless file explorer engine for file tree | 0007 |
 | 9 | **Rust owns all state** — frontend is a cache/view | — |
+| 10 | **UI Auto Test Framework** — tauri-driver + WDIO for headless WebView E2E testing | — |
 
 ## State Principle
 
 Rust is the single source of truth for all persistent/authoritative state. The frontend caches views via TanStack Query. UI-only transient state (active tab, panel layout, input text) lives in Zustand. All mutations go through Tauri IPC.
+
+## Test Principle
+
+AI must be able to verify UI behavior without human testers. All fixes should be validated by automated tests before being deployed. Three-tier testing: Rust unit/integration → Frontend component/store → E2E WebView (WDIO + tauri-driver).

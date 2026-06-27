@@ -1,0 +1,12 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "snapshot": false,
+  "mcp": {
+    "aicontrol": {
+      "type": "remote",
+      "url": "http://127.0.0.1:8181/standard-mcp",
+      "enabled": true,
+      "timeout": 30000
+    }
+  }
+}

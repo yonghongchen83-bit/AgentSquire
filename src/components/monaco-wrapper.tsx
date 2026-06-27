@@ -1,0 +1,82 @@
+import { useEffect, useRef } from 'react'
+import Editor, { type OnMount } from '@monaco-editor/react'
+import { useEditorStore } from '@/stores/editor-store'
+import { useStatusBarStore } from '@/stores/ui-store'
+import { readFile } from '@/lib/ipc'
+import { WelcomeScreen } from '@/components/welcome-screen'
+
+export function MonacoWrapper() {
+  const activeTabId = useEditorStore((s) => s.activeTabId)
+  const tabs = useEditorStore((s) => s.tabs)
+  const setLoading = useEditorStore((s) => s.setLoading)
+  const markDirty = useEditorStore((s) => s.markDirty)
+  const setCursorPosition = useStatusBarStore((s) => s.setCursorPosition)
+  const editorRef = useRef<Parameters<OnMount>[0] | null>(null)
+  const contentRef = useRef<string>('')
+
+  const activeTab = tabs.find((t) => t.id === activeTabId)
+
+  useEffect(() => {
+    if (!activeTab) return
+    setLoading(activeTab.id, true)
+    readFile(activeTab.path)
+      .then((content) => {
+        contentRef.current = content
+        const model = editorRef.current?.getModel()
+        if (model) {
+          model.setValue(content)
+        }
+        setLoading(activeTab.id, false)
+        markDirty(activeTab.id, false)
+      })
+      .catch(() => {
+        setLoading(activeTab.id, false)
+      })
+  }, [activeTab?.id])
+
+  const handleMount: OnMount = (editor) => {
+    editorRef.current = editor
+    editor.onDidChangeCursorPosition((e) => {
+      setCursorPosition(e.position.lineNumber, e.position.column)
+    })
+    if (contentRef.current) {
+      editor.setValue(contentRef.current)
+    }
+  }
+
+  const handleChange = (value: string | undefined) => {
+    if (!activeTab || value === undefined) return
+    if (value !== contentRef.current) {
+      markDirty(activeTab.id, true)
+    }
+  }
+
+  if (!activeTab) return <WelcomeScreen />
+
+  return (
+    <div className="relative h-full w-full">
+      <Editor
+        key={activeTab.id}
+        language={activeTab.language}
+        theme="vs"
+        value={contentRef.current}
+        onChange={handleChange}
+        onMount={handleMount}
+        loading={
+          <div className="flex items-center justify-center h-full">
+            <div className="w-5 h-5 border-2 border-[#4A90D9] border-t-transparent rounded-full animate-spin" />
+          </div>
+        }
+        options={{
+          minimap: { enabled: false },
+          fontSize: 13,
+          fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
+          wordWrap: 'on',
+          scrollBeyondLastLine: false,
+          automaticLayout: true,
+          tabSize: 2,
+        }}
+      />
+    </div>
+  )
+}

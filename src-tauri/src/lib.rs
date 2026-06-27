@@ -34,12 +34,17 @@ pub fn run() {
             commands::cmd_rename_item,
             commands::cmd_list_directory,
             commands::search_files,
+            commands::replace_in_files,
             commands::git_status,
             commands::git_diff,
             commands::git_log,
             commands::git_branches,
             commands::execute_command,
             commands::watch_directory,
+            commands::approve_tool_call,
+            commands::reject_tool_call,
+            commands::load_config,
+            commands::check_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

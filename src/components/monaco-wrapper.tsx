@@ -2,15 +2,19 @@ import { useEffect, useRef } from 'react'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import { useEditorStore } from '@/stores/editor-store'
 import { useStatusBarStore } from '@/stores/ui-store'
+import { useSettingsStore } from '@/stores/settings-store'
 import { readFile } from '@/lib/ipc'
 import { WelcomeScreen } from '@/components/welcome-screen'
 
 export function MonacoWrapper() {
   const activeTabId = useEditorStore((s) => s.activeTabId)
   const tabs = useEditorStore((s) => s.tabs)
+  const gotoLine = useEditorStore((s) => s.gotoLine)
+  const setGotoLine = useEditorStore((s) => s.setGotoLine)
   const setLoading = useEditorStore((s) => s.setLoading)
   const markDirty = useEditorStore((s) => s.markDirty)
   const setCursorPosition = useStatusBarStore((s) => s.setCursorPosition)
+  const config = useSettingsStore((s) => s.config)
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null)
   const contentRef = useRef<string>('')
 
@@ -34,6 +38,28 @@ export function MonacoWrapper() {
       })
   }, [activeTab?.id])
 
+  useEffect(() => {
+    if (!gotoLine || !editorRef.current) return
+    const editor = editorRef.current
+    requestAnimationFrame(() => {
+      editor.revealLineInCenter(gotoLine)
+      editor.setPosition({ lineNumber: gotoLine, column: 1 })
+      editor.focus()
+    })
+    setGotoLine(0)
+  }, [activeTab?.id, gotoLine, setGotoLine])
+
+  useEffect(() => {
+    if (editorRef.current && config) {
+      editorRef.current.updateOptions({
+        fontSize: config.fontSize,
+        fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
+        wordWrap: config.wordWrap ? 'on' : 'off',
+        tabSize: config.tabSize,
+      })
+    }
+  }, [config?.fontSize, config?.wordWrap, config?.tabSize])
+
   const handleMount: OnMount = (editor) => {
     editorRef.current = editor
     editor.onDidChangeCursorPosition((e) => {
@@ -41,6 +67,14 @@ export function MonacoWrapper() {
     })
     if (contentRef.current) {
       editor.setValue(contentRef.current)
+    }
+    if (config) {
+      editor.updateOptions({
+        fontSize: config.fontSize,
+        fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
+        wordWrap: config.wordWrap ? 'on' : 'off',
+        tabSize: config.tabSize,
+      })
     }
   }
 
@@ -58,7 +92,7 @@ export function MonacoWrapper() {
       <Editor
         key={activeTab.id}
         language={activeTab.language}
-        theme="vs"
+        theme={config?.theme === 'dark' ? 'vs-dark' : 'vs'}
         value={contentRef.current}
         onChange={handleChange}
         onMount={handleMount}
@@ -69,12 +103,12 @@ export function MonacoWrapper() {
         }
         options={{
           minimap: { enabled: false },
-          fontSize: 13,
+          fontSize: config?.fontSize ?? 13,
           fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
-          wordWrap: 'on',
+          wordWrap: config?.wordWrap ? 'on' : 'off',
+          tabSize: config?.tabSize ?? 2,
           scrollBeyondLastLine: false,
           automaticLayout: true,
-          tabSize: 2,
         }}
       />
     </div>

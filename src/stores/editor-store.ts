@@ -12,11 +12,13 @@ export interface EditorTab {
 interface EditorStore {
   tabs: EditorTab[]
   activeTabId: string | null
+  gotoLine: number | null
   openFile: (path: string) => void
   closeTab: (id: string) => void
   setActiveTab: (id: string) => void
   markDirty: (id: string, dirty: boolean) => void
   setLoading: (id: string, loading: boolean) => void
+  setGotoLine: (line: number) => void
 }
 
 function pathToLanguage(path: string): string {
@@ -34,6 +36,7 @@ function pathToLanguage(path: string): string {
 export const useEditorStore = create<EditorStore>((set) => ({
   tabs: [],
   activeTabId: null,
+  gotoLine: null,
   openFile: (path) => set((s) => {
     const existing = s.tabs.find((t) => t.path === path)
     if (existing) return { activeTabId: existing.id }
@@ -67,4 +70,5 @@ export const useEditorStore = create<EditorStore>((set) => ({
   setLoading: (id, loading) => set((s) => ({
     tabs: s.tabs.map((t) => t.id === id ? { ...t, isLoading: loading } : t),
   })),
+  setGotoLine: (line) => set({ gotoLine: line }),
 }))

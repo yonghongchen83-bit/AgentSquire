@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type SidebarView = 'explorer' | 'search' | 'git'
+export type SidebarView = 'explorer' | 'search' | 'git' | 'chat'
 export type BottomPanelTab = 'terminal' | 'output' | 'errors'
 
 interface LayoutStore {

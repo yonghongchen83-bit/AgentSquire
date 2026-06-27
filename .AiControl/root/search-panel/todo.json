@@ -1,11 +1,47 @@
 {
-  "nodePath": "search-panel",
+  "nodePath": "root/search-panel",
   "items": [
-    { "id": "p5-1", "text": "Search panel layout — input, replace, options toggles", "done": false },
-    { "id": "p5-2", "text": "IPC grep_search command (ripgrep)", "done": false },
-    { "id": "p5-3", "text": "Results tree — grouped by file, context, highlighting", "done": false },
-    { "id": "p5-4", "text": "Click to open — Monaco at line number", "done": false },
-    { "id": "p5-5", "text": "Replace — single file / Replace All via IPC", "done": false },
-    { "id": "p5-6", "text": "Collapse/expand per-file results", "done": false }
+    {
+      "id": "p5-1",
+      "text": "Search panel layout — input, replace, options toggles",
+      "done": false,
+      "status": "done",
+      "updatedAt": "2026-06-27T10:58:18.984Z"
+    },
+    {
+      "id": "p5-2",
+      "text": "IPC grep_search command (ripgrep)",
+      "done": false,
+      "status": "done",
+      "updatedAt": "2026-06-27T10:58:19.540Z"
+    },
+    {
+      "id": "p5-3",
+      "text": "Results tree — grouped by file, context, highlighting",
+      "done": false,
+      "status": "done",
+      "updatedAt": "2026-06-27T10:58:20.079Z"
+    },
+    {
+      "id": "p5-4",
+      "text": "Click to open — Monaco at line number",
+      "done": false,
+      "status": "done",
+      "updatedAt": "2026-06-27T10:58:20.635Z"
+    },
+    {
+      "id": "p5-5",
+      "text": "Replace — single file / Replace All via IPC",
+      "done": false,
+      "status": "done",
+      "updatedAt": "2026-06-27T10:58:21.173Z"
+    },
+    {
+      "id": "p5-6",
+      "text": "Collapse/expand per-file results",
+      "done": false,
+      "status": "done",
+      "updatedAt": "2026-06-27T10:58:21.742Z"
+    }
   ]
 }

@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { useSettingsStore } from '@/stores/settings-store'
 import '@xterm/xterm/css/xterm.css'
 
 export function XtermTerminal() {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
+  const config = useSettingsStore((s) => s.config)
 
   useEffect(() => {
     if (!containerRef.current || termRef.current) return
@@ -13,7 +15,7 @@ export function XtermTerminal() {
     const term = new Terminal({
       cursorBlink: true,
       cursorStyle: 'block',
-      fontSize: 13,
+      fontSize: config?.terminalFontSize ?? 13,
       fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
       theme: {
         background: '#1A2332',
@@ -35,7 +37,7 @@ export function XtermTerminal() {
     })
     resizeObserver.observe(containerRef.current)
 
-    term.onData((data) => {
+    term.onData(() => {
     })
 
     termRef.current = term
@@ -46,6 +48,12 @@ export function XtermTerminal() {
       termRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    if (termRef.current && config?.terminalFontSize) {
+      termRef.current.options.fontSize = config.terminalFontSize
+    }
+  }, [config?.terminalFontSize])
 
   return (
     <div ref={containerRef} className="h-full w-full" />

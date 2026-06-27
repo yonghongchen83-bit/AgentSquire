@@ -65,6 +65,25 @@ impl LlmProvider for OpenAIProvider {
                 if let Some(ref id) = m.tool_call_id {
                     msg["tool_call_id"] = json!(id);
                 }
+                if let Some(ref calls) = m.tool_calls {
+                    let arr: Vec<serde_json::Value> = calls
+                        .iter()
+                        .map(|tc| {
+                            json!({
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": serde_json::to_string(&tc.arguments).unwrap_or_default()
+                                }
+                            })
+                        })
+                        .collect();
+                    msg["tool_calls"] = json!(arr);
+                    if m.content.is_empty() {
+                        msg["content"] = serde_json::Value::Null;
+                    }
+                }
                 msg
             })
             .collect();

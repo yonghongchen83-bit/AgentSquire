@@ -1,14 +1,13 @@
-# State — Phase 4: Agent Tools
+# Decisions — Phase 4
 
-**Status:** Not started
+Decisions made during agent tools implementation.
 
-## Design References
-- `ArchitecturePlanning/component-analysis.md` — sections 11-15 (file ops, terminal, search, git)
-- `ArchitecturePlanning/implementation-plan.md` — Phase 4 steps
-- `ArchitecturePlanning/adr/0003-llm-provider-abstraction-trait.md` (tool calling integration)
-
-## Depends on
-Phase 3 (chat system to invoke tools)
-
-## Deliverables
-- Agent can read files, write files, search code, run commands, git operations
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **Tool trait lives in `agent/mod.rs`** with 5 concrete implementations | Each tool wraps an existing backend module (fs::ops, shell::exec, etc.) |
+| 2 | **`ChatMessage.tool_calls` field** added for multi-turn tool loop | Enables feeding tool call info back to the LLM for multi-step reasoning |
+| 3 | **Oneshot channels for approve/reject** | Clean one-shot async signaling; no polling or busy-waiting |
+| 4 | **Destructive tools require approval** (`write_file`, `run_terminal`) | File writes and shell commands can modify the system; user must explicitly approve |
+| 5 | **Multi-turn loop with result feedback** | Tool results are injected as `ChatRole::Tool` messages and the LLM is re-invoked automatically |
+| 6 | **OpenAI and Anthropic both supported** | Each provider serializes tool calls/results in its native API format |
+| 7 | **`ToolRegistry` built at stream start** | No need for persistent registry; created fresh per `send_message` call |

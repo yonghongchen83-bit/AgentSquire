@@ -14,7 +14,28 @@ export interface ChatResponse {
   blocks: Block[]
 }
 
-export interface Conversation {
+export interface SessionSummary {
+  id: string
+  title: string
+  messageCount: number
+  lastMessageAt: string
+  createdAt: string
+}
+
+export interface Message {
+  id: string
+  sessionId: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  createdAt: string
+}
+
+export interface SessionWithMessages {
+  session: Session
+  messages: Message[]
+}
+
+export interface Session {
   id: string
   title: string
   createdAt: string
@@ -42,6 +63,21 @@ export interface ToolCallBlock {
   toolName: string
   args: string
   result?: string
+  callId?: string
+  isPending?: boolean
+  isError?: boolean
+}
+
+export interface ToolResult {
+  call_id: string
+  output: string
+  is_error: boolean
+}
+
+export interface ToolApprovalRequest {
+  call_id: string
+  tool_name: string
+  arguments: Record<string, unknown>
 }
 
 export interface CodeBlock {
@@ -82,12 +118,23 @@ export interface SearchQuery {
   exclude?: string
 }
 
+// Mirrors Rust's search::grep::SearchMatch (snake_case from serde)
 export interface SearchMatch {
   file: string
-  line: number
+  line_number: number
   column: number
   content: string
-  contextLines: string[]
+  context_before: string[]
+  context_after: string[]
+}
+
+export interface ReplaceOptions {
+  query: string
+  replacement: string
+  path: string
+  regex?: boolean
+  case_sensitive?: boolean
+  glob?: string
 }
 
 // ─── Git ────────────────────────────────────────────────
@@ -107,9 +154,12 @@ export interface GitDiff {
 export interface AppConfig {
   theme: 'light' | 'dark' | 'system'
   fontSize: number
+  tabSize: number
+  wordWrap: boolean
   llmProviders: LlmProviderConfig[]
   searchExclude: string[]
   terminalShell: string
+  terminalFontSize: number
 }
 
 export interface LlmProviderConfig {

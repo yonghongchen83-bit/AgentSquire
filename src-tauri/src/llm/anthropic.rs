@@ -53,15 +53,53 @@ impl LlmProvider for AnthropicProvider {
             .iter()
             .filter(|m| !matches!(m.role, ChatRole::System))
             .map(|m| {
-                let role = match m.role {
-                    ChatRole::User => "user",
-                    ChatRole::Assistant => "assistant",
-                    _ => "user",
-                };
-                json!({
-                    "role": role,
-                    "content": m.content,
-                })
+                match m.role {
+                    ChatRole::Tool => {
+                        json!({
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": m.tool_call_id.as_deref().unwrap_or("unknown"),
+                                    "content": m.content
+                                }
+                            ]
+                        })
+                    }
+                    _ => {
+                        let role = match m.role {
+                            ChatRole::User => "user",
+                            ChatRole::Assistant => "assistant",
+                            _ => "user",
+                        };
+                        if let Some(ref calls) = m.tool_calls {
+                            let mut content_arr: Vec<serde_json::Value> = Vec::new();
+                            if !m.content.is_empty() {
+                                content_arr.push(json!({
+                                    "type": "text",
+                                    "text": m.content
+                                }));
+                            }
+                            for tc in calls {
+                                content_arr.push(json!({
+                                    "type": "tool_use",
+                                    "id": tc.id,
+                                    "name": tc.name,
+                                    "input": tc.arguments
+                                }));
+                            }
+                            json!({
+                                "role": role,
+                                "content": content_arr
+                            })
+                        } else {
+                            json!({
+                                "role": role,
+                                "content": m.content
+                            })
+                        }
+                    }
+                }
             })
             .collect();
 
@@ -83,6 +121,9 @@ impl LlmProvider for AnthropicProvider {
             body["system"] = json!(system.join("\n"));
         }
 
+        if !request.tools.is_empty() {
+            body["tools"] = json!(request.tools);
+        }
         if let Some(t) = request.temperature {
             body["temperature"] = json!(t);
         }

@@ -11,10 +11,12 @@ Ready to begin phased implementation.
 | 0.5 — UI Layout Design | ✅ Complete |
 | 1 — Rust Backbone | ✅ Complete |
 | **2 — App Shell** | **✅ Complete** |
-| 3 — Chat | 🔜 Next |
-| 4 — Agent Tools | 📅 Planned |
-| 5 — Search Panel | 📅 Planned |
-| 6 — Settings & Polish | 📅 Planned |
+| **3 — Chat** | **✅ Complete** |
+| **4 — Agent Tools** | **✅ Complete** |
+| **5 — Search Panel** | **✅ Complete** |
+| **6 — Settings & Polish** | **✅ Complete** |
+| 7 — Post-MVP | 📅 Planned |
+| **B — Build & Deploy** | **🏗️ In Progress** |
 
 ## Architecture Docs
 
@@ -33,5 +35,4 @@ All design documents live in `ArchitecturePlanning/`:
 
 ## Active Node
 
-Current: `root/app-shell` (Phase 2 complete)
-Next: `root/chat` (Phase 3)
+Current: `root/build_and_deploy` (Build & Deploy — in progress)

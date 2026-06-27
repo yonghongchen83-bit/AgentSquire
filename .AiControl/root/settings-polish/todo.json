@@ -1,12 +1,52 @@
 {
-  "nodePath": "settings-polish",
+  "nodePath": "root/settings-polish",
   "items": [
-    { "id": "p6-1", "text": "Settings UI — tabs for General, LLM, Search, Terminal", "done": false },
-    { "id": "p6-2", "text": "Theme switching — light/dark Tailwind class strategy", "done": false },
-    { "id": "p6-3", "text": "Font/editor settings — Monaco config from IPC", "done": false },
-    { "id": "p6-4", "text": "Auto-update — tauri-plugin-updater", "done": false },
-    { "id": "p6-5", "text": "Error handling — React error boundary + Sentry opt-in", "done": false },
-    { "id": "p6-6", "text": "Keyboard shortcuts — Monaco + global bindings", "done": false },
-    { "id": "p6-7", "text": "Loading/splash screen during init", "done": false }
+    {
+      "id": "p6-1",
+      "text": "Settings UI — tabs for General, LLM, Search, Terminal",
+      "done": false,
+      "status": "done",
+      "updatedAt": "2026-06-27T11:12:20.220Z"
+    },
+    {
+      "id": "p6-2",
+      "text": "Theme switching — light/dark Tailwind class strategy",
+      "done": false,
+      "status": "done",
+      "updatedAt": "2026-06-27T11:12:20.683Z"
+    },
+    {
+      "id": "p6-3",
+      "text": "Font/editor settings — Monaco config from IPC",
+      "done": false,
+      "status": "done",
+      "updatedAt": "2026-06-27T11:12:21.142Z"
+    },
+    {
+      "id": "p6-4",
+      "text": "Auto-update — tauri-plugin-updater",
+      "done": false,
+      "status": "done",
+      "updatedAt": "2026-06-27T11:12:21.671Z"
+    },
+    {
+      "id": "p6-5",
+      "text": "Error handling — React error boundary + Sentry opt-in",
+      "done": false,
+      "status": "done",
+      "updatedAt": "2026-06-27T11:12:22.109Z"
+    },
+    {
+      "id": "p6-6",
+      "text": "Keyboard shortcuts — Monaco + global bindings",
+      "done": false
+    },
+    {
+      "id": "p6-7",
+      "text": "Loading/splash screen during init",
+      "done": false,
+      "status": "done",
+      "updatedAt": "2026-06-27T11:12:24.218Z"
+    }
   ]
 }

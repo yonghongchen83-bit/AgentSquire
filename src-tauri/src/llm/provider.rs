@@ -8,6 +8,7 @@ mod tests {
             role: ChatRole::User,
             content: "hello".into(),
             tool_call_id: None,
+            tool_calls: None,
         };
         assert!(matches!(msg.role, ChatRole::User));
         assert_eq!(msg.content, "hello");
@@ -49,6 +50,52 @@ mod tests {
     }
 
     #[test]
+    fn test_chat_message_with_tool_calls() {
+        let tc = ToolCall {
+            id: "call_1".into(),
+            name: "read_file".into(),
+            arguments: serde_json::json!({"path": "/test"}),
+        };
+        let msg = ChatMessage {
+            role: ChatRole::Assistant,
+            content: String::new(),
+            tool_call_id: None,
+            tool_calls: Some(vec![tc]),
+        };
+        assert!(msg.tool_calls.is_some());
+        assert_eq!(msg.tool_calls.as_ref().unwrap().len(), 1);
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("tool_calls"));
+        assert!(json.contains("read_file"));
+    }
+
+    #[test]
+    fn test_chat_message_tool_result() {
+        let msg = ChatMessage {
+            role: ChatRole::Tool,
+            content: "file contents".into(),
+            tool_call_id: Some("call_1".into()),
+            tool_calls: None,
+        };
+        assert_eq!(msg.tool_call_id.as_deref(), Some("call_1"));
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("tool_call_id"));
+    }
+
+    #[test]
+    fn test_chat_message_serialize_skips_empty() {
+        let msg = ChatMessage {
+            role: ChatRole::User,
+            content: "hi".into(),
+            tool_call_id: None,
+            tool_calls: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(!json.contains("tool_calls"));
+        assert!(!json.contains("tool_call_id"));
+    }
+
+    #[test]
     fn test_llm_error_display() {
         let err = LlmError::Api("rate limit".into());
         assert_eq!(err.to_string(), "API error: rate limit");
@@ -77,7 +124,10 @@ pub enum ChatRole {
 pub struct ChatMessage {
     pub role: ChatRole,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

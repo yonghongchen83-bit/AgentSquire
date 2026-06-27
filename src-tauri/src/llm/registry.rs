@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::openai::OpenAIProvider;
 use super::anthropic::AnthropicProvider;
 use super::provider::LlmProvider;
-use crate::state::config::LlmConfig;
+use crate::state::config::AppConfig;
 
 pub struct ProviderRegistry {
     providers: HashMap<String, Box<dyn LlmProvider>>,
@@ -11,18 +11,18 @@ pub struct ProviderRegistry {
 }
 
 impl ProviderRegistry {
-    pub fn from_config(config: &LlmConfig) -> Self {
+    pub fn from_config(config: &AppConfig) -> Self {
         let mut providers: HashMap<String, Box<dyn LlmProvider>> = HashMap::new();
         let mut default: Option<String> = None;
 
-        for cfg in &config.providers {
+        for cfg in &config.llm_providers {
             let name = cfg.name.clone();
-            match cfg.provider_type.to_lowercase().as_str() {
+            match cfg.id.to_lowercase().as_str() {
                 "openai" => {
                     let provider = OpenAIProvider::new(
                         cfg.api_key.clone(),
                         cfg.model.clone(),
-                        cfg.base_url.clone(),
+                        cfg.endpoint.clone(),
                     );
                     providers.insert(name.clone(), Box::new(provider));
                 }
@@ -30,12 +30,12 @@ impl ProviderRegistry {
                     let provider = AnthropicProvider::new(
                         cfg.api_key.clone(),
                         cfg.model.clone(),
-                        cfg.base_url.clone(),
+                        cfg.endpoint.clone(),
                     );
                     providers.insert(name.clone(), Box::new(provider));
                 }
                 _ => {
-                    tracing::warn!("Unknown LLM provider type: {}", cfg.provider_type);
+                    tracing::warn!("Unknown LLM provider type: {}", cfg.id);
                     continue;
                 }
             }

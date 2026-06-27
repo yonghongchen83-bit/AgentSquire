@@ -1,11 +1,13 @@
-import { Files, Search, GitBranch, Settings } from 'lucide-react'
+import { Files, Search, GitBranch, Settings, MessageSquare } from 'lucide-react'
 import { useLayoutStore, type SidebarView } from '@/stores/ui-store'
+import { useSettingsStore } from '@/stores/settings-store'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 const items: { id: SidebarView; icon: typeof Files; label: string }[] = [
   { id: 'explorer', icon: Files, label: 'Explorer' },
   { id: 'search', icon: Search, label: 'Search' },
   { id: 'git', icon: GitBranch, label: 'Git' },
+  { id: 'chat', icon: MessageSquare, label: 'Chat' },
 ]
 
 export function Sidebar() {
@@ -13,6 +15,7 @@ export function Sidebar() {
   const setView = useLayoutStore((s) => s.setLeftPanelView)
   const leftPanelVisible = useLayoutStore((s) => s.leftPanelVisible)
   const toggleLeftPanel = useLayoutStore((s) => s.toggleLeftPanel)
+  const setSettingsOpen = useSettingsStore((s) => s.setOpen)
 
   return (
     <TooltipProvider>
@@ -42,7 +45,10 @@ export function Sidebar() {
         <div className="flex-1" />
         <Tooltip>
           <TooltipTrigger asChild>
-            <button className="flex items-center justify-center w-9 h-9 rounded-md text-[#6B7B8D] hover:bg-[#D0DCE8] hover:text-[#1A2332] transition-colors">
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="flex items-center justify-center w-9 h-9 rounded-md text-[#6B7B8D] hover:bg-[#D0DCE8] hover:text-[#1A2332] transition-colors"
+            >
               <Settings className="h-5 w-5" />
             </button>
           </TooltipTrigger>

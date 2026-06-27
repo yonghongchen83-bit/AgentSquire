@@ -1,0 +1,29 @@
+{
+  "nodePath": "root/build_and_deploy",
+  "items": [
+    {
+      "id": "startup-script",
+      "title": "Create startup scripts (ps1 + sh) for dev and build",
+      "status": "done",
+      "priority": "high"
+    },
+    {
+      "id": "log-debug",
+      "title": "Define log/debug mode with tracing + YAML config",
+      "status": "done",
+      "priority": "high"
+    },
+    {
+      "id": "deploy-method",
+      "title": "Define deploy method: Tauri bundler + auto-update + CI/CD",
+      "status": "done",
+      "priority": "high"
+    },
+    {
+      "id": "record-adrs",
+      "title": "Record decisions: ADR-0008, ADR-0009, ADR-0010",
+      "status": "done",
+      "priority": "high"
+    }
+  ]
+}

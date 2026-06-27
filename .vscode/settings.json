@@ -1,3 +1,27 @@
 {
-    "aicontrol.mcpEndpoint": "http://127.0.0.1:8181/mcp"
+  "aicontrol.mcpEndpoint": "http://127.0.0.1:8181/mcp",
+  "rust-analyzer.linkedProjects": ["${workspaceFolder}/src-tauri/Cargo.toml"],
+  "rust-analyzer.cargo.features": "all",
+  "rust-analyzer.check.command": "clippy",
+  "[rust]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "rust-lang.rust-analyzer"
+  },
+  "[typescript]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/target": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/target": true,
+    "**/dist": true
+  }
 }

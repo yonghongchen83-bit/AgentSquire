@@ -1,0 +1,63 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Tauri (Rust + Frontend)",
+      "detail": "Build frontend + Rust, launch with lldb debugger attached. Set breakpoints in Rust code.",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/src-tauri/target/debug/squirecli.exe",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "frontend:build",
+      "sourceLanguages": ["rust"],
+      "internalConsoleOptions": "openOnSessionStart",
+      "windows": {
+        "program": "${workspaceFolder}/src-tauri/target/debug/squirecli.exe"
+      },
+      "linux": {
+        "program": "${workspaceFolder}/src-tauri/target/debug/squirecli"
+      },
+      "osx": {
+        "program": "${workspaceFolder}/src-tauri/target/debug/squirecli"
+      }
+    },
+    {
+      "name": "Launch Tauri Dev (Run Only)",
+      "detail": "Run pnpm tauri dev in terminal (no Rust debugger — fastest for frontend work)",
+      "type": "npm",
+      "request": "launch",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["tauri", "dev"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "Debug Frontend (Browser)",
+      "detail": "Launch Chrome against Vite dev server. Requires Vite running (run frontend:dev task first).",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/src",
+      "preLaunchTask": "frontend:dev",
+      "internalConsoleOptions": "openOnSessionStart"
+    },
+    {
+      "name": "Attach to Running Tauri Process",
+      "detail": "Attach debugger to an already-running Tauri binary for Rust debugging",
+      "type": "lldb",
+      "request": "attach",
+      "program": "${workspaceFolder}/src-tauri/target/debug/squirecli.exe",
+      "sourceLanguages": ["rust"],
+      "windows": {
+        "program": "${workspaceFolder}/src-tauri/target/debug/squirecli.exe"
+      },
+      "linux": {
+        "program": "${workspaceFolder}/src-tauri/target/debug/squirecli"
+      },
+      "osx": {
+        "program": "${workspaceFolder}/src-tauri/target/debug/squirecli"
+      }
+    }
+  ]
+}

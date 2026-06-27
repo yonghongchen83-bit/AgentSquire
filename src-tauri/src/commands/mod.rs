@@ -1,11 +1,16 @@
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::agent::{
+    self, PendingApprovals, ToolDanger, ToolRegistry,
+};
 use crate::fs::ops::{self, FileEntry};
 use crate::fs::watcher::{FileEvent, FileWatcher};
-use crate::llm::provider::StreamEvent;
+use crate::llm::provider::{
+    ChatMessage, ChatRequest, ChatRole, FinishReason, StreamEvent, ToolCall,
+};
 use crate::llm::registry::ProviderRegistry;
-use crate::search::grep::{self, SearchMatch, SearchOptions};
+use crate::search::grep::{self, GrepReplaceOptions, SearchMatch, SearchOptions};
 use crate::shell::exec::{self, CommandResult};
 use crate::state::config::{self, AppConfig};
 use crate::storage::conversation_store::{
@@ -32,6 +37,20 @@ pub fn get_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
 #[tauri::command]
 pub fn save_config(new_config: AppConfig) -> Result<(), String> {
     config::save_config(&new_config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn load_config() -> Result<AppConfig, String> {
+    config::load_config().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn check_update() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({
+        "available": false,
+        "version": null,
+        "body": null,
+    }))
 }
 
 // ── Conversations ──
@@ -83,10 +102,13 @@ pub async fn delete_conversation(
         .map_err(|e| e.to_string())
 }
 
+// ── Send Message (with tool support) ──
+
 #[tauri::command]
 pub async fn send_message(
     app: AppHandle,
     state: State<'_, AppState>,
+    pending_state: State<'_, PendingApprovals>,
     session_id: String,
     content: String,
     provider_name: Option<String>,
@@ -118,80 +140,228 @@ pub async fn send_message(
     let registry = state.registry.clone();
     let store = state.store.clone();
     let app_clone = app.clone();
+    let pending = pending_state.pending.clone();
 
     tokio::spawn(async move {
         let provider = match registry.get(&provider_key) {
             Some(p) => p,
             None => {
-                let _ = app_clone.emit("stream-error", format!("Provider '{}' not found", provider_key));
+                let _ = app_clone
+                    .emit("stream-error", format!("Provider '{}' not found", provider_key));
                 return;
             }
         };
 
-        let messages: Vec<crate::llm::provider::ChatMessage> = session
+        let tool_registry = Arc::new(ToolRegistry::new());
+        let tool_defs = tool_registry.definitions();
+
+        let mut messages: Vec<ChatMessage> = session
             .messages
             .iter()
-            .map(|m| crate::llm::provider::ChatMessage {
+            .map(|m| ChatMessage {
                 role: match m.role {
-                    crate::storage::conversation_store::MessageRole::User => {
-                        crate::llm::provider::ChatRole::User
-                    }
+                    crate::storage::conversation_store::MessageRole::User => ChatRole::User,
                     crate::storage::conversation_store::MessageRole::Assistant => {
-                        crate::llm::provider::ChatRole::Assistant
+                        ChatRole::Assistant
                     }
-                    crate::storage::conversation_store::MessageRole::System => {
-                        crate::llm::provider::ChatRole::System
-                    }
+                    crate::storage::conversation_store::MessageRole::System => ChatRole::System,
                 },
                 content: m.content.clone(),
                 tool_call_id: None,
+                tool_calls: None,
             })
             .collect();
 
-        let request = crate::llm::provider::ChatRequest {
-            model: String::new(),
-            messages,
-            tools: Vec::new(),
-            temperature: None,
-            max_tokens: None,
-        };
+        loop {
+            let request = ChatRequest {
+                model: String::new(),
+                messages: messages.clone(),
+                tools: tool_defs.clone(),
+                temperature: None,
+                max_tokens: None,
+            };
 
-        let mut full_response = String::new();
-        let mut stream = match provider.chat(request).await {
-            Ok(s) => s,
-            Err(e) => {
-                let _ = app_clone.emit("stream-error", e.to_string());
-                return;
+            let mut stream = match provider.chat(request).await {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = app_clone.emit("stream-error", e.to_string());
+                    return;
+                }
+            };
+
+            let mut full_response = String::new();
+            let mut tool_calls: Vec<ToolCall> = Vec::new();
+            let mut finish_reason: Option<FinishReason> = None;
+
+            while let Some(event) = stream.recv().await {
+                match event {
+                    StreamEvent::Chunk(text) => {
+                        full_response.push_str(&text);
+                        let _ = app_clone.emit("stream-chunk", text);
+                    }
+                    StreamEvent::ToolCall(tc) => {
+                        tool_calls.push(tc.clone());
+                        let _ = app_clone.emit("stream-tool-call", tc);
+                    }
+                    StreamEvent::Done(reason) => {
+                        finish_reason = Some(reason);
+                        break;
+                    }
+                    StreamEvent::Error(err) => {
+                        let _ = app_clone.emit("stream-error", err);
+                        return;
+                    }
+                }
             }
-        };
 
-        while let Some(event) = stream.recv().await {
-            match event {
-                StreamEvent::Chunk(text) => {
-                    full_response.push_str(&text);
-                    let _ = app_clone.emit("stream-chunk", text);
+            let reason = match finish_reason {
+                Some(r) => r,
+                None => {
+                    let _ = app_clone.emit("stream-error", "Stream ended without finish reason");
+                    return;
                 }
-                StreamEvent::ToolCall(tc) => {
-                    let _ = app_clone.emit("stream-tool-call", tc);
+            };
+
+            match reason {
+                FinishReason::ToolCalls => {
+                    if !full_response.is_empty() {
+                        let _ = app_clone.emit("stream-chunk", "\n\n");
+                    }
+
+                    for tc in &tool_calls {
+                        let tool = tool_registry.get(&tc.name);
+                        let result = if let Some(tool) = tool {
+                            if tool.danger() == ToolDanger::Destructive {
+                                let (tx, rx) = tokio::sync::oneshot::channel();
+                                {
+                    let mut p = pending.lock().await;
+                    p.insert(tc.id.clone(), tx);
+                                }
+
+                                let approval_event = serde_json::json!({
+                                    "call_id": tc.id,
+                                    "tool_name": tc.name,
+                                    "arguments": tc.arguments,
+                                });
+                                let _ = app_clone.emit(
+                                    "stream-tool-pending",
+                                    approval_event.to_string(),
+                                );
+
+                                match rx.await {
+                                    Ok(true) => {
+                                        // Approved → execute
+                                        let _ = app_clone.emit(
+                                            "stream-chunk",
+                                            format!("[Executing {}...]\n", tc.name),
+                                        );
+                                        tool.execute(&tc.id, tc.arguments.clone()).await
+                                    }
+                                    _ => {
+                                        // Rejected or channel closed
+                                        agent::ToolResult {
+                                            call_id: tc.id.clone(),
+                                            output: format!(
+                                                "Tool call '{}' was rejected by user",
+                                                tc.name
+                                            ),
+                                            is_error: true,
+                                        }
+                                    }
+                                }
+                            } else {
+                                tool.execute(&tc.id, tc.arguments.clone()).await
+                            }
+                        } else {
+                            agent::ToolResult {
+                                call_id: tc.id.clone(),
+                                output: format!("Unknown tool: {}", tc.name),
+                                is_error: true,
+                            }
+                        };
+
+                        let _ = app_clone.emit("stream-tool-result", &result);
+
+                        messages.push(ChatMessage {
+                            role: ChatRole::Assistant,
+                            content: String::new(),
+                            tool_call_id: Some(tc.id.clone()),
+                            tool_calls: Some(vec![ToolCall {
+                                id: tc.id.clone(),
+                                name: tc.name.clone(),
+                                arguments: tc.arguments.clone(),
+                            }]),
+                        });
+
+                        messages.push(ChatMessage {
+                            role: ChatRole::Tool,
+                            content: result.output.clone(),
+                            tool_call_id: Some(tc.id.clone()),
+                            tool_calls: None,
+                        });
+                    }
+
+                    continue;
                 }
-                StreamEvent::Done(_reason) => {
+                FinishReason::Stop | FinishReason::Length => {
                     let content = std::mem::take(&mut full_response);
-                    let msg = NewMessage {
-                        session_id: sid,
-                        role: crate::storage::conversation_store::MessageRole::Assistant,
-                        content,
-                    };
-                    let _ = store.append_message(msg).await;
+                    if !content.is_empty() {
+                        let _ = store
+                            .append_message(NewMessage {
+                                session_id: sid,
+                                role: crate::storage::conversation_store::MessageRole::Assistant,
+                                content,
+                            })
+                            .await;
+                    }
                     let _ = app_clone.emit("stream-done", "");
+                    return;
                 }
-                StreamEvent::Error(err) => {
-                    let _ = app_clone.emit("stream-error", err);
+                FinishReason::Error => {
+                    let _ = app_clone.emit("stream-error", "LLM returned an error");
+                    return;
                 }
             }
         }
     });
 
     Ok(())
+}
+
+// ── Approve / Reject Tool Calls ──
+
+#[tauri::command]
+pub async fn approve_tool_call(
+    pending_state: State<'_, PendingApprovals>,
+    call_id: String,
+) -> Result<(), String> {
+    let sender = {
+        let mut p = pending_state.pending.lock().await;
+        p.remove(&call_id)
+    };
+    match sender {
+        Some(sender) => {
+            sender.send(true).map_err(|_| "Failed to send approval".to_string())
+        }
+        None => Err(format!("No pending tool call with id '{}'", call_id)),
+    }
+}
+
+#[tauri::command]
+pub async fn reject_tool_call(
+    pending_state: State<'_, PendingApprovals>,
+    call_id: String,
+) -> Result<(), String> {
+    let sender = {
+        let mut p = pending_state.pending.lock().await;
+        p.remove(&call_id)
+    };
+    match sender {
+        Some(sender) => {
+            sender.send(false).map_err(|_| "Failed to send rejection".to_string())
+        }
+        None => Err(format!("No pending tool call with id '{}'", call_id)),
+    }
 }
 
 // ── LLM Providers ──
@@ -259,6 +429,26 @@ pub fn search_files(
     grep::search(&options).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn replace_in_files(
+    query: String,
+    replacement: String,
+    path: String,
+    regex: bool,
+    case_sensitive: bool,
+    glob: Option<String>,
+) -> Result<usize, String> {
+    let options = GrepReplaceOptions {
+        query,
+        replacement,
+        path,
+        regex,
+        case_sensitive,
+        glob,
+    };
+    grep::grep_replace(&options).map_err(|e| e.to_string())
+}
+
 // ── Git ──
 
 #[tauri::command]
@@ -310,15 +500,15 @@ pub fn watch_directory(
     watcher.watch(&path)?;
 
     let app_clone = app.clone();
-    // We need the receiver. For simplicity, we get it from the watcher.
-    // The watcher_rx is stored in the app's state
     drop(watcher);
 
-    // Emit initial event to confirm
-    let _ = app_clone.emit("file-event", FileEvent {
-        kind: "watch-started".into(),
-        paths: vec![path],
-    });
+    let _ = app_clone.emit(
+        "file-event",
+        FileEvent {
+            kind: "watch-started".into(),
+            paths: vec![path],
+        },
+    );
 
     Ok(())
 }
@@ -340,7 +530,7 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     let db = crate::state::db::Database::open(&db_path)
         .map_err(|e| format!("Failed to open database: {}", e))?;
 
-    let registry = Arc::new(ProviderRegistry::from_config(&config.llm));
+    let registry = Arc::new(ProviderRegistry::from_config(&config));
 
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -366,6 +556,8 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     app.manage(WatcherState {
         watcher: Mutex::new(file_watcher),
     });
+
+    app.manage(PendingApprovals::new());
 
     if cfg!(debug_assertions) {
         app.handle().plugin(

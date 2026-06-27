@@ -1,0 +1,40 @@
+{
+  "nodePath": "root/Integration",
+  "items": [
+    {
+      "id": "todo-ed7ff00f-59a3-427b-87ea-b48c655884cc",
+      "title": "Rust backend: cargo check + build",
+      "status": "todo",
+      "updatedAt": "2026-06-27T11:26:26.620Z",
+      "priority": "high"
+    },
+    {
+      "id": "todo-e79728c4-4bac-466d-bace-030610cc3da3",
+      "title": "Frontend: pnpm build (typecheck + Vite)",
+      "status": "todo",
+      "updatedAt": "2026-06-27T11:26:27.146Z",
+      "priority": "high"
+    },
+    {
+      "id": "todo-3cf026d3-04d8-4282-9672-2b8b702f9f0f",
+      "title": "Full Tauri build (cargo tauri build)",
+      "status": "todo",
+      "updatedAt": "2026-06-27T11:26:27.675Z",
+      "priority": "high"
+    },
+    {
+      "id": "todo-d4f31c17-a267-4c70-9243-15bd10e466ff",
+      "title": "Smoke test: file tree, editor, chat, search, terminal, settings",
+      "status": "todo",
+      "updatedAt": "2026-06-27T11:26:28.265Z",
+      "priority": "medium"
+    },
+    {
+      "id": "todo-ff94f806-ab47-4c7d-8058-8939305ce709",
+      "title": "Log and fix regressions",
+      "status": "todo",
+      "updatedAt": "2026-06-27T11:26:28.765Z",
+      "priority": "medium"
+    }
+  ]
+}

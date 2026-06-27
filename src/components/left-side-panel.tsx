@@ -1,20 +1,13 @@
 import { useLayoutStore } from '@/stores/ui-store'
 import { FileTree } from '@/components/file-tree'
-import { Search, GitBranch } from 'lucide-react'
+import { ChatPanel } from '@/components/chat-panel'
+import { SearchPanel } from '@/components/search-panel'
+import { GitBranch } from 'lucide-react'
 
 function ExplorerHeader() {
   return (
     <div className="flex items-center justify-between px-3 h-8 text-xs font-semibold text-[#6B7B8D] uppercase tracking-wider border-b border-border">
       <span>Explorer</span>
-    </div>
-  )
-}
-
-function SearchPlaceholder() {
-  return (
-    <div className="flex flex-col items-center justify-center h-full gap-2 text-[#6B7B8D] p-4">
-      <Search className="h-8 w-8" />
-      <p className="text-sm">Search panel coming soon</p>
     </div>
   )
 }
@@ -44,8 +37,9 @@ export function LeftSidePanel() {
           </div>
         </>
       )}
-      {activeView === 'search' && <SearchPlaceholder />}
+      {activeView === 'search' && <SearchPanel />}
       {activeView === 'git' && <GitPlaceholder />}
+      {activeView === 'chat' && <ChatPanel />}
     </div>
   )
 }

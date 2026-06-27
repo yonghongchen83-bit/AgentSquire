@@ -12,6 +12,7 @@ pub enum GitError {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GitStatus {
+    #[serde(rename = "file")]
     pub path: String,
     pub status: String,
 }

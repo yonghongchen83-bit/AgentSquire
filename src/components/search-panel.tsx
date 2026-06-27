@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { Search, X, ChevronRight, ChevronDown, FileText, Replace, ReplaceAll, Settings2 } from 'lucide-react'
 import { useSearchStore } from '@/stores/search-store'
+import { useLayoutStore } from '@/stores/ui-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { searchFiles, replaceInFiles } from '@/lib/ipc'
 import { Button } from '@/components/ui/button'
@@ -26,6 +27,7 @@ export function SearchPanel() {
   const query = useSearchStore((s) => s.query)
   const replaceText = useSearchStore((s) => s.replaceText)
   const path = useSearchStore((s) => s.path)
+  const projectPath = useLayoutStore((s) => s.projectPath)
   const regex = useSearchStore((s) => s.regex)
   const caseSensitive = useSearchStore((s) => s.caseSensitive)
   const wholeWord = useSearchStore((s) => s.wholeWord)
@@ -54,7 +56,7 @@ export function SearchPanel() {
     if (!query.trim()) return
     setIsSearching(true)
     try {
-      const matches = await searchFiles(query, path || '.', {
+        const matches = await searchFiles(query, path || projectPath || '.', {
         regex,
         caseSensitive,
         wholeWord,
@@ -82,13 +84,13 @@ export function SearchPanel() {
       const count = await replaceInFiles({
         query,
         replacement: replaceText,
-        path: path || '.',
+        path: path || projectPath || '.',
         regex,
         case_sensitive: caseSensitive,
         glob: glob || undefined,
       })
       if (count > 0) {
-        const matches = await searchFiles(query, path || '.', {
+      const matches = await searchFiles(query, path || projectPath || '.', {
           regex,
           caseSensitive,
           wholeWord,

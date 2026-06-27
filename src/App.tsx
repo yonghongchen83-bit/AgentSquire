@@ -23,6 +23,10 @@ function App() {
   const bottomPanelVisible = useLayoutStore((s) => s.bottomPanelVisible)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  if (typeof window !== 'undefined') {
+    (window as any).__layoutStore = useLayoutStore
+  }
+
   const persistLayout = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {

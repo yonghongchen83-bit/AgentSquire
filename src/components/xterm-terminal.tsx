@@ -77,17 +77,21 @@ export function XtermTerminal() {
 
   useEffect(() => {
     const setupListeners = async () => {
-      cleanupRef.current.push(
-        (await onTerminalOutput(({ terminal_id, data }) => {
+      try {
+        const output = await onTerminalOutput(({ terminal_id, data }) => {
           setTerminals((prev) => {
             const inst = prev.find((t) => t.id === terminal_id)
             if (inst) inst.term.write(data)
             return prev
           })
-        })).unlisten,
-      )
-      cleanupRef.current.push(
-        (await onTerminalExit(({ terminal_id, code }) => {
+        })
+        if (output && typeof output.unlisten === 'function') {
+          cleanupRef.current.push(output.unlisten)
+        }
+      } catch {}
+
+      try {
+        const exit = await onTerminalExit(({ terminal_id, code }) => {
           setTerminals((prev) => {
             const inst = prev.find((t) => t.id === terminal_id)
             if (inst) {
@@ -95,15 +99,20 @@ export function XtermTerminal() {
             }
             return prev
           })
-        })).unlisten,
-      )
+        })
+        if (exit && typeof exit.unlisten === 'function') {
+          cleanupRef.current.push(exit.unlisten)
+        }
+      } catch {}
     }
     setupListeners()
 
     createTerminal()
 
     return () => {
-      cleanupRef.current.forEach((fn) => fn())
+      cleanupRef.current.forEach((fn) => {
+        try { fn() } catch {}
+      })
       cleanupRef.current = []
     }
   }, [])

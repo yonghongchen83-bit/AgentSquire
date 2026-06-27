@@ -374,32 +374,32 @@ pub fn list_providers(state: State<'_, AppState>) -> Vec<(String, String)> {
 // ── File Operations ──
 
 #[tauri::command]
-pub fn cmd_read_file(path: String) -> Result<String, String> {
+pub fn read_file(path: String) -> Result<String, String> {
     ops::read_file(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn cmd_write_file(path: String, content: String) -> Result<(), String> {
+pub fn write_file(path: String, content: String) -> Result<(), String> {
     ops::write_file(&path, &content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn cmd_create_directory(path: String) -> Result<(), String> {
+pub fn create_dir(path: String) -> Result<(), String> {
     ops::create_dir(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn cmd_delete_item(path: String) -> Result<(), String> {
+pub fn delete_item(path: String) -> Result<(), String> {
     ops::delete_item(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn cmd_rename_item(from: String, to: String) -> Result<(), String> {
+pub fn rename_item(from: String, to: String) -> Result<(), String> {
     ops::rename_item(&from, &to).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn cmd_list_directory(path: String) -> Result<Vec<FileEntry>, String> {
+pub fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
     ops::list_directory(&path).map_err(|e| e.to_string())
 }
 
@@ -452,8 +452,9 @@ pub fn replace_in_files(
 // ── Git ──
 
 #[tauri::command]
-pub fn git_status(path: String) -> Result<Vec<crate::fs::git::GitStatus>, String> {
-    crate::fs::git::status(&path).map_err(|e| e.to_string())
+pub fn git_status(path: Option<String>) -> Result<Vec<crate::fs::git::GitStatus>, String> {
+    let p = path.as_deref().unwrap_or(".");
+    crate::fs::git::status(p).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -11,6 +11,7 @@ export function StatusBar() {
   const setUiFontZoom = useLayoutStore((s) => s.setUiFontZoom)
   const bottomPanelVisible = useLayoutStore((s) => s.bottomPanelVisible)
   const toggleBottomPanel = useLayoutStore((s) => s.toggleBottomPanel)
+  const projectPath = useLayoutStore((s) => s.projectPath)
 
   return (
     <div className="flex h-6 items-center justify-between bg-[#E8EDF2] px-3 text-xs text-[#6B7B8D] border-t border-border select-none">
@@ -19,6 +20,11 @@ export function StatusBar() {
           <span className={`inline-block w-2 h-2 rounded-full ${llmConnected ? 'bg-green-500' : 'bg-gray-400'}`} />
           {llmConnected ? llmProvider || 'Connected' : 'Disconnected'}
         </span>
+        {projectPath && (
+          <span className="truncate max-w-[200px]" title={projectPath}>
+            {projectPath}
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <button onClick={toggleBottomPanel} className="flex items-center gap-1 hover:text-[#1A2332] transition-colors">

@@ -126,6 +126,7 @@ export function FileTree() {
   const [rootNodes, setRootNodes] = useState<TreeNode[]>([])
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [gitStatusMap, setGitStatusMap] = useState<Record<string, string>>({})
+  const [loadError, setLoadError] = useState<string | null>(null)
   const openFile = useEditorStore((s) => s.openFile)
   const projectPath = useLayoutStore((s) => s.projectPath)
 
@@ -139,9 +140,13 @@ export function FileTree() {
   }, [expandedPaths])
 
   const refreshTree = useCallback(async () => {
+    setLoadError(null)
+    if (!projectPath) {
+      setRootNodes([])
+      return
+    }
     try {
-      const root = projectPath || '.'
-      const entries = await listDirectory(root)
+      const entries = await listDirectory(projectPath)
       const roots = entries.map((e) => ({
         entry: e,
         children: [] as TreeNode[],
@@ -160,7 +165,9 @@ export function FileTree() {
           setGitStatusMap(map)
         }
       } catch {}
-    } catch {}
+    } catch {
+      setLoadError('Unable to list directory')
+    }
   }, [projectPath])
 
   useEffect(() => {
@@ -168,10 +175,19 @@ export function FileTree() {
   }, [refreshTree])
 
   useEffect(() => {
+    let unlisten: (() => void) | undefined
     const setup = async () => {
-      (await onFsChange(() => { refreshTree() }))
+      try {
+        const result = await onFsChange(() => { refreshTree() })
+        if (result && typeof result.unlisten === 'function') {
+          unlisten = result.unlisten
+        }
+      } catch {}
     }
     setup()
+    return () => {
+      if (unlisten) try { unlisten() } catch {}
+    }
   }, [refreshTree])
 
   const handleToggle = async (path: string) => {
@@ -264,6 +280,21 @@ export function FileTree() {
 
   return (
     <div className="h-full overflow-auto py-1">
+      {!projectPath && (
+        <div className="px-3 py-4 text-sm text-gray-400 text-center">
+          No project open
+        </div>
+      )}
+      {loadError && (
+        <div className="px-3 py-4 text-sm text-red-400 text-center">
+          {loadError}
+        </div>
+      )}
+      {projectPath && !loadError && decorated.length === 0 && (
+        <div className="px-3 py-4 text-sm text-gray-400 text-center">
+          Empty directory
+        </div>
+      )}
       {decorated.map((node) => (
         <TreeItem
           key={node.entry.path}

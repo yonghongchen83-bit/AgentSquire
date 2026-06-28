@@ -15,10 +15,12 @@ pub enum FsError {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FileEntry {
     pub name: String,
     pub path: String,
     pub is_dir: bool,
+    pub is_symlink: bool,
     pub size: u64,
 }
 
@@ -168,11 +170,13 @@ pub fn list_directory(path: &str) -> Result<Vec<FileEntry>, FsError> {
         let entry = entry?;
         let ft = entry.file_type()?;
         let name = entry.file_name().to_string_lossy().to_string();
+        let is_symlink = ft.is_symlink();
         entries.push(FileEntry {
             name,
             path: entry.path().to_string_lossy().to_string(),
             is_dir: ft.is_dir(),
-            size: if ft.is_file() {
+            is_symlink,
+            size: if ft.is_file() || is_symlink {
                 entry.metadata()?.len()
             } else {
                 0

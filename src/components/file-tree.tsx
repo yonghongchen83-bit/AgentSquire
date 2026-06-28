@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FilePlus, FolderPlus, Pencil, Trash2, ExternalLink, Copy } from 'lucide-react'
+import {
+  ChevronRight, ChevronDown,
+  File, FileText, FileJson, FileCode, FileImage,
+  FileType, FileTerminal, FileArchive, FileSpreadsheet,
+  Folder, FolderOpen, FilePlus, FolderPlus,
+  Pencil, Trash2, ExternalLink, Copy, Link,
+} from 'lucide-react'
 import { listDirectory, deleteItem, renameItem, createDir, gitStatus, writeFile, onFsChange } from '@/lib/ipc'
 import { useEditorStore } from '@/stores/editor-store'
 import { useLayoutStore } from '@/stores/ui-store'
@@ -19,11 +25,49 @@ interface TreeNode {
   gitStatus?: string
 }
 
+const extensionIcons: Record<string, React.ComponentType<{ className?: string }>> = {
+  ts: FileCode, tsx: FileCode, js: FileCode, jsx: FileCode,
+  mjs: FileCode, cjs: FileCode,
+  rs: FileCode, go: FileCode, java: FileCode, kt: FileCode,
+  swift: FileCode, py: FileCode, rb: FileCode, php: FileCode,
+  c: FileCode, h: FileCode, cpp: FileCode, hpp: FileCode,
+  cs: FileCode, fs: FileCode, dart: FileCode, lua: FileCode,
+  scala: FileCode,
+  json: FileJson, jsonc: FileJson,
+  md: FileText, txt: FileText, log: FileText,
+  css: FileCode, scss: FileCode, less: FileCode,
+  html: FileCode, htm: FileCode, xml: FileCode,
+  yaml: FileCode, yml: FileCode, toml: FileCode,
+  svg: FileImage, png: FileImage, jpg: FileImage, jpeg: FileImage,
+  gif: FileImage, bmp: FileImage, ico: FileImage, webp: FileImage, avif: FileImage,
+  sh: FileTerminal, bash: FileTerminal, zsh: FileTerminal, fish: FileTerminal,
+  sql: FileCode, graphql: FileCode, gql: FileCode,
+  woff: FileType, woff2: FileType, ttf: FileType, otf: FileType, eot: FileType,
+  wasm: FileCode,
+  zip: FileArchive, tar: FileArchive, gz: FileArchive,
+  bz2: FileArchive, xz: FileArchive, rar: FileArchive, '7z': FileArchive,
+  pdf: FileText,
+  csv: FileSpreadsheet, xlsx: FileSpreadsheet, xls: FileSpreadsheet,
+}
+
+function pickFileIcon(name: string): React.ComponentType<{ className?: string }> {
+  const lower = name.toLowerCase()
+  if (lower.startsWith('.') && lower.lastIndexOf('.') === 0) {
+    return extensionIcons[lower.slice(1)] ?? File
+  }
+  const parts = lower.split('.')
+  const ext = parts.length > 1 ? parts[parts.length - 1] : ''
+  return extensionIcons[ext] ?? File
+}
+
 function getIcon(node: TreeNode) {
-  if (!node.entry.isDir) return <File className="h-4 w-4 shrink-0" />
-  return node.expanded
-    ? <FolderOpen className="h-4 w-4 shrink-0 text-[#4A90D9]" />
-    : <Folder className="h-4 w-4 shrink-0 text-[#4A90D9]" />
+  if (node.entry.isDir) {
+    return node.expanded
+      ? <FolderOpen className="h-4 w-4 shrink-0 text-[#4A90D9]" />
+      : <Folder className="h-4 w-4 shrink-0 text-[#4A90D9]" />
+  }
+  const Icon = pickFileIcon(node.entry.name)
+  return <Icon className="h-4 w-4 shrink-0 text-[#607d8b]" />
 }
 
 function getStatusDot(status?: string) {
@@ -62,63 +106,88 @@ function TreeItem({
   const hasChildren = node.entry.isDir
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger>
-        <div
-          className="flex items-center gap-1 px-2 py-0.5 text-sm cursor-pointer rounded hover:bg-[#D0DCE8] group"
-          style={{ paddingLeft: `${depth * 16 + 8}px` }}
-          onClick={() => {
-            if (hasChildren) onToggle(node.entry.path)
-            else onSelect(node.entry)
-          }}
-        >
-          {hasChildren ? (
-            <span className="w-4 h-4 flex items-center justify-center shrink-0">
-              {node.expanded
-                ? <ChevronDown className="h-3 w-3" />
-                : <ChevronRight className="h-3 w-3" />}
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger>
+          <div
+            className="flex items-center gap-1 px-2 py-0.5 text-sm cursor-pointer rounded hover:bg-[#D0DCE8] group"
+            style={{ paddingLeft: `${depth * 16 + 8}px` }}
+            onClick={() => {
+              if (hasChildren) onToggle(node.entry.path)
+              else onSelect(node.entry)
+            }}
+          >
+            {hasChildren ? (
+              <span className="w-4 h-4 flex items-center justify-center shrink-0">
+                {node.expanded
+                  ? <ChevronDown className="h-3 w-3" />
+                  : <ChevronRight className="h-3 w-3" />}
+              </span>
+            ) : (
+              <span className="w-4 shrink-0" />
+            )}
+            <span className="relative shrink-0">
+              {getIcon(node)}
+              {node.entry.isSymlink && (
+                <Link className="h-2.5 w-2.5 absolute -top-1 -right-1.5 text-[#4A90D9]" />
+              )}
             </span>
-          ) : (
-            <span className="w-4 shrink-0" />
+            <span className="truncate ml-1 flex-1 items-center gap-1 flex">
+              {node.entry.name}
+              {node.entry.isSymlink && (
+                <span className="text-[10px] italic text-gray-400 shrink-0">symlink</span>
+              )}
+            </span>
+            {getStatusDot(node.gitStatus)}
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-48">
+          {hasChildren && (
+            <>
+              <ContextMenuItem onClick={() => onNewFile(node.entry.path)}>
+                <FilePlus className="h-4 w-4 mr-2" />
+                New File
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => onNewFolder(node.entry.path)}>
+                <FolderPlus className="h-4 w-4 mr-2" />
+                New Folder
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+            </>
           )}
-          {getIcon(node)}
-          <span className="truncate ml-1 flex-1">{node.entry.name}</span>
-          {getStatusDot(node.gitStatus)}
-        </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="w-48">
-        {hasChildren && (
-          <>
-            <ContextMenuItem onClick={() => onNewFile(node.entry.path)}>
-              <FilePlus className="h-4 w-4 mr-2" />
-              New File
-            </ContextMenuItem>
-            <ContextMenuItem onClick={() => onNewFolder(node.entry.path)}>
-              <FolderPlus className="h-4 w-4 mr-2" />
-              New Folder
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-          </>
-        )}
-        <ContextMenuItem onClick={() => onRename(node.entry)}>
-          <Pencil className="h-4 w-4 mr-2" />
-          Rename
-        </ContextMenuItem>
-        <ContextMenuItem onClick={() => onDelete(node.entry)}>
-          <Trash2 className="h-4 w-4 mr-2 text-red-500" />
-          <span className="text-red-500">Delete</span>
-        </ContextMenuItem>
-        <ContextMenuItem onClick={() => navigator.clipboard.writeText(node.entry.path)}>
-          <Copy className="h-4 w-4 mr-2" />
-          Copy Path
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={() => {/* reveal in explorer */}}>
-          <ExternalLink className="h-4 w-4 mr-2" />
-          Reveal in Explorer
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+          <ContextMenuItem onClick={() => onRename(node.entry)}>
+            <Pencil className="h-4 w-4 mr-2" />
+            Rename
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => onDelete(node.entry)}>
+            <Trash2 className="h-4 w-4 mr-2 text-red-500" />
+            <span className="text-red-500">Delete</span>
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => navigator.clipboard.writeText(node.entry.path)}>
+            <Copy className="h-4 w-4 mr-2" />
+            Copy Path
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => {/* reveal in explorer */}}>
+            <ExternalLink className="h-4 w-4 mr-2" />
+            Reveal in Explorer
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+      {node.expanded && node.children.map((child) => (
+        <TreeItem
+          key={child.entry.path}
+          node={child}
+          depth={depth + 1}
+          onToggle={onToggle}
+          onSelect={onSelect}
+          onRename={onRename}
+          onDelete={onDelete}
+          onNewFile={onNewFile}
+          onNewFolder={onNewFolder}
+        />
+      ))}
+    </>
   )
 }
 
@@ -130,14 +199,14 @@ export function FileTree() {
   const openFile = useEditorStore((s) => s.openFile)
   const projectPath = useLayoutStore((s) => s.projectPath)
 
-  const loadChildren = useCallback(async (dirPath: string): Promise<TreeNode[]> => {
+  const loadChildren = useCallback(async (dirPath: string, expanded: Set<string>): Promise<TreeNode[]> => {
     const entries = await listDirectory(dirPath)
     return entries.map((e) => ({
       entry: e,
       children: [],
-      expanded: expandedPaths.has(e.path),
+      expanded: expanded.has(e.path),
     }))
-  }, [expandedPaths])
+  }, [])
 
   const refreshTree = useCallback(async () => {
     setLoadError(null)
@@ -154,16 +223,13 @@ export function FileTree() {
       }))
       setRootNodes(roots)
 
-      const status = await gitStatus()
       try {
-        const parsed = JSON.parse(status)
-        if (Array.isArray(parsed)) {
-          const map: Record<string, string> = {}
-          for (const item of parsed) {
-            map[item.file] = item.status
-          }
-          setGitStatusMap(map)
+        const entries = await gitStatus(projectPath)
+        const map: Record<string, string> = {}
+        for (const item of entries) {
+          map[item.file] = item.status
         }
+        setGitStatusMap(map)
       } catch {}
     } catch {
       setLoadError('Unable to list directory')
@@ -192,10 +258,16 @@ export function FileTree() {
 
   const handleToggle = async (path: string) => {
     const next = new Set(expandedPaths)
-    if (next.has(path)) {
-      next.delete(path)
-    } else {
+    const isExpanding = !next.has(path)
+
+    if (isExpanding) {
       next.add(path)
+    } else {
+      for (const p of next) {
+        if (p === path || p.startsWith(path + '/') || p.startsWith(path + '\\')) {
+          next.delete(p)
+        }
+      }
     }
     setExpandedPaths(next)
 
@@ -203,7 +275,7 @@ export function FileTree() {
       return Promise.all(
         nodes.map(async (n) => {
           if (n.entry.path === path) {
-            const children = next.has(path) ? await loadChildren(path) : []
+            const children = next.has(path) ? await loadChildren(path, next) : []
             return { ...n, expanded: next.has(path), children }
           }
           if (n.entry.isDir && n.expanded) {

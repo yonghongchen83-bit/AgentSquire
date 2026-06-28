@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import { useEditorStore } from '@/stores/editor-store'
 import { useStatusBarStore } from '@/stores/ui-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { readFile } from '@/lib/ipc'
 import { WelcomeScreen } from '@/components/welcome-screen'
+import { HtmlPreview } from '@/components/html-preview'
 
 export function MonacoWrapper() {
   const activeTabId = useEditorStore((s) => s.activeTabId)
@@ -78,6 +79,12 @@ export function MonacoWrapper() {
     }
   }
 
+  const setViewType = useEditorStore((s) => s.setViewType)
+
+  const handleShowCode = useCallback(() => {
+    if (activeTab) setViewType(activeTab.id, 'code')
+  }, [activeTab, setViewType])
+
   const handleChange = (value: string | undefined) => {
     if (!activeTab || value === undefined) return
     if (value !== contentRef.current) {
@@ -86,6 +93,10 @@ export function MonacoWrapper() {
   }
 
   if (!activeTab) return <WelcomeScreen />
+
+  if (activeTab.viewType === 'preview') {
+    return <HtmlPreview path={activeTab.path} onShowCode={handleShowCode} />
+  }
 
   return (
     <div className="relative h-full w-full">

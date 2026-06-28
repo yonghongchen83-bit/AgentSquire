@@ -4,7 +4,7 @@ import {
   File, FileText, FileJson, FileCode, FileImage,
   FileType, FileTerminal, FileArchive, FileSpreadsheet,
   Folder, FolderOpen, FilePlus, FolderPlus,
-  Pencil, Trash2, ExternalLink, Copy, Link,
+  Pencil, Trash2, ExternalLink, Copy, Link, Eye,
 } from 'lucide-react'
 import { listDirectory, deleteItem, renameItem, createDir, gitStatus, writeFile, onFsChange } from '@/lib/ipc'
 import { useEditorStore } from '@/stores/editor-store'
@@ -84,6 +84,17 @@ function getStatusDot(status?: string) {
   )
 }
 
+function getParentDir(path: string): string {
+  const normalized = path.replace(/\\/g, '/')
+  const idx = normalized.lastIndexOf('/')
+  return idx > 0 ? normalized.slice(0, idx) : ''
+}
+
+function isHtmlFile(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase()
+  return ext === 'html' || ext === 'htm'
+}
+
 function TreeItem({
   node,
   depth,
@@ -93,6 +104,7 @@ function TreeItem({
   onDelete,
   onNewFile,
   onNewFolder,
+  onPreview,
 }: {
   node: TreeNode
   depth: number
@@ -102,8 +114,10 @@ function TreeItem({
   onDelete: (entry: FileEntry) => void
   onNewFile: (parent: string) => void
   onNewFolder: (parent: string) => void
+  onPreview: (entry: FileEntry) => void
 }) {
   const hasChildren = node.entry.isDir
+  const parentPath = hasChildren ? node.entry.path : getParentDir(node.entry.path)
 
   return (
     <>
@@ -142,19 +156,15 @@ function TreeItem({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-48">
-          {hasChildren && (
-            <>
-              <ContextMenuItem onClick={() => onNewFile(node.entry.path)}>
-                <FilePlus className="h-4 w-4 mr-2" />
-                New File
-              </ContextMenuItem>
-              <ContextMenuItem onClick={() => onNewFolder(node.entry.path)}>
-                <FolderPlus className="h-4 w-4 mr-2" />
-                New Folder
-              </ContextMenuItem>
-              <ContextMenuSeparator />
-            </>
-          )}
+          <ContextMenuItem onClick={() => onNewFile(parentPath)}>
+            <FilePlus className="h-4 w-4 mr-2" />
+            New File
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => onNewFolder(parentPath)}>
+            <FolderPlus className="h-4 w-4 mr-2" />
+            New Folder
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem onClick={() => onRename(node.entry)}>
             <Pencil className="h-4 w-4 mr-2" />
             Rename
@@ -167,6 +177,12 @@ function TreeItem({
             <Copy className="h-4 w-4 mr-2" />
             Copy Path
           </ContextMenuItem>
+          {!hasChildren && isHtmlFile(node.entry.name) && (
+            <ContextMenuItem onClick={() => onPreview(node.entry)}>
+              <Eye className="h-4 w-4 mr-2" />
+              Preview
+            </ContextMenuItem>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={() => {/* reveal in explorer */}}>
             <ExternalLink className="h-4 w-4 mr-2" />
@@ -185,6 +201,7 @@ function TreeItem({
           onDelete={onDelete}
           onNewFile={onNewFile}
           onNewFolder={onNewFolder}
+          onPreview={onPreview}
         />
       ))}
     </>
@@ -197,6 +214,7 @@ export function FileTree() {
   const [gitStatusMap, setGitStatusMap] = useState<Record<string, string>>({})
   const [loadError, setLoadError] = useState<string | null>(null)
   const openFile = useEditorStore((s) => s.openFile)
+  const setViewType = useEditorStore((s) => s.setViewType)
   const projectPath = useLayoutStore((s) => s.projectPath)
 
   const loadChildren = useCallback(async (dirPath: string, expanded: Set<string>): Promise<TreeNode[]> => {
@@ -294,6 +312,11 @@ export function FileTree() {
     if (!entry.isDir) openFile(entry.path)
   }
 
+  const handlePreview = (entry: FileEntry) => {
+    openFile(entry.path)
+    setViewType(entry.path, 'preview')
+  }
+
   const handleRename = async (entry: FileEntry) => {
     const name = prompt('Rename:', entry.name)
     if (!name || name === entry.name) return
@@ -378,6 +401,7 @@ export function FileTree() {
           onDelete={handleDelete}
           onNewFile={handleNewFile}
           onNewFolder={handleNewFolder}
+          onPreview={handlePreview}
         />
       ))}
     </div>

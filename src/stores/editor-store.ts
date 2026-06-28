@@ -10,6 +10,7 @@ export interface EditorTab {
   isDirty: boolean
   isLoading: boolean
   isPinned: boolean
+  viewType?: 'code' | 'preview'
 }
 
 interface EditorStore {
@@ -26,6 +27,7 @@ interface EditorStore {
   markDirty: (id: string, dirty: boolean) => void
   setLoading: (id: string, loading: boolean) => void
   setGotoLine: (line: number) => void
+  setViewType: (id: string, viewType: 'code' | 'preview') => void
 }
 
 function pathToLanguage(path: string): string {
@@ -100,4 +102,7 @@ export const useEditorStore = create<EditorStore>((set) => ({
     tabs: s.tabs.map((t) => t.id === id ? { ...t, isLoading: loading } : t),
   })),
   setGotoLine: (line) => set({ gotoLine: line }),
+  setViewType: (id, viewType) => set((s) => ({
+    tabs: s.tabs.map((t) => t.id === id ? { ...t, viewType } : t),
+  })),
 }))

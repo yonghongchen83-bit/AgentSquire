@@ -1,4 +1,3 @@
-import { TitleBar } from '@/components/title-bar'
 import { MenuBar } from '@/components/menu-bar'
 import { Sidebar } from '@/components/sidebar'
 import { StatusBar } from '@/components/status-bar'
@@ -44,7 +43,6 @@ function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-background text-foreground">
-      <TitleBar />
       <MenuBar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />

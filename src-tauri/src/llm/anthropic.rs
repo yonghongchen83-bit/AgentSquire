@@ -13,6 +13,7 @@ pub struct AnthropicProvider {
     api_key: String,
     base_url: String,
     model: String,
+    pub verbose: bool,
 }
 
 impl AnthropicProvider {
@@ -22,6 +23,7 @@ impl AnthropicProvider {
             api_key,
             base_url: base_url.unwrap_or_else(|| "https://api.anthropic.com/v1".into()),
             model,
+            verbose: false,
         }
     }
 }
@@ -30,6 +32,10 @@ impl AnthropicProvider {
 impl LlmProvider for AnthropicProvider {
     fn provider_name(&self) -> &'static str {
         "anthropic"
+    }
+
+    fn verbose(&self) -> bool {
+        self.verbose
     }
 
     fn supports_model(&self, model: &str) -> bool {
@@ -134,7 +140,11 @@ impl LlmProvider for AnthropicProvider {
 
         tokio::spawn(async move {
             let response = client
-                .post(format!("{}/messages", base_url))
+                .post(if base_url.ends_with("/messages") {
+                    base_url.clone()
+                } else {
+                    format!("{}/messages", base_url)
+                })
                 .header("x-api-key", &api_key)
                 .header("anthropic-version", "2023-06-01")
                 .header("Content-Type", "application/json")

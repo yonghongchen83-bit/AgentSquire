@@ -87,7 +87,7 @@ export function WelcomeScreen() {
 
       <div className="flex items-center gap-3 mt-2">
         <button
-          onClick={() => setSettingsOpen(true)}
+          onClick={() => setSettingsOpen(true, 'llm')}
           className="flex items-center gap-1.5 text-xs text-[#4A90D9] hover:underline"
         >
           <Settings className="h-3.5 w-3.5" />
@@ -95,7 +95,7 @@ export function WelcomeScreen() {
         </button>
         <span className="text-[#D6DEE8]">|</span>
         <button
-          onClick={() => setSettingsOpen(true)}
+          onClick={() => setSettingsOpen(true, 'llm')}
           className="flex items-center gap-1.5 text-xs text-[#4A90D9] hover:underline"
         >
           <Wifi className="h-3.5 w-3.5" />

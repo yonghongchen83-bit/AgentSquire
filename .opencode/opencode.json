@@ -1,6 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "snapshot": false,
+  "skills": {
+    "paths": [".opencode/skills"]
+  },
+  "instructions": [".opencode/rules/workflow.md"],
   "mcp": {
     "aicontrol": {
       "type": "remote",

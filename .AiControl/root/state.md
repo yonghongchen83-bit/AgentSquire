@@ -46,3 +46,22 @@ All design documents live in `ArchitecturePlanning/`:
 ## Active Node
 
 Current: `root/UiAutoTestFramework` (UI Auto Test Framework — recently set up)
+
+## Skills
+
+Available reusable workflows:
+- [UI_Business_Test](../UI_Business_Test/skill.md) — AI-driven WDIO test generation and execution
+- [Lessons Learner](../lessons-learner/skill.md) — Post-session lesson documentation and indexing
+
+## Lessons Learned
+
+Key engineering lessons from development sessions — quick reference for recurring issues:
+- [Lessons Learned Index](../lessons-learned/lessons.md)
+
+### Recent Lessons
+| # | Lesson | Area |
+|---|--------|------|
+| [001](../lessons-learned/001-vite-server-survival.md) | Vite dev server dies when shell tool times out | E2E Testing |
+| [002](../lessons-learned/002-tauri-command-naming.md) | Tauri `cmd_` prefix mismatch breaks IPC | Rust / IPC |
+| [003](../lessons-learned/003-tests-bypass-ipc.md) | Tests that bypass IPC give false confidence | E2E Testing |
+| [004](../lessons-learned/004-api-first-diagnosis.md) | Fixing bugs requires reproduction first — never skip to code reading | Debugging Process |

@@ -6,6 +6,7 @@ pub mod search;
 pub mod state;
 pub mod agent;
 pub mod shell;
+pub mod terminal;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -45,6 +46,13 @@ pub fn run() {
             commands::reject_tool_call,
             commands::load_config,
             commands::check_update,
+            commands::test_connection,
+            commands::fetch_models,
+            commands::spawn_terminal,
+            commands::write_stdin,
+            commands::resize_pty,
+            commands::kill_terminal,
+            commands::list_terminals,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

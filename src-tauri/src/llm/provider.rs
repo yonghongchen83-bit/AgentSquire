@@ -165,6 +165,7 @@ pub enum FinishReason {
 pub enum StreamEvent {
     Chunk(String),
     ToolCall(ToolCall),
+    Log(String),
     Done(FinishReason),
     Error(String),
 }
@@ -192,4 +193,5 @@ pub trait LlmProvider: Send + Sync {
 
     fn supports_model(&self, model: &str) -> bool;
     fn provider_name(&self) -> &'static str;
+    fn verbose(&self) -> bool { false }
 }

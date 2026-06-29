@@ -16,12 +16,19 @@ interface TermInstance {
 export function XtermTerminal() {
   const [terminals, setTerminals] = useState<TermInstance[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
   const termRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const terminalsRef = useRef<Map<string, TermInstance>>(new Map())
   const config = useSettingsStore((s) => s.config)
   const counterRef = useRef(1)
   const cleanupRef = useRef<(() => void)[]>([])
+  const mountedRef = useRef(false)
 
-  const createTerminal = useCallback(async () => {
+  const createTerminal = useCallback(async (): Promise<TermInstance | null> => {
+    setError(null)
+    setCreating(true)
+
     const container = document.createElement('div')
     container.className = 'h-full w-full'
 
@@ -41,31 +48,31 @@ export function XtermTerminal() {
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
 
-    let termId = ''
+    let termId: string
     try {
       termId = await spawnTerminal()
-    } catch {
-      termId = `local-${Date.now()}`
+    } catch (e) {
+      setCreating(false)
+      setError(`Failed to create terminal: ${e}`)
+      return null
     }
 
     term.onData((data) => {
-      if (termId) writeStdin(termId, data).catch(() => {})
+      writeStdin(termId, data).catch(() => {})
     })
 
     term.onResize(({ cols, rows }) => {
-      if (termId) resizePty(termId, cols, rows).catch(() => {})
+      resizePty(termId, cols, rows).catch(() => {})
     })
 
-    const inst: TermInstance = {
-      id: termId,
-      label: `Terminal ${counterRef.current++}`,
-      term,
-      fitAddon,
-      container,
-    }
+    const label = `Terminal ${counterRef.current++}`
+    const inst: TermInstance = { id: termId, label, term, fitAddon, container }
+
+    terminalsRef.current.set(termId, inst)
 
     setTerminals((prev) => [...prev, inst])
     setActiveId(termId)
+    setCreating(false)
 
     setTimeout(() => {
       term.open(container)
@@ -76,14 +83,14 @@ export function XtermTerminal() {
   }, [config?.terminalFontSize])
 
   useEffect(() => {
+    if (mountedRef.current) return
+    mountedRef.current = true
+
     const setupListeners = async () => {
       try {
         const output = await onTerminalOutput(({ terminal_id, data }) => {
-          setTerminals((prev) => {
-            const inst = prev.find((t) => t.id === terminal_id)
-            if (inst) inst.term.write(data)
-            return prev
-          })
+          const inst = terminalsRef.current.get(terminal_id)
+          if (inst) inst.term.write(data)
         })
         if (output && typeof output.unlisten === 'function') {
           cleanupRef.current.push(output.unlisten)
@@ -92,13 +99,10 @@ export function XtermTerminal() {
 
       try {
         const exit = await onTerminalExit(({ terminal_id, code }) => {
-          setTerminals((prev) => {
-            const inst = prev.find((t) => t.id === terminal_id)
-            if (inst) {
-              inst.term.write(`\r\n\x1b[31mProcess exited with code ${code}\x1b[0m\r\n`)
-            }
-            return prev
-          })
+          const inst = terminalsRef.current.get(terminal_id)
+          if (inst) {
+            inst.term.write(`\r\n\x1b[31mProcess exited with code ${code}\x1b[0m\r\n`)
+          }
         })
         if (exit && typeof exit.unlisten === 'function') {
           cleanupRef.current.push(exit.unlisten)
@@ -138,11 +142,12 @@ export function XtermTerminal() {
   }, [terminals, activeId])
 
   const handleClose = async (id: string) => {
-    const inst = terminals.find((t) => t.id === id)
+    const inst = terminalsRef.current.get(id)
     if (inst) {
       inst.term.dispose()
       try { await killTerminal(id) } catch {}
     }
+    terminalsRef.current.delete(id)
     setTerminals((prev) => {
       const next = prev.filter((t) => t.id !== id)
       if (activeId === id && next.length > 0) {
@@ -155,7 +160,7 @@ export function XtermTerminal() {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-[#1A2332]">
       <div className="flex items-center h-7 bg-[#1A2332] border-b border-white/10 shrink-0 overflow-x-auto">
         {terminals.map((inst) => (
           <div
@@ -178,13 +183,24 @@ export function XtermTerminal() {
         ))}
         <button
           onClick={() => createTerminal()}
-          className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-white hover:bg-[#222233] shrink-0 transition-colors"
+          disabled={creating}
+          className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-white hover:bg-[#222233] shrink-0 transition-colors disabled:opacity-40"
           title="New terminal"
         >
           <svg viewBox="0 0 12 12" className="w-3.5 h-3.5" fill="currentColor"><path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.5" fill="none" /></svg>
         </button>
       </div>
       <div className="flex-1 relative">
+        {creating && (
+          <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">
+            Starting terminal...
+          </div>
+        )}
+        {error && !creating && terminals.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center text-red-400 text-sm px-4 text-center">
+            {error}
+          </div>
+        )}
         {terminals.map((inst) => (
           <div
             key={inst.id}

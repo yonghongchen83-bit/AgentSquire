@@ -36,6 +36,7 @@ pub struct AppConfig {
     pub search_exclude: Vec<String>,
     pub terminal_shell: Option<String>,
     pub terminal_font_size: u16,
+    pub verbose_logging: bool,
 }
 
 impl Default for AppConfig {
@@ -54,6 +55,7 @@ impl Default for AppConfig {
             ],
             terminal_shell: None,
             terminal_font_size: 13,
+            verbose_logging: false,
         }
     }
 }
@@ -61,13 +63,20 @@ impl Default for AppConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfig {
-    pub id: String,
+    #[serde(alias = "id")]
+    pub provider_type: String,
     pub name: String,
     #[serde(default)]
     pub api_key: String,
     pub model: String,
     #[serde(default)]
+    pub models: Vec<String>,
+    #[serde(default)]
     pub endpoint: Option<String>,
+    #[serde(default)]
+    pub metadata: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -130,11 +139,14 @@ mod tests {
         let config = AppConfig {
             llm_providers: vec![
                 ProviderConfig {
-                    id: "openai-1".into(),
+                    provider_type: "openai".into(),
                     name: "openai-main".into(),
                     api_key: "sk-xxx".into(),
                     model: "gpt-4".into(),
+                    models: vec!["gpt-4".into()],
                     endpoint: None,
+                    metadata: std::collections::HashMap::new(),
+                    category: None,
                 },
             ],
             ..Default::default()

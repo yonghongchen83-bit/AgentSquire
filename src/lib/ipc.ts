@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import type { FileEntry, AppConfig, SessionSummary, SessionWithMessages, Session, SearchMatch, ReplaceOptions } from '@/types/ipc'
+import type { FileEntry, AppConfig, SessionSummary, SessionWithMessages, Session, SearchMatch, ReplaceOptions, ProviderInfo } from '@/types/ipc'
 
 export async function listDirectory(path: string): Promise<FileEntry[]> {
   return invoke('list_directory', { path })
@@ -26,8 +26,8 @@ export async function renameItem(oldPath: string, newPath: string): Promise<void
   return invoke('rename_item', { oldPath, newPath })
 }
 
-export async function gitStatus(): Promise<string> {
-  return invoke('git_status')
+export async function gitStatus(path?: string): Promise<{ file: string; status: string }[]> {
+  return invoke('git_status', { path: path ?? null })
 }
 
 export async function loadConfig(): Promise<AppConfig> {
@@ -58,12 +58,39 @@ export async function sendMessage(
   sessionId: string,
   content: string,
   providerName?: string,
+  model?: string,
 ): Promise<void> {
-  return invoke('send_message', { sessionId, content, providerName })
+  return invoke('send_message', { sessionId, content, providerName, model: model ?? null })
 }
 
-export async function listProviders(): Promise<[string, string][]> {
+export async function listProviders(): Promise<ProviderInfo[]> {
   return invoke('list_providers')
+}
+
+export async function fetchModels(
+  providerType: string,
+  endpoint: string,
+  apiKey?: string,
+): Promise<string[]> {
+  return invoke('fetch_models', {
+    providerType,
+    endpoint,
+    apiKey: apiKey ?? null,
+  })
+}
+
+export async function testConnection(
+  providerType: string,
+  apiKey: string,
+  model: string,
+  endpoint?: string,
+): Promise<string> {
+  return invoke('test_connection', {
+    providerType,
+    apiKey,
+    model,
+    endpoint: endpoint ?? null,
+  })
 }
 
 export async function checkUpdate(): Promise<{ available: boolean; version?: string; body?: string }> {

@@ -6,18 +6,60 @@ Each UI test case is defined as a **markdown task spec** in `e2e/tasks/`. The AI
 
 ## Workflow
 
+### Unconditional Rule: Reproduce Before Planning
+**This rule applies to ALL bug-fixing scenarios without exception:**
+1. **Reproduce** — Observe the bug in the running app. Gather concrete evidence (error logs, screenshots, unexpected behavior).
+2. **Root cause** — Only after reproduction, analyze code to find the cause.
+3. **Plan & fix** — Design the fix and implement it.
+4. **Verify** — Re-reproduce to confirm the fix works.
+
+No planning, no designing, no coding is permitted until the bug has been successfully reproduced.
+
+### Test Creation Workflow
+
 1. **Define the task** — Create `e2e/tasks/task-NNN.md` with: description, steps, expected results, and selectors
 2. **Generate the test** — AI writes `e2e/specs/task-NNN-*.test.ts` implementing the spec
-3. **Run the test** — Execute against a running Tauri dev instance
-4. **Verify** — Check test output; if it passes, mark the spec `status: verified`
-5. **Iterate** — Fix failures and retry until all assertions pass
+3. **Set up test environment** — Start Vite dev server + MSEdgeDriver + tauri-driver (see below)
+4. **Run the test** — Execute against a running Tauri dev instance
+5. **Verify** — Check test output; if it passes, mark the spec `status: verified`
+6. **Iterate** — Fix failures and retry until all assertions pass
 
 ## Prerequisites
 
-- `pnpm dev` running (Vite dev server on port 5173)
-- `tauri-driver.exe` running (`cargo install tauri-driver`; needs MSEdgeDriver in PATH)
-- The Tauri app running (`npx tauri dev`)
-- MSEdgeDriver: installed via `npm install -g @sitespeed.io/edgedriver`
+### Required Tools (one-time install)
+- Node 20+ with pnpm
+- Rust stable with `cargo install tauri-cli --version ^2`
+- `cargo install tauri-driver` → `~/.cargo/bin/tauri-driver.exe`
+- `npm install -g @sitespeed.io/edgedriver` → MSEdgeDriver
+
+### Runtime Services (start before test run)
+
+```powershell
+# ── Terminal 1: Vite Dev Server ──
+# IMPORTANT: Use cmd.exe /c — otherwise the process is killed when the
+# shell tool times out (see .AiControl/lessons-learned/001-vite-server-survival.md)
+Start-Process -WindowStyle Hidden -FilePath "cmd.exe" -ArgumentList @"
+/c cd /d D:\work\MyAgent && npx vite --port 5173
+"@
+
+# ── Terminal 2: MSEdgeDriver + tauri-driver ──
+# MSEdgeDriver first:
+Start-Process -WindowStyle Hidden -FilePath "cmd.exe" -ArgumentList @"
+/c C:\Users\cheny\AppData\Roaming\npm\node_modules\@sitespeed.io\edgedriver\vendor\msedgedriver.exe --port=9515
+"@
+
+# Then tauri-driver pointing to MSEdgeDriver:
+Start-Process -WindowStyle Hidden -FilePath "cmd.exe" -ArgumentList @"
+/c C:\Users\cheny\.cargo\bin\tauri-driver.exe --native-driver C:\Users\cheny\AppData\Roaming\npm\node_modules\@sitespeed.io\edgedriver\vendor\msedgedriver.exe
+"@
+```
+
+### Verify all services are up
+```powershell
+try { $r = Invoke-WebRequest -Uri "http://localhost:5173/" -UseBasicParsing -TimeoutSec 5; "Vite: $($r.StatusCode)" } catch { "Vite: DOWN" }
+try { $r = Invoke-WebRequest -Uri "http://127.0.0.1:9515/status" -UseBasicParsing -TimeoutSec 3; "EdgeDriver: $($r.StatusCode)" } catch { "EdgeDriver: DOWN" }
+try { $r = Invoke-WebRequest -Uri "http://127.0.0.1:4444/" -UseBasicParsing -TimeoutSec 3; "tauri-driver: $($_.Exception.Message)" } catch { "tauri-driver: running (404 expected)" }
+```
 
 ## Test File Template
 
@@ -25,14 +67,13 @@ Each UI test case is defined as a **markdown task spec** in `e2e/tasks/`. The AI
 import { expect } from '@wdio/globals'
 
 async function waitForAppReady(): Promise<void> {
-  // IMPORTANT: Do NOT navigate away from the Tauri origin.
-  // The webview already starts at the app URL (tauri://localhost or similar).
-  // Only do browser.url() if you need to hard-reload to clear state.
-  // If you must reload, use the Tauri origin, NOT localhost:5173.
-  await browser.url('https://tauri.localhost/')
+  await browser.url('http://localhost:5173/')
   await browser.waitUntil(
-    async () => { /* wait for key element */ },
-    { timeout: 15000 }
+    async () => {
+      const exists = await $('#left-panel').isExisting()
+      return exists
+    },
+    { timeout: 15000, timeoutMsg: 'App did not render left panel within 15s' },
   )
 }
 
@@ -48,8 +89,14 @@ describe('Task-NNN: Title', () => {
 ## Running Tests
 
 ```powershell
-# From project root, with tauri dev + tauri-driver already running:
+# Single spec:
 npx wdio run ./e2e/wdio.conf.ts --spec e2e/specs/task-NNN-*.test.ts
+
+# All specs (use explicit paths — glob pattern broken on Windows):
+npx wdio run ./e2e/wdio.conf.ts --spec e2e/specs/task-001-*.test.ts e2e/specs/task-002-*.test.ts ...
+
+# Rebuild Rust backend after changes:
+cd src-tauri; cargo build; cd ..
 ```
 
 ## CRITICAL GAP — What Tests DON'T Verify
@@ -76,104 +123,19 @@ This means tests **never exercise** the real Rust backend IPC handlers:
 
 ### Root Cause
 
-`browser.url('http://localhost:5173/')` navigates the Tauri webview **away from the Tauri origin** to the Vite dev server. At `localhost:5173`:
+`browser.url('http://localhost:5173/')` navigates the Tauri webview to the Vite dev server. While the IPC bridge (`window.__TAURI_INTERNALS__`) IS available at this URL, the tests never use it — they go directly to Zustand stores exposed on `window.__layoutStore`.
 
-- `window.__TAURI_INTERNALS__` may not be available or may behave differently
-- `@tauri-apps/api` calls (`invoke`, event listeners like `onTerminalOutput`) fail silently
-- The IPC bridge is tied to the Tauri origin (`tauri://localhost`, `https://tauri.localhost/`, or the app's configured dev URL)
-
-**The correct origin for IPC during `tauri dev` is NOT `localhost:5173`**. The webview's actual URL is something like `https://tauri.localhost/` which loads content proxied from Vite. Navigating to raw `localhost:5173` skips the IPC injection that happens at the Tauri origin.
-
-### How to Close the Gap
-
-**1. Use the Tauri origin in tests**
-
-Replace `browser.url('http://localhost:5173/')` with the Tauri app's actual URL:
-
-```typescript
-// Use the Tauri origin — IPC bridge is active here
-await browser.url('https://tauri.localhost/')
-// or use browser.reloadSession() to clear state without navigating
-```
-
-To find the exact Tauri dev URL, check:
-- Console output when running `npx tauri dev`
-- Or inspect `window.location.origin` in the running webview
-
-**2. Test IPC directly before UI testing**
-
-Add a validation test that confirms IPC works end-to-end:
-
-```typescript
-it('IPC bridge should be available', async () => {
-  const hasBridge = await browser.execute(() => {
-    return typeof window.__TAURI_INTERNALS__?.invoke === 'function'
-  })
-  expect(hasBridge).toBe(true)
-})
-
-it('listDirectory IPC should return entries', async () => {
-  const entries = await browser.execute(async (path) => {
-    try {
-      return await window.__TAURI_INTERNALS__.invoke('plugin:fs|read_dir', { path })
-    } catch (e) {
-      return { error: String(e) }
-    }
-  }, 'D:\\work\\MyAgent')
-  expect(Array.isArray(entries)).toBe(true)
-  expect(entries.length).toBeGreaterThan(0)
-})
-```
-
-**3. Remove store-exposure workarounds**
-
-Once IPC works, remove `window.__layoutStore` / `window.__searchStore` from `App.tsx`. Tests should interact through the **actual UI** (clicks, inputs, waits), not store manipulation.
-
-**4. Test via real UI interactions, not execute()**
-
-Instead of:
-```typescript
-await browser.execute(() => {
-  const store = (window as any).__layoutStore.getState()
-  store.setProjectPath('D:\\work\\MyAgent')
-})
-```
-
-Do:
-```typescript
-const openBtn = await $('button=Open Project')
-await openBtn.click()
-// ... interact with the actual Tauri dialog
-// (may require OS-level automation for native dialogs)
-```
-
-For native dialogs (file open, etc.) that can't be automated via WebDriver, consider:
-- Preselecting paths via Tauri's CLI flags or env vars
-- Mocking the dialog response on the Rust side for dev mode
-- Using `tauri::api::dialog::ask` with auto-approve in dev builds
-
-### What to Verify When IPC Works
-
-Once the Tauri origin is used and IPC is functional, run these checks:
-
-| Check | Method | Expected |
-|-------|--------|----------|
-| `listDirectory` | `browser.execute` invoking IPC directly | Returns array of FileEntry |
-| `searchFiles` | `browser.execute` invoking IPC directly | Returns matching results |
-| `spawnTerminal` | `browser.execute` invoking IPC directly | Returns terminal ID |
-| `onTerminalOutput` | Subscribe via IPC, then write to terminal | Data callback fires |
-| `gitStatus` | `browser.execute` invoking IPC directly | Returns status string |
-| `onFsChange` | Create a file on disk via Node | RefreshTree fires |
-
-Only after these pass should you write UI tests that rely on them.
+**The fix for future tests**: Prefer real UI interactions (clicks, inputs) over store manipulation. Add an IPC bridge validation test before writing IPC-dependent tests. See `.AiControl/lessons-learned/003-tests-bypass-ipc.md` for detailed guidance.
 
 ## Key Lessons Learned
 
-- `react-resizable-panels` v4 treats **number** props as **pixels** — use strings like `"20%"`
-- `onLayout` is not a valid prop in v4; use `onLayoutChanged` instead
+See [lessons-learned index](../lessons-learned/lessons.md) for full write-ups:
+
+- **Lesson 001**: Use `cmd.exe /c` to launch Vite dev server — `Start-Process` without it gets killed on shell timeout
+- **Lesson 002**: Tauri v2 command names are exact Rust function names — no `cmd_` prefix. Verify Rust fn name matches `invoke('name')`
+- **Lesson 003**: Tests that manipulate stores via `browser.execute` pass but verify nothing about the real backend
+- React-resizable-panels v4 treats **number** props as **pixels** — use strings like `"20%"`
 - Panel elements use `data-testid` attribute (not `data-panel-id`)
 - For drag actions, use `browser.action('pointer').move({ origin: element, x: offset, y: 0 })`
-- **DO NOT use `browser.url('http://localhost:5173/')`** — navigates away from Tauri origin, breaks IPC. Use `https://tauri.localhost/` or find the actual Tauri dev URL.
-- Tests that bypass IPC via `browser.execute` on Zustand stores pass but verify NOTHING about the real backend
+- WDIO spec glob pattern `./e2e/specs/**/*.ts` doesn't work on Windows — use explicit `--spec` flags
 - Always add an IPC bridge validation test before relying on Tauri commands in tests
-- The xterm-terminal component crashes if IPC event listeners (`onTerminalOutput`, `onTerminalExit`) fail. Wrap them in try/catch. Fix is in `src/components/xterm-terminal.tsx`.

@@ -1,11 +1,12 @@
 import { create } from 'zustand'
-import type { SessionSummary, Message, Block, ToolApprovalRequest } from '@/types/ipc'
+import type { SessionSummary, Message, Block, ToolApprovalRequest, ProviderInfo } from '@/types/ipc'
 import {
   listConversations,
   getConversation,
   createConversation,
   deleteConversation,
   sendMessage as sendMessageIpc,
+  listProviders,
   onStreamChunk,
   onStreamToolCall,
   onStreamToolResult,
@@ -54,14 +55,18 @@ interface ChatState {
   streamingBlocks: Block[]
   streamingText: string
   error: string | null
-  providerNames: string[]
+  providers: ProviderInfo[]
   selectedProvider: string
+  selectedModel: string
   pendingApprovals: ToolApprovalRequest[]
 
   loadConversations: () => Promise<void>
+  loadProviders: () => Promise<void>
   selectConversation: (id: string) => Promise<void>
   createNewConversation: () => Promise<string | null>
   deleteConversation: (id: string) => Promise<void>
+  setSelectedProvider: (name: string) => void
+  setSelectedModel: (model: string) => void
   sendMessage: (content: string) => Promise<void>
   cancelStreaming: () => void
   clearError: () => void
@@ -192,8 +197,9 @@ export const useChatStore = create<ChatState>((set, get) => {
     streamingBlocks: [],
     streamingText: '',
     error: null,
-    providerNames: [],
+    providers: [],
     selectedProvider: '',
+    selectedModel: '',
     pendingApprovals: [],
 
     loadConversations: async () => {
@@ -204,6 +210,27 @@ export const useChatStore = create<ChatState>((set, get) => {
         set({ error: String(e) })
       }
     },
+
+    loadProviders: async () => {
+      try {
+        const providers = await listProviders()
+        set((s) => {
+          const firstProvider = providers[0]
+          const firstModel = firstProvider?.models[0] || ''
+          return {
+            providers,
+            selectedProvider: s.selectedProvider || firstProvider?.name || '',
+            selectedModel: s.selectedModel || firstModel,
+          }
+        })
+      } catch {
+        // ignore — will show empty selector
+      }
+    },
+
+    setSelectedProvider: (name: string) => set({ selectedProvider: name }),
+
+    setSelectedModel: (model: string) => set({ selectedModel: model }),
 
     selectConversation: async (id: string) => {
       try {
@@ -249,7 +276,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     sendMessage: async (content: string) => {
-      const { activeConversationId, selectedProvider } = get()
+      const { activeConversationId, selectedProvider, selectedModel } = get()
       let sessionId = activeConversationId
 
       if (!sessionId) {
@@ -280,7 +307,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       await setupStreamListeners(sessionId)
 
       try {
-        await sendMessageIpc(sessionId, content, selectedProvider || undefined)
+        await sendMessageIpc(sessionId, content, selectedProvider || undefined, selectedModel || undefined)
       } catch (e) {
         set({
           isStreaming: false,
@@ -327,3 +354,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
   }
 })
+
+if (typeof window !== 'undefined' && (import.meta as any).env?.DEV) {
+  ;(window as any).__chatStore = useChatStore
+}

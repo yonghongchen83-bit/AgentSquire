@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::agent::{
@@ -9,34 +9,42 @@ use crate::fs::watcher::{FileEvent, FileWatcher};
 use crate::llm::provider::{
     ChatMessage, ChatRequest, ChatRole, FinishReason, StreamEvent, ToolCall,
 };
-use crate::llm::registry::ProviderRegistry;
+use crate::llm::registry::{ProviderInfo, ProviderRegistry};
 use crate::search::grep::{self, GrepReplaceOptions, SearchMatch, SearchOptions};
 use crate::shell::exec::{self, CommandResult};
 use crate::state::config::{self, AppConfig};
+use crate::terminal::manager::PtyManager;
 use crate::storage::conversation_store::{
     ConversationStore, NewMessage, NewSession, SessionId, SessionSummary, SessionWithMessages,
 };
 
 pub struct AppState {
-    pub config: AppConfig,
+    pub config: RwLock<AppConfig>,
     pub store: Arc<dyn ConversationStore>,
-    pub registry: Arc<ProviderRegistry>,
+    pub registry: RwLock<ProviderRegistry>,
 }
 
 pub struct WatcherState {
     pub watcher: Mutex<FileWatcher>,
 }
 
+pub struct TerminalState {
+    pub manager: PtyManager,
+}
+
 // ── Config ──
 
 #[tauri::command]
 pub fn get_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
-    Ok(state.config.clone())
+    state.config.read().map(|c| c.clone()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn save_config(new_config: AppConfig) -> Result<(), String> {
-    config::save_config(&new_config).map_err(|e| e.to_string())
+pub fn save_config(new_config: AppConfig, state: State<'_, AppState>) -> Result<(), String> {
+    config::save_config(&new_config).map_err(|e| e.to_string())?;
+    *state.config.write().map_err(|e| e.to_string())? = new_config.clone();
+    state.registry.write().map_err(|e| e.to_string())?.rebuild_from_config(&new_config);
+    Ok(())
 }
 
 #[tauri::command]
@@ -112,6 +120,7 @@ pub async fn send_message(
     session_id: String,
     content: String,
     provider_name: Option<String>,
+    model: Option<String>,
 ) -> Result<(), String> {
     let sid =
         SessionId::parse_str(&session_id).map_err(|e| format!("Invalid session ID: {}", e))?;
@@ -126,32 +135,29 @@ pub async fn send_message(
         .await
         .map_err(|e| e.to_string())?;
 
-    let provider_key = provider_name
-        .clone()
-        .or_else(|| state.registry.default_name().map(|s| s.to_string()))
-        .ok_or_else(|| "No default LLM provider configured".to_string())?;
-
     let session = state
         .store
         .get_session(sid)
         .await
         .map_err(|e| e.to_string())?;
 
-    let registry = state.registry.clone();
+    let (provider_arc, selected_model) = {
+        let reg = state.registry.read().map_err(|e| e.to_string())?;
+        let name = provider_name
+            .clone()
+            .or_else(|| reg.default_name().map(|s| s.to_string()))
+            .ok_or_else(|| "No default LLM provider configured".to_string())?;
+        let entry = reg.get(&name)
+            .ok_or_else(|| format!("Provider '{}' not found", name))?;
+        let sm = model.clone().unwrap_or_else(|| entry.default_model.clone());
+        (entry.provider.clone(), sm)
+    };
+
     let store = state.store.clone();
     let app_clone = app.clone();
     let pending = pending_state.pending.clone();
 
     tokio::spawn(async move {
-        let provider = match registry.get(&provider_key) {
-            Some(p) => p,
-            None => {
-                let _ = app_clone
-                    .emit("stream-error", format!("Provider '{}' not found", provider_key));
-                return;
-            }
-        };
-
         let tool_registry = Arc::new(ToolRegistry::new());
         let tool_defs = tool_registry.definitions();
 
@@ -174,14 +180,14 @@ pub async fn send_message(
 
         loop {
             let request = ChatRequest {
-                model: String::new(),
+                model: selected_model.clone(),
                 messages: messages.clone(),
                 tools: tool_defs.clone(),
                 temperature: None,
                 max_tokens: None,
             };
 
-            let mut stream = match provider.chat(request).await {
+            let mut stream = match provider_arc.chat(request).await {
                 Ok(s) => s,
                 Err(e) => {
                     let _ = app_clone.emit("stream-error", e.to_string());
@@ -202,6 +208,13 @@ pub async fn send_message(
                     StreamEvent::ToolCall(tc) => {
                         tool_calls.push(tc.clone());
                         let _ = app_clone.emit("stream-tool-call", tc);
+                    }
+                    StreamEvent::Log(msg) => {
+                        let _ = app_clone.emit("output:append", serde_json::json!({
+                            "source": "chat",
+                            "line": msg,
+                            "timestamp": chrono::Utc::now().to_rfc3339(),
+                        }));
                     }
                     StreamEvent::Done(reason) => {
                         finish_reason = Some(reason);
@@ -367,8 +380,202 @@ pub async fn reject_tool_call(
 // ── LLM Providers ──
 
 #[tauri::command]
-pub fn list_providers(state: State<'_, AppState>) -> Vec<(String, String)> {
-    state.registry.list()
+pub fn list_providers(state: State<'_, AppState>) -> Vec<ProviderInfo> {
+    state.registry.read().map(|reg| reg.list()).unwrap_or_default()
+}
+
+#[tauri::command]
+pub async fn test_connection(
+    provider_type: String,
+    api_key: String,
+    model: String,
+    endpoint: Option<String>,
+) -> Result<String, String> {
+    if api_key.is_empty() {
+        return Err("API key is required".to_string());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|_| "Connection failed: unable to create HTTP client".to_string())?;
+
+    match provider_type.to_lowercase().as_str() {
+        "openai" => {
+            let base = endpoint.unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+            let url = if base.ends_with("/chat/completions") || base.ends_with("/responses") {
+                base
+            } else {
+                format!("{}/chat/completions", base.trim_end_matches('/'))
+            };
+
+            let body = serde_json::json!({
+                "model": model,
+                "messages": [{"role": "user", "content": "Say ok"}],
+                "max_tokens": 50,
+                "stream": false,
+            });
+
+            let resp = client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| {
+                    let msg = e.to_string();
+                    if msg.contains("dns") || msg.contains("resolve") || msg.contains("connect") || msg.contains("refused") || msg.contains("timed out") {
+                        "Connection failed: unable to reach the server".to_string()
+                    } else {
+                        format!("Connection failed: {}", msg)
+                    }
+                })?;
+
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let body_text = resp.text().await.unwrap_or_default();
+                let detail = if body_text.is_empty() {
+                    String::new()
+                } else {
+                    let trimmed = body_text.trim();
+                    let snippet = if trimmed.len() > 300 { &trimmed[..300] } else { trimmed };
+                    format!(": {}", snippet)
+                };
+                return match status.as_u16() {
+                    401 => Err(format!("Connection failed: invalid API key or authentication error{}", detail)),
+                    429 => Err(format!("Connection failed: rate limited by the server{}", detail)),
+                    _ => Err(format!("Connection failed: HTTP {}{}", status, detail)),
+                };
+            }
+
+            let json: serde_json::Value = resp.json().await
+                .map_err(|_| "Connection failed: invalid response from server".to_string())?;
+
+            let content = json["choices"][0]["message"]["content"].as_str().unwrap_or("");
+            let finish = json["choices"][0]["finish_reason"].as_str().unwrap_or("");
+
+            if finish == "stop" || finish == "length" {
+                Ok("Connection successful".to_string())
+            } else {
+                Ok(format!("Connected (response: {})", content))
+            }
+        }
+        "anthropic" => {
+            let base = endpoint.unwrap_or_else(|| "https://api.anthropic.com/v1".to_string());
+            let url = if base.ends_with("/messages") {
+                base
+            } else {
+                format!("{}/messages", base.trim_end_matches('/'))
+            };
+
+            let body = serde_json::json!({
+                "model": model,
+                "max_tokens": 50,
+                "messages": [{"role": "user", "content": "Say ok"}],
+            });
+
+            let resp = client
+                .post(&url)
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|_| "Connection failed: unable to reach the server".to_string())?;
+
+            if !resp.status().is_success() {
+                let status = resp.status();
+                return match status.as_u16() {
+                    401 => Err("Connection failed: invalid API key or authentication error".to_string()),
+                    429 => Err("Connection failed: rate limited by the server".to_string()),
+                    _ => Err(format!("Connection failed: HTTP {}", status)),
+                };
+            }
+
+            Ok("Connection successful".to_string())
+        }
+        _ => Err(format!("Unknown provider type: {}", provider_type)),
+    }
+}
+
+#[tauri::command]
+pub async fn fetch_models(
+    provider_type: String,
+    endpoint: String,
+    api_key: Option<String>,
+) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let models_url = {
+        let trimmed = endpoint.trim_end_matches('/');
+        if trimmed.ends_with("/chat/completions") || trimmed.ends_with("/responses") || trimmed.ends_with("/messages") {
+            trimmed.rsplit_once('/').map(|(base, _)| base).unwrap_or(trimmed).to_string()
+        } else {
+            trimmed.to_string()
+        }
+    };
+
+    match provider_type.to_lowercase().as_str() {
+        "openai" | "custom" => {
+            let url = format!("{}/models", models_url);
+            let mut req = client.get(&url);
+            if let Some(key) = &api_key {
+                req = req.header("Authorization", format!("Bearer {}", key));
+            }
+            let resp = req.send().await.map_err(|e| format!("HTTP error: {}", e))?;
+            let status = resp.status();
+            let text = resp.text().await.map_err(|e| e.to_string())?;
+            if !status.is_success() {
+                return Err(format!("Server returned {}: {}", status, text));
+            }
+            let json: serde_json::Value =
+                serde_json::from_str(&text).map_err(|e| format!("Invalid JSON: {}", e))?;
+            let models = json["data"]
+                .as_array()
+                .ok_or_else(|| "No 'data' array in response".to_string())?;
+            let names: Vec<String> = models
+                .iter()
+                .filter_map(|m| m["id"].as_str().map(|s| s.to_string()))
+                .collect();
+            if names.is_empty() {
+                return Err("No models found in response".to_string());
+            }
+            Ok(names)
+        }
+        "anthropic" => {
+            let url = format!("{}/models", models_url);
+            let mut req = client.get(&url);
+            if let Some(key) = &api_key {
+                req = req.header("x-api-key", key);
+                req = req.header("anthropic-version", "2023-06-01");
+            }
+            let resp = req.send().await.map_err(|e| format!("HTTP error: {}", e))?;
+            let status = resp.status();
+            let text = resp.text().await.map_err(|e| e.to_string())?;
+            if !status.is_success() {
+                return Err(format!("Server returned {}: {}", status, text));
+            }
+            let json: serde_json::Value =
+                serde_json::from_str(&text).map_err(|e| format!("Invalid JSON: {}", e))?;
+            let models = json["data"]
+                .as_array()
+                .ok_or_else(|| "No 'data' array in response".to_string())?;
+            let names: Vec<String> = models
+                .iter()
+                .filter_map(|m| m["id"].as_str().map(|s| s.to_string()))
+                .collect();
+            if names.is_empty() {
+                return Err("No models found in response".to_string());
+            }
+            Ok(names)
+        }
+        _ => Err(format!("Unknown provider type: {}", provider_type)),
+    }
 }
 
 // ── File Operations ──
@@ -514,6 +721,51 @@ pub fn watch_directory(
     Ok(())
 }
 
+// ── Terminal ──
+
+#[tauri::command]
+pub async fn spawn_terminal(
+    app: AppHandle,
+    term_state: State<'_, TerminalState>,
+    shell: Option<String>,
+) -> Result<String, String> {
+    term_state.manager.spawn(app, shell, None).await
+}
+
+#[tauri::command]
+pub async fn write_stdin(
+    term_state: State<'_, TerminalState>,
+    terminal_id: String,
+    data: String,
+) -> Result<(), String> {
+    term_state.manager.write(&terminal_id, &data).await
+}
+
+#[tauri::command]
+pub async fn resize_pty(
+    term_state: State<'_, TerminalState>,
+    terminal_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    term_state.manager.resize(&terminal_id, cols, rows).await
+}
+
+#[tauri::command]
+pub async fn kill_terminal(
+    term_state: State<'_, TerminalState>,
+    terminal_id: String,
+) -> Result<(), String> {
+    term_state.manager.kill(&terminal_id).await
+}
+
+#[tauri::command]
+pub async fn list_terminals(
+    term_state: State<'_, TerminalState>,
+) -> Result<Vec<String>, String> {
+    Ok(term_state.manager.list().await)
+}
+
 // ── App Setup ──
 
 pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -531,7 +783,7 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     let db = crate::state::db::Database::open(&db_path)
         .map_err(|e| format!("Failed to open database: {}", e))?;
 
-    let registry = Arc::new(ProviderRegistry::from_config(&config));
+    let registry = ProviderRegistry::from_config(&config);
 
     let (file_watcher, mut watcher_rx) = FileWatcher::new();
 
@@ -542,13 +794,17 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     });
 
     app.manage(AppState {
-        config,
+        config: RwLock::new(config),
         store: Arc::new(db),
-        registry,
+        registry: RwLock::new(registry),
     });
 
     app.manage(WatcherState {
         watcher: Mutex::new(file_watcher),
+    });
+
+    app.manage(TerminalState {
+        manager: PtyManager::new(),
     });
 
     app.manage(PendingApprovals::new());

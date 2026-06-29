@@ -28,6 +28,7 @@ describe('settings-store', () => {
       searchExclude: ['node_modules'],
       terminalShell: '/bin/zsh',
       terminalFontSize: 14,
+      verboseLogging: false,
     }
     useSettingsStore.getState().setConfig(config)
     expect(useSettingsStore.getState().config).toEqual(config)
@@ -38,10 +39,21 @@ describe('settings-store', () => {
     expect(useSettingsStore.getState().showSplash).toBe(false)
   })
 
+  it('updateVerboseLogging toggles verbose logging', () => {
+    useSettingsStore.getState().setConfig({
+      theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
+      llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      verboseLogging: false,
+    })
+    useSettingsStore.getState().updateVerboseLogging(true)
+    expect(useSettingsStore.getState().config?.verboseLogging).toBe(true)
+  })
+
   it('updateTheme changes theme', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
       llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      verboseLogging: false,
     })
     useSettingsStore.getState().updateTheme('dark')
     expect(useSettingsStore.getState().config?.theme).toBe('dark')
@@ -51,6 +63,7 @@ describe('settings-store', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 13, tabSize: 4, wordWrap: false,
       llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      verboseLogging: false,
     })
     useSettingsStore.getState().updateEditorFontSize(18)
     expect(useSettingsStore.getState().config?.fontSize).toBe(18)
@@ -60,6 +73,7 @@ describe('settings-store', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
       llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      verboseLogging: false,
     })
     useSettingsStore.getState().updateEditorWordWrap(true)
     expect(useSettingsStore.getState().config?.wordWrap).toBe(true)
@@ -69,6 +83,7 @@ describe('settings-store', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
       llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      verboseLogging: false,
     })
     useSettingsStore.getState().updateEditorTabSize(2)
     expect(useSettingsStore.getState().config?.tabSize).toBe(2)
@@ -78,6 +93,7 @@ describe('settings-store', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
       llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      verboseLogging: false,
     })
     useSettingsStore.getState().updateTerminalFontSize(16)
     expect(useSettingsStore.getState().config?.terminalFontSize).toBe(16)
@@ -87,6 +103,7 @@ describe('settings-store', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
       llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      verboseLogging: false,
     })
     useSettingsStore.getState().updateTerminalShell('/bin/bash')
     expect(useSettingsStore.getState().config?.terminalShell).toBe('/bin/bash')
@@ -96,6 +113,7 @@ describe('settings-store', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
       llmProviders: [], searchExclude: ['node_modules'], terminalShell: '', terminalFontSize: 13,
+      verboseLogging: false,
     })
     useSettingsStore.getState().updateSearchExclude(['.git', 'dist'])
     expect(useSettingsStore.getState().config?.searchExclude).toEqual(['.git', 'dist'])
@@ -105,6 +123,7 @@ describe('settings-store', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
       llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      verboseLogging: false,
     })
     useSettingsStore.getState().addLlmProvider()
     expect(useSettingsStore.getState().config?.llmProviders).toHaveLength(1)
@@ -116,6 +135,7 @@ describe('settings-store', () => {
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
       llmProviders: [{ id: 'a', name: 'A', apiKey: '', model: '', endpoint: '' }],
       searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      verboseLogging: false,
     })
     useSettingsStore.getState().removeLlmProvider(0)
     expect(useSettingsStore.getState().config?.llmProviders).toHaveLength(0)
@@ -126,6 +146,7 @@ describe('settings-store', () => {
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
       llmProviders: [{ id: 'a', name: 'A', apiKey: '', model: 'gpt-3', endpoint: '' }],
       searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      verboseLogging: false,
     })
     useSettingsStore.getState().updateLlmProvider(0, { model: 'gpt-4' })
     expect(useSettingsStore.getState().config?.llmProviders[0].model).toBe('gpt-4')

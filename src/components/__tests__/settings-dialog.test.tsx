@@ -24,7 +24,7 @@ describe('SettingsDialog', () => {
         tabSize: 4,
         wordWrap: false,
         llmProviders: [
-          { id: 'openai', name: 'My OpenAI', apiKey: 'sk-xxx', model: 'gpt-4', endpoint: '' },
+          { providerType: 'openai', name: 'My OpenAI', apiKey: 'sk-xxx', model: 'gpt-4', models: [], endpoint: '', category: 'openai' },
         ],
         searchExclude: ['node_modules', '.git'],
         terminalShell: '',
@@ -52,7 +52,7 @@ describe('SettingsDialog', () => {
     renderWithProviders(<SettingsDialog />)
     await userEvent.click(screen.getByText('LLM'))
     expect(screen.getByDisplayValue('My OpenAI')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('gpt-4')).toBeInTheDocument()
+    expect(screen.getByText('gpt-4')).toBeInTheDocument()
   })
 
   it('renders theme selection cards', () => {

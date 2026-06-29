@@ -5,7 +5,7 @@ use squirecli_lib::storage::conversation_store::{ConversationStore, SessionId};
 fn test_modules_accessible() {
     let _ = squirecli_lib::commands::get_config;
     let _ = squirecli_lib::commands::list_conversations;
-    let _ = squirecli_lib::commands::cmd_read_file;
+    let _ = squirecli_lib::commands::read_file;
     let _ = squirecli_lib::commands::search_files;
     let _ = squirecli_lib::commands::execute_command;
     let _ = squirecli_lib::commands::git_status;
@@ -23,16 +23,20 @@ fn test_config_serde_roundtrip() {
         word_wrap: true,
         llm_providers: vec![
             ProviderConfig {
-                id: "test".into(),
+                provider_type: "openai".into(),
                 name: "test".into(),
                 api_key: String::new(),
                 model: "gpt-4".into(),
+                models: vec!["gpt-4".into()],
                 endpoint: None,
+                metadata: std::collections::HashMap::new(),
+                category: None,
             },
         ],
         search_exclude: vec!["node_modules".into()],
         terminal_shell: Some("powershell.exe".into()),
         terminal_font_size: 12,
+        verbose_logging: false,
     };
 
     let json = serde_json::to_string(&config).unwrap();

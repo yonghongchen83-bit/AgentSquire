@@ -13,6 +13,7 @@ pub struct OpenAIProvider {
     api_key: String,
     base_url: String,
     model: String,
+    pub verbose: bool,
 }
 
 impl OpenAIProvider {
@@ -22,6 +23,7 @@ impl OpenAIProvider {
             api_key,
             base_url: base_url.unwrap_or_else(|| "https://api.openai.com/v1".into()),
             model,
+            verbose: false,
         }
     }
 }
@@ -30,6 +32,10 @@ impl OpenAIProvider {
 impl LlmProvider for OpenAIProvider {
     fn provider_name(&self) -> &'static str {
         "openai"
+    }
+
+    fn verbose(&self) -> bool {
+        self.verbose
     }
 
     fn supports_model(&self, model: &str) -> bool {
@@ -95,7 +101,17 @@ impl LlmProvider for OpenAIProvider {
         });
 
         if !request.tools.is_empty() {
-            body["tools"] = json!(request.tools);
+            let tools: Vec<serde_json::Value> = request.tools.iter().map(|t| {
+                json!({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.input_schema,
+                    }
+                })
+            }).collect();
+            body["tools"] = json!(tools);
         }
         if let Some(t) = request.temperature {
             body["temperature"] = json!(t);
@@ -107,10 +123,28 @@ impl LlmProvider for OpenAIProvider {
         let client = self.client.clone();
         let api_key = self.api_key.clone();
         let base_url = self.base_url.clone();
+        let verbose = self.verbose();
 
         tokio::spawn(async move {
+            if verbose {
+                let body_pretty = serde_json::to_string_pretty(&body).unwrap_or_default();
+                tx.send(StreamEvent::Log(format!(
+                    ">>> REQUEST to {}\n{}",
+                    if base_url.ends_with("/chat/completions") || base_url.ends_with("/responses") {
+                        base_url.clone()
+                    } else {
+                        format!("{}/chat/completions", base_url)
+                    },
+                    body_pretty,
+                ))).await.ok();
+            }
+
             let response = client
-                .post(format!("{}/chat/completions", base_url))
+                .post(if base_url.ends_with("/chat/completions") || base_url.ends_with("/responses") {
+                    base_url.clone()
+                } else {
+                    format!("{}/chat/completions", base_url)
+                })
                 .header("Authorization", format!("Bearer {}", api_key))
                 .header("Content-Type", "application/json")
                 .json(&body)
@@ -120,27 +154,59 @@ impl LlmProvider for OpenAIProvider {
             let resp = match response {
                 Ok(r) => r,
                 Err(e) => {
-                    tx.send(StreamEvent::Error(e.to_string())).await.ok();
+                    if verbose {
+                        tx.send(StreamEvent::Log(format!(
+                            "<<< CONNECTION FAILED: {}", e
+                        ))).await.ok();
+                    }
+                    tx.send(StreamEvent::Error("Connection failed: unable to reach the server".to_string())).await.ok();
                     tx.send(StreamEvent::Done(FinishReason::Error)).await.ok();
                     return;
                 }
             };
 
-            if !resp.status().is_success() {
-                let status = resp.status();
-                let err_text = resp.text().await.unwrap_or_default();
+            let status = resp.status();
+
+            if !status.is_success() {
+                let body_text = resp.text().await.unwrap_or_default();
+                if verbose {
+                    tx.send(StreamEvent::Log(format!(
+                        "<<< RESPONSE {} {}\n{}",
+                        status.as_u16(),
+                        status.canonical_reason().unwrap_or(""),
+                        body_text,
+                    ))).await.ok();
+                }
                 let err = match status.as_u16() {
                     401 => LlmError::Auth,
                     429 => LlmError::RateLimited,
-                    _ => LlmError::Api(format!("HTTP {}: {}", status, err_text)),
+                    _ => {
+                        let msg = if body_text.is_empty() {
+                            format!("HTTP {}", status)
+                        } else {
+                            // Try to extract API error message, fall back to raw body
+                            let trimmed = body_text.trim();
+                            // Limit to 500 chars to avoid flooding
+                            let detail = if trimmed.len() > 500 {
+                                format!("{}...", &trimmed[..500])
+                            } else {
+                                trimmed.to_string()
+                            };
+                            format!("HTTP {}: {}", status, detail)
+                        };
+                        LlmError::Api(msg)
+                    }
                 };
                 tx.send(StreamEvent::Error(err.to_string())).await.ok();
                 tx.send(StreamEvent::Done(FinishReason::Error)).await.ok();
                 return;
             }
 
+            let mut done = false;
             let mut stream = resp.bytes_stream();
             while let Some(chunk_result) = stream.next().await {
+                if done { break; }
+
                 let bytes = match chunk_result {
                     Ok(b) => b,
                     Err(e) => {
@@ -154,7 +220,8 @@ impl LlmProvider for OpenAIProvider {
                 for line in text.lines() {
                     let line = line.trim();
                     if line.is_empty() || line == "data: [DONE]" {
-                        continue;
+                        done = true;
+                        break;
                     }
 
                     let data = match line.strip_prefix("data: ") {
@@ -175,12 +242,17 @@ impl LlmProvider for OpenAIProvider {
                     for choice in choices {
                         let delta = &choice["delta"];
 
-                        if let Some(content) = delta["content"].as_str() {
-                            if !content.is_empty() {
-                                tx.send(StreamEvent::Chunk(content.to_string()))
-                                    .await
-                                    .ok();
-                            }
+                        let content_text = delta["content"].as_str().unwrap_or("");
+                        let reasoning_text = delta["reasoning_content"].as_str().unwrap_or("");
+
+                        if !content_text.is_empty() {
+                            tx.send(StreamEvent::Chunk(content_text.to_string()))
+                                .await
+                                .ok();
+                        } else if !reasoning_text.is_empty() {
+                            tx.send(StreamEvent::Chunk(reasoning_text.to_string()))
+                                .await
+                                .ok();
                         }
 
                         if let Some(tcs) = delta["tool_calls"].as_array() {

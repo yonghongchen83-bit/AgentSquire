@@ -5,7 +5,8 @@ interface SettingsStore {
   open: boolean
   config: AppConfig | null
   showSplash: boolean
-  setOpen: (open: boolean) => void
+  initialTab: string
+  setOpen: (open: boolean, tab?: string) => void
   setConfig: (config: AppConfig) => void
   setShowSplash: (show: boolean) => void
   updateTheme: (theme: 'light' | 'dark' | 'system') => void
@@ -15,16 +16,24 @@ interface SettingsStore {
   updateTerminalFontSize: (size: number) => void
   updateTerminalShell: (shell: string) => void
   updateSearchExclude: (patterns: string[]) => void
+  updateVerboseLogging: (verbose: boolean) => void
   updateLlmProvider: (index: number, updates: Partial<AppConfig['llmProviders'][0]>) => void
   addLlmProvider: () => void
   removeLlmProvider: (index: number) => void
 }
 
-export const useSettingsStore = create<SettingsStore>((set) => ({
+const store = create<SettingsStore>((set) => ({
   open: false,
   config: null,
   showSplash: true,
-  setOpen: (open) => set({ open }),
+  initialTab: 'general',
+  setOpen: (open, tab) => set((s) => {
+    if (!open) {
+      // Reset config when dialog closes so next open reloads from backend
+      return { open, initialTab: tab ?? 'general', config: null }
+    }
+    return { open, initialTab: tab ?? 'general' }
+  }),
   setConfig: (config) => set({ config }),
   setShowSplash: (show) => set({ showSplash: show }),
   updateTheme: (theme) => set((s) => ({
@@ -50,6 +59,9 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   updateSearchExclude: (searchExclude) => set((s) => ({
     config: s.config ? { ...s.config, searchExclude } : null,
   })),
+  updateVerboseLogging: (verboseLogging) => set((s) => ({
+    config: s.config ? { ...s.config, verboseLogging } : null,
+  })),
   updateLlmProvider: (index, updates) => set((s) => {
     if (!s.config) return {}
     const providers = [...s.config.llmProviders]
@@ -58,7 +70,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   }),
   addLlmProvider: () => set((s) => {
     if (!s.config) return {}
-    const providers = [...s.config.llmProviders, { id: '', name: '', apiKey: '', model: '', endpoint: '' }]
+    const providers = [...s.config.llmProviders, { providerType: 'openai', name: '', apiKey: '', model: '', models: [], endpoint: 'https://api.openai.com/v1' }]
     return { config: { ...s.config, llmProviders: providers } }
   }),
   removeLlmProvider: (index) => set((s) => {
@@ -67,3 +79,9 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
     return { config: { ...s.config, llmProviders: providers } }
   }),
 }))
+
+export const useSettingsStore = store
+
+if (typeof window !== 'undefined' && (import.meta as any).env?.DEV) {
+  ;(window as any).__settingsStore = store
+}

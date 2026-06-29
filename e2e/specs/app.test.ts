@@ -19,11 +19,6 @@ describe('SquireCLI App', () => {
 })
 
 describe('UI Components', () => {
-  it('should render the title bar', async () => {
-    const titleBar = await $('[data-testid="title-bar"], header, .title-bar')
-    await expect(titleBar).toBeDisplayed()
-  })
-
   it('should have a working chat panel', async () => {
     const chatPanel = await $('[data-testid="chat-panel"], .chat-panel, main')
     await expect(chatPanel).toBeDisplayed()

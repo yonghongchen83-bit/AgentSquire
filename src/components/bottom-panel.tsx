@@ -11,7 +11,7 @@ const tabs: { id: BottomPanelTab; icon: typeof Terminal; label: string }[] = [
   { id: 'errors', icon: AlertCircle, label: 'Errors' },
 ]
 
-const OUTPUT_SOURCES = ['stdout', 'debug', 'notifications'] as const
+const OUTPUT_SOURCES = ['stdout', 'debug', 'notifications', 'chat'] as const
 
 function OutputPanel() {
   const [source, setSource] = useState<string>('stdout')

@@ -153,7 +153,7 @@ export interface GitDiff {
 // ─── Output & Errors ────────────────────────────────────
 
 export interface OutputEntry {
-  source: 'stdout' | 'debug' | 'notifications'
+  source: 'stdout' | 'debug' | 'notifications' | 'chat'
   line: string
   timestamp: string
 }
@@ -167,6 +167,15 @@ export interface ErrorEntry {
   stackTrace?: string
 }
 
+// ─── Provider Info (from registry) ──────────────────────
+
+export interface ProviderInfo {
+  name: string
+  provider_type: string
+  models: string[]
+  default_model: string
+}
+
 // ─── Config ─────────────────────────────────────────────
 
 export interface AppConfig {
@@ -178,12 +187,16 @@ export interface AppConfig {
   searchExclude: string[]
   terminalShell: string
   terminalFontSize: number
+  verboseLogging: boolean
 }
 
 export interface LlmProviderConfig {
-  id: string
+  providerType: string
   name: string
   apiKey: string
   model: string
+  models: string[]
   endpoint?: string
+  metadata?: Record<string, string>
+  category?: string
 }

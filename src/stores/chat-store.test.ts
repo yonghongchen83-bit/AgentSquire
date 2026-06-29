@@ -21,7 +21,7 @@ vi.mock('@/lib/ipc', () => ({
   createConversation: vi.fn().mockResolvedValue({ id: 'new-id', title: 'New Chat', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
   deleteConversation: vi.fn().mockResolvedValue(undefined),
   sendMessage: vi.fn().mockResolvedValue(undefined),
-  listProviders: vi.fn().mockResolvedValue([['openai', 'OpenAI']]),
+  listProviders: vi.fn().mockResolvedValue([{ name: 'OpenAI', provider_type: 'openai', models: ['gpt-4o'], default_model: 'gpt-4o' }]),
   onStreamChunk: vi.fn().mockReturnValue(vi.fn()),
   onStreamToolCall: vi.fn().mockReturnValue(vi.fn()),
   onStreamDone: vi.fn().mockReturnValue(vi.fn()),
@@ -39,8 +39,9 @@ describe('ChatStore', () => {
       streamingBlocks: [],
       streamingText: '',
       error: null,
-      providerNames: [],
+      providers: [],
       selectedProvider: '',
+      selectedModel: '',
     })
   })
 

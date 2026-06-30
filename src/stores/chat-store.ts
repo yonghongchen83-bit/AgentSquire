@@ -11,6 +11,7 @@ import {
   listProviders,
   approveToolCall as approveIpc,
   rejectToolCall as rejectIpc,
+  truncateMessagesFrom as truncateMessagesFromIpc,
 } from '@/lib/ipc'
 import {
   loadStoredSelection,
@@ -37,6 +38,7 @@ interface ChatState {
   selectedModel: string
   selectedThinkingLevel: 'none' | 'low' | 'mid' | 'high'
   pendingApprovals: ToolApprovalRequest[]
+  autoApproveScope: 'none' | 'session' | 'workspace'
 
   loadConversations: () => Promise<void>
   loadProviders: () => Promise<void>
@@ -52,6 +54,10 @@ interface ChatState {
   clearError: () => void
   approveToolCall: (callId: string) => Promise<void>
   rejectToolCall: (callId: string) => Promise<void>
+  approveAllPending: () => Promise<void>
+  setAutoApproveScope: (scope: 'none' | 'session' | 'workspace') => void
+  truncateMessagesFrom: (messageId: string) => Promise<void>
+  retryLastMessage: () => Promise<void>
 }
 
 export const useChatStore = create<ChatState>((set, get) => {
@@ -81,6 +87,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     selectedModel: storedSelection.model,
     selectedThinkingLevel: storedThinkingLevel,
     pendingApprovals: [],
+    autoApproveScope: 'none',
 
     loadConversations: async () => {
       try {
@@ -135,7 +142,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     selectConversation: async (id: string) => {
       try {
         const session = await getConversation(id)
-        set({
+        set((s) => ({
           activeConversationId: id,
           messages: session.messages,
           error: null,
@@ -146,7 +153,8 @@ export const useChatStore = create<ChatState>((set, get) => {
           isStreaming: false,
           streamingMessageId: null,
           pendingApprovals: [],
-        })
+          autoApproveScope: s.autoApproveScope === 'session' ? 'none' : s.autoApproveScope,
+        }))
       } catch (e) {
         set({ error: String(e) })
       }
@@ -277,6 +285,51 @@ export const useChatStore = create<ChatState>((set, get) => {
         set((s) => ({
           pendingApprovals: s.pendingApprovals.filter((a) => a.call_id !== callId),
         }))
+      } catch (e) {
+        set({ error: String(e) })
+      }
+    },
+
+    approveAllPending: async () => {
+      const { pendingApprovals } = get()
+      await Promise.all(pendingApprovals.map((a) => approveIpc(a.call_id).catch(() => {})))
+      set({ pendingApprovals: [] })
+    },
+
+    setAutoApproveScope: (scope: 'none' | 'session' | 'workspace') => {
+      set({ autoApproveScope: scope })
+    },
+
+    truncateMessagesFrom: async (messageId: string) => {
+      const { activeConversationId, messages } = get()
+      if (!activeConversationId) return
+      const idx = messages.findIndex((m) => m.id === messageId)
+      if (idx === -1) return
+      try {
+        await truncateMessagesFromIpc(activeConversationId, messageId)
+        set({ messages: messages.slice(0, idx) })
+      } catch (e) {
+        set({ error: String(e) })
+      }
+    },
+
+    retryLastMessage: async () => {
+      const { messages, activeConversationId } = get()
+      if (!activeConversationId) return
+      let lastUserIdx = -1
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+          lastUserIdx = i
+          break
+        }
+      }
+      if (lastUserIdx === -1) return
+      const content = messages[lastUserIdx].content
+      const messageId = messages[lastUserIdx].id
+      try {
+        await truncateMessagesFromIpc(activeConversationId, messageId)
+        set({ messages: messages.slice(0, lastUserIdx) })
+        await get().sendMessage(content)
       } catch (e) {
         set({ error: String(e) })
       }

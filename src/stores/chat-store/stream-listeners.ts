@@ -9,6 +9,8 @@ import {
   onStreamToolCall,
   onStreamToolPending,
   onStreamToolResult,
+  setMessageBlocks,
+  approveToolCall as approveIpc,
 } from '@/lib/ipc'
 import { composeStreamingBlocks } from '@/stores/chat-store/block-parser'
 
@@ -16,6 +18,8 @@ type SetState = (arg: any) => void
 
 type GetState = () => {
   activeConversationId: string | null
+  streamingBlocks: Block[]
+  autoApproveScope: 'none' | 'session' | 'workspace'
   loadConversations: () => Promise<void> | void
 }
 
@@ -95,6 +99,10 @@ export async function setupStreamListeners({
 
   cleanupFns.push(
     await onStreamToolPending((approval) => {
+      if (get().autoApproveScope !== 'none') {
+        void approveIpc(approval.call_id)
+        return
+      }
       set((s: { streamingBlocks: Block[]; pendingApprovals: Array<{ call_id: string }> }) => {
         const blocks = [...s.streamingBlocks]
         const idx = blocks.findIndex(
@@ -124,6 +132,8 @@ export async function setupStreamListeners({
 
   cleanupFns.push(
     await onStreamDone(() => {
+      const toolCallBlocks = get().streamingBlocks.filter((b) => b.type === 'tool_call')
+
       set({
         isStreaming: false,
         streamingMessageId: null,
@@ -137,7 +147,22 @@ export async function setupStreamListeners({
       const activeId = get().activeConversationId
       if (activeId) {
         getConversation(activeId)
-          .then((session) => set({ messages: session.messages }))
+          .then((session) => {
+            if (toolCallBlocks.length > 0 && session.messages.length > 0) {
+              const lastMsg = session.messages[session.messages.length - 1]
+              if (lastMsg.role === 'assistant') {
+                // Persist to DB (fire-and-forget)
+                void setMessageBlocks(lastMsg.id, toolCallBlocks)
+                // Inject into in-memory messages immediately
+                const messages = session.messages.map((m, i, arr) =>
+                  i === arr.length - 1 ? { ...m, blocks: toolCallBlocks } : m
+                )
+                set({ messages })
+                return
+              }
+            }
+            set({ messages: session.messages })
+          })
           .catch(() => {})
       }
       get().loadConversations()

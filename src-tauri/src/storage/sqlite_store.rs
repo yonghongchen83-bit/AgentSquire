@@ -33,8 +33,8 @@ impl ConversationStore for Database {
         let now = Utc::now().to_rfc3339();
         let conn = self.connection();
         conn.execute(
-            "INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id.to_string(), msg.session_id.to_string(), msg.role.as_str(), msg.content, now],
+            "INSERT INTO messages (id, session_id, role, content, created_at, thinking_content) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id.to_string(), msg.session_id.to_string(), msg.role.as_str(), msg.content, now, msg.thinking_content],
         )
         .map_err(|e| StoreError::Database(e.to_string()))?;
         conn.execute(
@@ -48,6 +48,8 @@ impl ConversationStore for Database {
             role: msg.role,
             content: msg.content,
             created_at: Utc::now(),
+            blocks_json: None,
+            thinking_content: msg.thinking_content,
         })
     }
 
@@ -70,7 +72,7 @@ impl ConversationStore for Database {
             .map_err(|_| StoreError::NotFound(id.to_string()))?;
 
         let mut stmt = conn
-            .prepare("SELECT id, session_id, role, content, created_at FROM messages WHERE session_id = ?1 ORDER BY created_at")
+            .prepare("SELECT id, session_id, role, content, created_at, blocks_json, thinking_content FROM messages WHERE session_id = ?1 ORDER BY created_at")
             .map_err(|e| StoreError::Database(e.to_string()))?;
         let messages: Vec<Message> = stmt
             .query_map(params![id.to_string()], |row| {
@@ -82,6 +84,8 @@ impl ConversationStore for Database {
                     role: MessageRole::from_str(&row.get::<_, String>(2)?).unwrap_or(MessageRole::User),
                     content: row.get(3)?,
                     created_at: row.get::<_, String>(4)?.parse().unwrap_or_default(),
+                    blocks_json: row.get(5)?,
+                    thinking_content: row.get(6)?,
                 })
             })
             .map_err(|e| StoreError::Database(e.to_string()))?
@@ -148,6 +152,26 @@ impl ConversationStore for Database {
         if affected == 0 {
             return Err(StoreError::NotFound(id.to_string()));
         }
+        Ok(())
+    }
+
+    async fn truncate_messages_from(&self, session_id: SessionId, message_id: Uuid) -> Result<(), StoreError> {
+        let conn = self.connection();
+        conn.execute(
+            "DELETE FROM messages WHERE session_id = ?1 AND created_at >= (SELECT created_at FROM messages WHERE id = ?2 AND session_id = ?1)",
+            params![session_id.to_string(), message_id.to_string()],
+        )
+        .map_err(|e| StoreError::Database(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn set_message_blocks(&self, message_id: Uuid, blocks_json: String) -> Result<(), StoreError> {
+        let conn = self.connection();
+        conn.execute(
+            "UPDATE messages SET blocks_json = ?1 WHERE id = ?2",
+            params![blocks_json, message_id.to_string()],
+        )
+        .map_err(|e| StoreError::Database(e.to_string()))?;
         Ok(())
     }
 }

@@ -9,6 +9,7 @@ mod tests {
             content: "hello".into(),
             tool_call_id: None,
             tool_calls: None,
+            reasoning_content: None,
         };
         assert!(matches!(msg.role, ChatRole::User));
         assert_eq!(msg.content, "hello");
@@ -61,6 +62,7 @@ mod tests {
             content: String::new(),
             tool_call_id: None,
             tool_calls: Some(vec![tc]),
+            reasoning_content: None,
         };
         assert!(msg.tool_calls.is_some());
         assert_eq!(msg.tool_calls.as_ref().unwrap().len(), 1);
@@ -76,6 +78,7 @@ mod tests {
             content: "file contents".into(),
             tool_call_id: Some("call_1".into()),
             tool_calls: None,
+            reasoning_content: None,
         };
         assert_eq!(msg.tool_call_id.as_deref(), Some("call_1"));
         let json = serde_json::to_string(&msg).unwrap();
@@ -89,6 +92,7 @@ mod tests {
             content: "hi".into(),
             tool_call_id: None,
             tool_calls: None,
+            reasoning_content: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(!json.contains("tool_calls"));
@@ -128,6 +132,8 @@ pub struct ChatMessage {
     pub tool_call_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

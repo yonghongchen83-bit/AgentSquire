@@ -42,6 +42,11 @@ export function ChatPanel() {
   const approveToolCall = useChatStore((s) => s.approveToolCall)
   const rejectToolCall = useChatStore((s) => s.rejectToolCall)
   const clearError = useChatStore((s) => s.clearError)
+  const truncateMessagesFrom = useChatStore((s) => s.truncateMessagesFrom)
+  const retryLastMessage = useChatStore((s) => s.retryLastMessage)
+  const approveAllPending = useChatStore((s) => s.approveAllPending)
+  const autoApproveScope = useChatStore((s) => s.autoApproveScope)
+  const setAutoApproveScope = useChatStore((s) => s.setAutoApproveScope)
 
   useEffect(() => {
     loadConversations()
@@ -184,12 +189,19 @@ export function ChatPanel() {
                 </div>
               ) : (
                 <div className="divide-y divide-border">
-                  {messages.map((msg) => (
-                    <ChatMessage
-                      key={msg.id}
-                      message={msg}
-                    />
-                  ))}
+                  {messages.map((msg, idx) => {
+                    const isLastMessage = idx === messages.length - 1 && !isStreaming
+                    return (
+                      <ChatMessage
+                        key={msg.id}
+                        message={msg}
+                        augmentBlocks={msg.blocks}
+                        isLastMessage={isLastMessage}
+                        onRetry={isLastMessage ? retryLastMessage : undefined}
+                        onDelete={msg.role === 'user' ? () => truncateMessagesFrom(msg.id) : undefined}
+                      />
+                    )
+                  })}
                   {isStreaming && (
                     <ChatMessage
                       message={{
@@ -206,7 +218,7 @@ export function ChatPanel() {
                 </div>
               )}
             </div>
-            {(isStreaming || pendingApprovals.length > 0) && (
+            {(isStreaming || pendingApprovals.length > 0 || autoApproveScope !== 'none') && (
               <div className="border-t border-border bg-[#F8F9FB] px-4 py-2 space-y-2">
                 {isStreaming && (
                   <div className="flex items-center gap-2 text-xs text-[#6B7B8D]">
@@ -227,6 +239,34 @@ export function ChatPanel() {
                 {takingLong && isStreaming && (
                   <div className="text-[11px] text-amber-700">
                     This is taking longer than usual. You can keep waiting or stop it now.
+                  </div>
+                )}
+                {pendingApprovals.length > 0 && (
+                  <div className="flex items-center gap-2 pb-1">
+                    <span className="text-xs text-amber-700 flex-1 font-medium">
+                      {pendingApprovals.length} tool{pendingApprovals.length > 1 ? 's' : ''} awaiting approval
+                    </span>
+                    <button
+                      onClick={() => { setAutoApproveScope('session'); void approveAllPending() }}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded"
+                    >
+                      <Check className="h-3 w-3" />
+                      Approve All
+                    </button>
+                    <button
+                      onClick={() => { setAutoApproveScope('session'); void approveAllPending() }}
+                      className={`px-2 py-0.5 text-xs rounded border transition-colors ${autoApproveScope === 'session' ? 'bg-green-100 border-green-400 text-green-800' : 'border-border text-[#6B7B8D] hover:bg-muted'}`}
+                      title="Auto-approve all tools for this conversation"
+                    >
+                      Auto: Session
+                    </button>
+                    <button
+                      onClick={() => { setAutoApproveScope('workspace'); void approveAllPending() }}
+                      className={`px-2 py-0.5 text-xs rounded border transition-colors ${autoApproveScope === 'workspace' ? 'bg-green-100 border-green-400 text-green-800' : 'border-border text-[#6B7B8D] hover:bg-muted'}`}
+                      title="Auto-approve all tools for all conversations"
+                    >
+                      Auto: Workspace
+                    </button>
                   </div>
                 )}
                 {pendingApprovals.map((approval) => (
@@ -253,6 +293,15 @@ export function ChatPanel() {
                     </button>
                   </div>
                 ))}
+                {autoApproveScope !== 'none' && (
+                  <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 rounded px-2 py-1">
+                    <Check className="h-3 w-3" />
+                    <span className="flex-1">Auto-approving tools ({autoApproveScope})</span>
+                    <button onClick={() => setAutoApproveScope('none')} className="hover:underline">
+                      Disable
+                    </button>
+                  </div>
+                )}
               </div>
             )}
             <ChatInput

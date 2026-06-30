@@ -28,6 +28,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system'
   content: string
   createdAt: string
+  blocks?: Block[]
 }
 
 export interface SessionWithMessages {

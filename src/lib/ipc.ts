@@ -16,6 +16,7 @@ type RawMessage = {
   role: string
   content: string
   created_at: string
+  blocks_json: string | null
 }
 
 type RawSession = {
@@ -49,12 +50,17 @@ export function normalizeMessageRole(role: string): 'user' | 'assistant' | 'syst
 }
 
 function mapMessage(raw: RawMessage) {
+  let blocks: import('@/types/ipc').Block[] | undefined
+  if (raw.blocks_json) {
+    try { blocks = JSON.parse(raw.blocks_json) } catch { /* ignore */ }
+  }
   return {
     id: raw.id,
     sessionId: raw.session_id,
     role: normalizeMessageRole(raw.role),
     content: raw.content,
     createdAt: raw.created_at,
+    blocks,
   }
 }
 
@@ -148,6 +154,14 @@ export async function sendMessage(
 
 export async function abortStream(sessionId: string): Promise<void> {
   return invoke('abort_stream', { sessionId })
+}
+
+export async function truncateMessagesFrom(sessionId: string, messageId: string): Promise<void> {
+  return invoke('truncate_messages_from', { sessionId, messageId })
+}
+
+export async function setMessageBlocks(messageId: string, blocks: import('@/types/ipc').Block[]): Promise<void> {
+  return invoke('set_message_blocks', { messageId, blocksJson: JSON.stringify(blocks) })
 }
 
 export async function listProviders(): Promise<ProviderInfo[]> {

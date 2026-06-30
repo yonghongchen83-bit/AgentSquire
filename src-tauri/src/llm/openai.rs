@@ -192,6 +192,9 @@ impl LlmProvider for OpenAIProvider {
                 if let Some(ref id) = m.tool_call_id {
                     msg["tool_call_id"] = json!(id);
                 }
+                if let Some(ref rc) = m.reasoning_content {
+                    msg["reasoning_content"] = json!(rc);
+                }
                 if let Some(ref calls) = m.tool_calls {
                     let arr: Vec<serde_json::Value> = calls
                         .iter()

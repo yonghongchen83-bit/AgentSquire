@@ -27,6 +27,8 @@ pub fn run() {
             commands::get_conversation,
             commands::create_conversation,
             commands::rename_conversation,
+            commands::truncate_messages_from,
+            commands::set_message_blocks,
             commands::delete_conversation,
             commands::send_message,
             commands::abort_stream,

@@ -52,6 +52,10 @@ impl Database {
                 ON messages(session_id, created_at);
             ",
         )?;
+        // v1: add blocks_json for persisted UI display blocks (tool calls etc.)
+        let _ = conn.execute("ALTER TABLE messages ADD COLUMN blocks_json TEXT", []);
+        // v2: add thinking_content for LLM context (reasoning_content passback)
+        let _ = conn.execute("ALTER TABLE messages ADD COLUMN thinking_content TEXT", []);
         Ok(())
     }
 }

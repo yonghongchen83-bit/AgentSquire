@@ -114,6 +114,7 @@ pub async fn send_message_impl(
             session_id: sid,
             role: crate::storage::conversation_store::MessageRole::User,
             content: content.clone(),
+            thinking_content: None,
         })
         .await
         .map_err(|e| e.to_string())?;
@@ -258,6 +259,7 @@ pub async fn send_message_impl(
                     content: m.content.clone(),
                     tool_call_id: None,
                     tool_calls: None,
+                    reasoning_content: m.thinking_content.clone(),
                 })
                 .collect();
 
@@ -294,6 +296,7 @@ pub async fn send_message_impl(
                 };
 
                 let mut full_response = String::new();
+                let mut full_thinking = String::new();
                 let mut tool_calls: Vec<ToolCall> = Vec::new();
                 let mut finish_reason: Option<FinishReason> = None;
                 let mut channel_closed_cleanly = false;
@@ -305,6 +308,7 @@ pub async fn send_message_impl(
                             let _ = app_clone.emit("stream-chunk", text);
                         }
                         StreamEvent::Thinking(text) => {
+                            full_thinking.push_str(&text);
                             let _ = app_clone.emit("stream-thinking", text);
                         }
                         StreamEvent::ToolCall(tc) => {
@@ -506,6 +510,13 @@ pub async fn send_message_impl(
                                 emit_stream_status(&app_clone, &format!("Tool {} completed", tc.name));
                             }
 
+                            // reasoning_content only on the first assistant message in this turn
+                            let reasoning = if !full_thinking.is_empty() {
+                                Some(std::mem::take(&mut full_thinking))
+                            } else {
+                                None
+                            };
+
                             messages.push(ChatMessage {
                                 role: ChatRole::Assistant,
                                 content: String::new(),
@@ -515,6 +526,7 @@ pub async fn send_message_impl(
                                     name: tc.name.clone(),
                                     arguments: tc.arguments.clone(),
                                 }]),
+                                reasoning_content: reasoning,
                             });
 
                             messages.push(ChatMessage {
@@ -522,6 +534,7 @@ pub async fn send_message_impl(
                                 content: result.output.clone(),
                                 tool_call_id: Some(tc.id.clone()),
                                 tool_calls: None,
+                                reasoning_content: None,
                             });
                         }
 
@@ -541,11 +554,17 @@ pub async fn send_message_impl(
                             );
                         }
                         if !content.is_empty() {
+                            let thinking = if !full_thinking.is_empty() {
+                                Some(std::mem::take(&mut full_thinking))
+                            } else {
+                                None
+                            };
                             let _ = store
                                 .append_message(NewMessage {
                                     session_id: sid,
                                     role: crate::storage::conversation_store::MessageRole::Assistant,
                                     content,
+                                    thinking_content: thinking,
                                 })
                                 .await;
                         }

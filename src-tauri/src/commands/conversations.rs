@@ -3,6 +3,7 @@ use crate::storage::conversation_store::{
     NewSession, Session, SessionId, SessionSummary, SessionWithMessages,
 };
 use tauri::State;
+use uuid::Uuid;
 
 pub async fn list_conversations_impl(
     state: State<'_, AppState>,
@@ -61,6 +62,33 @@ pub async fn rename_conversation_impl(
     state
         .store
         .update_session_title(session_id, sanitized)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+pub async fn truncate_messages_from_impl(
+    state: State<'_, AppState>,
+    session_id: String,
+    message_id: String,
+) -> Result<(), String> {
+    let sid = SessionId::parse_str(&session_id).map_err(|e| format!("Invalid session ID: {}", e))?;
+    let mid = Uuid::parse_str(&message_id).map_err(|e| format!("Invalid message ID: {}", e))?;
+    state
+        .store
+        .truncate_messages_from(sid, mid)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+pub async fn set_message_blocks_impl(
+    state: State<'_, AppState>,
+    message_id: String,
+    blocks_json: String,
+) -> Result<(), String> {
+    let mid = Uuid::parse_str(&message_id).map_err(|e| format!("Invalid message ID: {}", e))?;
+    state
+        .store
+        .set_message_blocks(mid, blocks_json)
         .await
         .map_err(|e| e.to_string())
 }

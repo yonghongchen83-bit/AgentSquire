@@ -25,6 +25,9 @@ pub struct Message {
     pub role: MessageRole,
     pub content: String,
     pub created_at: DateTime<Utc>,
+    pub blocks_json: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_content: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +62,7 @@ pub struct NewMessage {
     pub session_id: SessionId,
     pub role: MessageRole,
     pub content: String,
+    pub thinking_content: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +98,8 @@ pub trait ConversationStore: Send + Sync {
     async fn list_sessions(&self) -> Result<Vec<SessionSummary>, StoreError>;
     async fn update_session_title(&self, id: SessionId, title: String) -> Result<(), StoreError>;
     async fn delete_session(&self, id: SessionId) -> Result<(), StoreError>;
+    async fn truncate_messages_from(&self, session_id: SessionId, message_id: Uuid) -> Result<(), StoreError>;
+    async fn set_message_blocks(&self, message_id: Uuid, blocks_json: String) -> Result<(), StoreError>;
 }
 
 #[cfg(test)]

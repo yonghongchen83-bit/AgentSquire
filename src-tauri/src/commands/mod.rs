@@ -126,6 +126,24 @@ pub async fn rename_conversation(
     conversations::rename_conversation_impl(state, id, title).await
 }
 
+#[tauri::command]
+pub async fn truncate_messages_from(
+    state: State<'_, AppState>,
+    session_id: String,
+    message_id: String,
+) -> Result<(), String> {
+    conversations::truncate_messages_from_impl(state, session_id, message_id).await
+}
+
+#[tauri::command]
+pub async fn set_message_blocks(
+    state: State<'_, AppState>,
+    message_id: String,
+    blocks_json: String,
+) -> Result<(), String> {
+    conversations::set_message_blocks_impl(state, message_id, blocks_json).await
+}
+
 // ── Send Message (with tool support) ──
 
 #[tauri::command]

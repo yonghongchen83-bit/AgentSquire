@@ -1,9 +1,7 @@
 use std::sync::{Arc, Mutex, RwLock};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::agent::{
-    self, PendingApprovals, ToolDanger, ToolRegistry,
-};
+use crate::agent::{self, PendingApprovals, ToolDanger, ToolRegistry};
 use crate::fs::ops::{self, FileEntry};
 use crate::fs::watcher::{FileEvent, FileWatcher};
 use crate::llm::provider::{
@@ -13,10 +11,10 @@ use crate::llm::registry::{ProviderInfo, ProviderRegistry};
 use crate::search::grep::{self, GrepReplaceOptions, SearchMatch, SearchOptions};
 use crate::shell::exec::{self, CommandResult};
 use crate::state::config::{self, AppConfig};
-use crate::terminal::manager::PtyManager;
 use crate::storage::conversation_store::{
     ConversationStore, NewMessage, NewSession, SessionId, SessionSummary, SessionWithMessages,
 };
+use crate::terminal::manager::PtyManager;
 
 pub struct AppState {
     pub config: RwLock<AppConfig>,
@@ -36,14 +34,22 @@ pub struct TerminalState {
 
 #[tauri::command]
 pub fn get_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
-    state.config.read().map(|c| c.clone()).map_err(|e| e.to_string())
+    state
+        .config
+        .read()
+        .map(|c| c.clone())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn save_config(new_config: AppConfig, state: State<'_, AppState>) -> Result<(), String> {
     config::save_config(&new_config).map_err(|e| e.to_string())?;
     *state.config.write().map_err(|e| e.to_string())? = new_config.clone();
-    state.registry.write().map_err(|e| e.to_string())?.rebuild_from_config(&new_config);
+    state
+        .registry
+        .write()
+        .map_err(|e| e.to_string())?
+        .rebuild_from_config(&new_config);
     Ok(())
 }
 
@@ -64,9 +70,7 @@ pub fn check_update() -> Result<serde_json::Value, String> {
 // ── Conversations ──
 
 #[tauri::command]
-pub async fn list_conversations(
-    state: State<'_, AppState>,
-) -> Result<Vec<SessionSummary>, String> {
+pub async fn list_conversations(state: State<'_, AppState>) -> Result<Vec<SessionSummary>, String> {
     state.store.list_sessions().await.map_err(|e| e.to_string())
 }
 
@@ -75,8 +79,7 @@ pub async fn get_conversation(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<SessionWithMessages, String> {
-    let session_id =
-        SessionId::parse_str(&id).map_err(|e| format!("Invalid session ID: {}", e))?;
+    let session_id = SessionId::parse_str(&id).map_err(|e| format!("Invalid session ID: {}", e))?;
     state
         .store
         .get_session(session_id)
@@ -97,12 +100,8 @@ pub async fn create_conversation(
 }
 
 #[tauri::command]
-pub async fn delete_conversation(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
-    let session_id =
-        SessionId::parse_str(&id).map_err(|e| format!("Invalid session ID: {}", e))?;
+pub async fn delete_conversation(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let session_id = SessionId::parse_str(&id).map_err(|e| format!("Invalid session ID: {}", e))?;
     state
         .store
         .delete_session(session_id)
@@ -141,13 +140,20 @@ pub async fn send_message(
         .await
         .map_err(|e| e.to_string())?;
 
+    let verbose_logging = state
+        .config
+        .read()
+        .map(|c| c.verbose_logging)
+        .unwrap_or(false);
+
     let (provider_arc, selected_model) = {
         let reg = state.registry.read().map_err(|e| e.to_string())?;
         let name = provider_name
             .clone()
             .or_else(|| reg.default_name().map(|s| s.to_string()))
             .ok_or_else(|| "No default LLM provider configured".to_string())?;
-        let entry = reg.get(&name)
+        let entry = reg
+            .get(&name)
             .ok_or_else(|| format!("Provider '{}' not found", name))?;
         let sm = model.clone().unwrap_or_else(|| entry.default_model.clone());
         (entry.provider.clone(), sm)
@@ -205,16 +211,22 @@ pub async fn send_message(
                         full_response.push_str(&text);
                         let _ = app_clone.emit("stream-chunk", text);
                     }
+                    StreamEvent::ThinkingChunk(text) => {
+                        let _ = app_clone.emit("stream-thinking", text);
+                    }
                     StreamEvent::ToolCall(tc) => {
                         tool_calls.push(tc.clone());
                         let _ = app_clone.emit("stream-tool-call", tc);
                     }
                     StreamEvent::Log(msg) => {
-                        let _ = app_clone.emit("output:append", serde_json::json!({
-                            "source": "chat",
-                            "line": msg,
-                            "timestamp": chrono::Utc::now().to_rfc3339(),
-                        }));
+                        let _ = app_clone.emit(
+                            "output:append",
+                            serde_json::json!({
+                                "source": "chat",
+                                "line": msg,
+                                "timestamp": chrono::Utc::now().to_rfc3339(),
+                            }),
+                        );
                     }
                     StreamEvent::Done(reason) => {
                         finish_reason = Some(reason);
@@ -230,8 +242,17 @@ pub async fn send_message(
             let reason = match finish_reason {
                 Some(r) => r,
                 None => {
-                    let _ = app_clone.emit("stream-error", "Stream ended without finish reason");
-                    return;
+                    // Some OpenAI-compatible backends (including Ollama variants) may close
+                    // the stream without an explicit finish_reason. Infer a reasonable end state.
+                    if !tool_calls.is_empty() {
+                        FinishReason::ToolCalls
+                    } else if !full_response.is_empty() {
+                        FinishReason::Stop
+                    } else {
+                        let _ =
+                            app_clone.emit("stream-error", "Stream ended without finish reason");
+                        return;
+                    }
                 }
             };
 
@@ -247,8 +268,8 @@ pub async fn send_message(
                             if tool.danger() == ToolDanger::Destructive {
                                 let (tx, rx) = tokio::sync::oneshot::channel();
                                 {
-                    let mut p = pending.lock().await;
-                    p.insert(tc.id.clone(), tx);
+                                    let mut p = pending.lock().await;
+                                    p.insert(tc.id.clone(), tx);
                                 }
 
                                 let approval_event = serde_json::json!({
@@ -256,10 +277,8 @@ pub async fn send_message(
                                     "tool_name": tc.name,
                                     "arguments": tc.arguments,
                                 });
-                                let _ = app_clone.emit(
-                                    "stream-tool-pending",
-                                    approval_event.to_string(),
-                                );
+                                let _ = app_clone
+                                    .emit("stream-tool-pending", approval_event.to_string());
 
                                 match rx.await {
                                     Ok(true) => {
@@ -318,6 +337,16 @@ pub async fn send_message(
                 }
                 FinishReason::Stop | FinishReason::Length => {
                     let content = std::mem::take(&mut full_response);
+                    if verbose_logging {
+                        let _ = app_clone.emit(
+                            "output:append",
+                            serde_json::json!({
+                                "source": "chat",
+                                "line": format!("<<< FINAL_RESPONSE\n{}", content),
+                                "timestamp": chrono::Utc::now().to_rfc3339(),
+                            }),
+                        );
+                    }
                     if !content.is_empty() {
                         let _ = store
                             .append_message(NewMessage {
@@ -353,9 +382,9 @@ pub async fn approve_tool_call(
         p.remove(&call_id)
     };
     match sender {
-        Some(sender) => {
-            sender.send(true).map_err(|_| "Failed to send approval".to_string())
-        }
+        Some(sender) => sender
+            .send(true)
+            .map_err(|_| "Failed to send approval".to_string()),
         None => Err(format!("No pending tool call with id '{}'", call_id)),
     }
 }
@@ -370,9 +399,9 @@ pub async fn reject_tool_call(
         p.remove(&call_id)
     };
     match sender {
-        Some(sender) => {
-            sender.send(false).map_err(|_| "Failed to send rejection".to_string())
-        }
+        Some(sender) => sender
+            .send(false)
+            .map_err(|_| "Failed to send rejection".to_string()),
         None => Err(format!("No pending tool call with id '{}'", call_id)),
     }
 }
@@ -381,7 +410,11 @@ pub async fn reject_tool_call(
 
 #[tauri::command]
 pub fn list_providers(state: State<'_, AppState>) -> Vec<ProviderInfo> {
-    state.registry.read().map(|reg| reg.list()).unwrap_or_default()
+    state
+        .registry
+        .read()
+        .map(|reg| reg.list())
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -425,7 +458,12 @@ pub async fn test_connection(
                 .await
                 .map_err(|e| {
                     let msg = e.to_string();
-                    if msg.contains("dns") || msg.contains("resolve") || msg.contains("connect") || msg.contains("refused") || msg.contains("timed out") {
+                    if msg.contains("dns")
+                        || msg.contains("resolve")
+                        || msg.contains("connect")
+                        || msg.contains("refused")
+                        || msg.contains("timed out")
+                    {
                         "Connection failed: unable to reach the server".to_string()
                     } else {
                         format!("Connection failed: {}", msg)
@@ -439,20 +477,34 @@ pub async fn test_connection(
                     String::new()
                 } else {
                     let trimmed = body_text.trim();
-                    let snippet = if trimmed.len() > 300 { &trimmed[..300] } else { trimmed };
+                    let snippet = if trimmed.len() > 300 {
+                        &trimmed[..300]
+                    } else {
+                        trimmed
+                    };
                     format!(": {}", snippet)
                 };
                 return match status.as_u16() {
-                    401 => Err(format!("Connection failed: invalid API key or authentication error{}", detail)),
-                    429 => Err(format!("Connection failed: rate limited by the server{}", detail)),
+                    401 => Err(format!(
+                        "Connection failed: invalid API key or authentication error{}",
+                        detail
+                    )),
+                    429 => Err(format!(
+                        "Connection failed: rate limited by the server{}",
+                        detail
+                    )),
                     _ => Err(format!("Connection failed: HTTP {}{}", status, detail)),
                 };
             }
 
-            let json: serde_json::Value = resp.json().await
+            let json: serde_json::Value = resp
+                .json()
+                .await
                 .map_err(|_| "Connection failed: invalid response from server".to_string())?;
 
-            let content = json["choices"][0]["message"]["content"].as_str().unwrap_or("");
+            let content = json["choices"][0]["message"]["content"]
+                .as_str()
+                .unwrap_or("");
             let finish = json["choices"][0]["finish_reason"].as_str().unwrap_or("");
 
             if finish == "stop" || finish == "length" {
@@ -488,7 +540,10 @@ pub async fn test_connection(
             if !resp.status().is_success() {
                 let status = resp.status();
                 return match status.as_u16() {
-                    401 => Err("Connection failed: invalid API key or authentication error".to_string()),
+                    401 => {
+                        Err("Connection failed: invalid API key or authentication error"
+                            .to_string())
+                    }
                     429 => Err("Connection failed: rate limited by the server".to_string()),
                     _ => Err(format!("Connection failed: HTTP {}", status)),
                 };
@@ -506,6 +561,58 @@ pub async fn fetch_models(
     endpoint: String,
     api_key: Option<String>,
 ) -> Result<Vec<String>, String> {
+    fn parse_model_names(json: &serde_json::Value) -> Vec<String> {
+        if let Some(arr) = json["data"].as_array() {
+            let names: Vec<String> = arr
+                .iter()
+                .filter_map(|m| m["id"].as_str().map(|s| s.to_string()))
+                .collect();
+            if !names.is_empty() {
+                return names;
+            }
+        }
+
+        if let Some(arr) = json["models"].as_array() {
+            let names: Vec<String> = arr
+                .iter()
+                .filter_map(|m| {
+                    m["name"]
+                        .as_str()
+                        .or_else(|| m["model"].as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect();
+            if !names.is_empty() {
+                return names;
+            }
+        }
+
+        Vec::new()
+    }
+
+    async fn fetch_openai_models(
+        client: &reqwest::Client,
+        models_url: &str,
+        api_key: Option<&String>,
+    ) -> Result<Vec<String>, String> {
+        let url = format!("{}/models", models_url);
+        let mut req = client.get(&url);
+        if let Some(key) = api_key {
+            if !key.is_empty() {
+                req = req.header("Authorization", format!("Bearer {}", key));
+            }
+        }
+        let resp = req.send().await.map_err(|e| format!("HTTP error: {}", e))?;
+        let status = resp.status();
+        let text = resp.text().await.map_err(|e| e.to_string())?;
+        if !status.is_success() {
+            return Err(format!("Server returned {}: {}", status, text));
+        }
+        let json: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| format!("Invalid JSON: {}", e))?;
+        Ok(parse_model_names(&json))
+    }
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
@@ -513,8 +620,15 @@ pub async fn fetch_models(
 
     let models_url = {
         let trimmed = endpoint.trim_end_matches('/');
-        if trimmed.ends_with("/chat/completions") || trimmed.ends_with("/responses") || trimmed.ends_with("/messages") {
-            trimmed.rsplit_once('/').map(|(base, _)| base).unwrap_or(trimmed).to_string()
+        if trimmed.ends_with("/chat/completions")
+            || trimmed.ends_with("/responses")
+            || trimmed.ends_with("/messages")
+        {
+            trimmed
+                .rsplit_once('/')
+                .map(|(base, _)| base)
+                .unwrap_or(trimmed)
+                .to_string()
         } else {
             trimmed.to_string()
         }
@@ -522,26 +636,29 @@ pub async fn fetch_models(
 
     match provider_type.to_lowercase().as_str() {
         "openai" | "custom" => {
-            let url = format!("{}/models", models_url);
-            let mut req = client.get(&url);
-            if let Some(key) = &api_key {
-                req = req.header("Authorization", format!("Bearer {}", key));
+            let mut names = fetch_openai_models(&client, &models_url, api_key.as_ref()).await?;
+
+            // Ollama compatibility: some versions expose model list via /api/tags only.
+            if names.is_empty()
+                && (models_url.contains("localhost:11434")
+                    || models_url.contains("127.0.0.1:11434"))
+            {
+                let base = models_url.trim_end_matches("/v1").trim_end_matches('/');
+                let tags_url = format!("{}/api/tags", base);
+                let resp = client
+                    .get(&tags_url)
+                    .send()
+                    .await
+                    .map_err(|e| format!("HTTP error: {}", e))?;
+                let status = resp.status();
+                let text = resp.text().await.map_err(|e| e.to_string())?;
+                if status.is_success() {
+                    let json: serde_json::Value =
+                        serde_json::from_str(&text).map_err(|e| format!("Invalid JSON: {}", e))?;
+                    names = parse_model_names(&json);
+                }
             }
-            let resp = req.send().await.map_err(|e| format!("HTTP error: {}", e))?;
-            let status = resp.status();
-            let text = resp.text().await.map_err(|e| e.to_string())?;
-            if !status.is_success() {
-                return Err(format!("Server returned {}: {}", status, text));
-            }
-            let json: serde_json::Value =
-                serde_json::from_str(&text).map_err(|e| format!("Invalid JSON: {}", e))?;
-            let models = json["data"]
-                .as_array()
-                .ok_or_else(|| "No 'data' array in response".to_string())?;
-            let names: Vec<String> = models
-                .iter()
-                .filter_map(|m| m["id"].as_str().map(|s| s.to_string()))
-                .collect();
+
             if names.is_empty() {
                 return Err("No models found in response".to_string());
             }
@@ -670,10 +787,7 @@ pub fn git_diff(path: String, staged: bool) -> Result<Vec<crate::fs::git::GitDif
 }
 
 #[tauri::command]
-pub fn git_log(
-    path: String,
-    max_count: i32,
-) -> Result<Vec<crate::fs::git::GitLogEntry>, String> {
+pub fn git_log(path: String, max_count: i32) -> Result<Vec<crate::fs::git::GitLogEntry>, String> {
     crate::fs::git::log(&path, max_count).map_err(|e| e.to_string())
 }
 
@@ -760,9 +874,7 @@ pub async fn kill_terminal(
 }
 
 #[tauri::command]
-pub async fn list_terminals(
-    term_state: State<'_, TerminalState>,
-) -> Result<Vec<String>, String> {
+pub async fn list_terminals(term_state: State<'_, TerminalState>) -> Result<Vec<String>, String> {
     Ok(term_state.manager.list().await)
 }
 

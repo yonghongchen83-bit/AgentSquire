@@ -42,10 +42,7 @@ impl LlmProvider for OpenAIProvider {
         model.starts_with("gpt-") || model.starts_with("o1") || model.starts_with("o3")
     }
 
-    async fn chat(
-        &self,
-        request: ChatRequest,
-    ) -> Result<mpsc::Receiver<StreamEvent>, LlmError> {
+    async fn chat(&self, request: ChatRequest) -> Result<mpsc::Receiver<StreamEvent>, LlmError> {
         let (tx, rx) = mpsc::channel(64);
 
         let model = if request.model.is_empty() {
@@ -101,16 +98,20 @@ impl LlmProvider for OpenAIProvider {
         });
 
         if !request.tools.is_empty() {
-            let tools: Vec<serde_json::Value> = request.tools.iter().map(|t| {
-                json!({
-                    "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.input_schema,
-                    }
+            let tools: Vec<serde_json::Value> = request
+                .tools
+                .iter()
+                .map(|t| {
+                    json!({
+                        "type": "function",
+                        "function": {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.input_schema,
+                        }
+                    })
                 })
-            }).collect();
+                .collect();
             body["tools"] = json!(tools);
         }
         if let Some(t) = request.temperature {
@@ -136,15 +137,19 @@ impl LlmProvider for OpenAIProvider {
                         format!("{}/chat/completions", base_url)
                     },
                     body_pretty,
-                ))).await.ok();
+                )))
+                .await
+                .ok();
             }
 
             let response = client
-                .post(if base_url.ends_with("/chat/completions") || base_url.ends_with("/responses") {
-                    base_url.clone()
-                } else {
-                    format!("{}/chat/completions", base_url)
-                })
+                .post(
+                    if base_url.ends_with("/chat/completions") || base_url.ends_with("/responses") {
+                        base_url.clone()
+                    } else {
+                        format!("{}/chat/completions", base_url)
+                    },
+                )
                 .header("Authorization", format!("Bearer {}", api_key))
                 .header("Content-Type", "application/json")
                 .json(&body)
@@ -155,11 +160,15 @@ impl LlmProvider for OpenAIProvider {
                 Ok(r) => r,
                 Err(e) => {
                     if verbose {
-                        tx.send(StreamEvent::Log(format!(
-                            "<<< CONNECTION FAILED: {}", e
-                        ))).await.ok();
+                        tx.send(StreamEvent::Log(format!("<<< CONNECTION FAILED: {}", e)))
+                            .await
+                            .ok();
                     }
-                    tx.send(StreamEvent::Error("Connection failed: unable to reach the server".to_string())).await.ok();
+                    tx.send(StreamEvent::Error(
+                        "Connection failed: unable to reach the server".to_string(),
+                    ))
+                    .await
+                    .ok();
                     tx.send(StreamEvent::Done(FinishReason::Error)).await.ok();
                     return;
                 }
@@ -175,7 +184,9 @@ impl LlmProvider for OpenAIProvider {
                         status.as_u16(),
                         status.canonical_reason().unwrap_or(""),
                         body_text,
-                    ))).await.ok();
+                    )))
+                    .await
+                    .ok();
                 }
                 let err = match status.as_u16() {
                     401 => LlmError::Auth,
@@ -203,9 +214,12 @@ impl LlmProvider for OpenAIProvider {
             }
 
             let mut done = false;
+            let mut carry = String::new();
             let mut stream = resp.bytes_stream();
             while let Some(chunk_result) = stream.next().await {
-                if done { break; }
+                if done {
+                    break;
+                }
 
                 let bytes = match chunk_result {
                     Ok(b) => b,
@@ -216,10 +230,28 @@ impl LlmProvider for OpenAIProvider {
                     }
                 };
 
-                let text = String::from_utf8_lossy(&bytes);
-                for line in text.lines() {
+                let text = format!("{}{}", carry, String::from_utf8_lossy(&bytes));
+                carry.clear();
+                let mut lines = text.split('\n').peekable();
+                while let Some(line) = lines.next() {
+                    if lines.peek().is_none() && !text.ends_with('\n') {
+                        carry = line.to_string();
+                        break;
+                    }
+
                     let line = line.trim();
-                    if line.is_empty() || line == "data: [DONE]" {
+                    if line.is_empty() {
+                        continue;
+                    }
+
+                    if verbose {
+                        tx.send(StreamEvent::Log(format!("<<< RAW {}", line)))
+                            .await
+                            .ok();
+                    }
+
+                    if line == "data: [DONE]" {
+                        tx.send(StreamEvent::Done(FinishReason::Stop)).await.ok();
                         done = true;
                         break;
                     }
@@ -243,14 +275,34 @@ impl LlmProvider for OpenAIProvider {
                         let delta = &choice["delta"];
 
                         let content_text = delta["content"].as_str().unwrap_or("");
-                        let reasoning_text = delta["reasoning_content"].as_str().unwrap_or("");
+                        let reasoning_text = delta["reasoning_content"]
+                            .as_str()
+                            .or_else(|| delta["reasoning"].as_str())
+                            .unwrap_or("");
 
                         if !content_text.is_empty() {
+                            if verbose {
+                                tx.send(StreamEvent::Log(format!(
+                                    "<<< CHUNK content: {}",
+                                    content_text
+                                )))
+                                .await
+                                .ok();
+                            }
                             tx.send(StreamEvent::Chunk(content_text.to_string()))
                                 .await
                                 .ok();
-                        } else if !reasoning_text.is_empty() {
-                            tx.send(StreamEvent::Chunk(reasoning_text.to_string()))
+                        }
+                        if !reasoning_text.is_empty() {
+                            if verbose {
+                                tx.send(StreamEvent::Log(format!(
+                                    "<<< CHUNK thinking: {}",
+                                    reasoning_text
+                                )))
+                                .await
+                                .ok();
+                            }
+                            tx.send(StreamEvent::ThinkingChunk(reasoning_text.to_string()))
                                 .await
                                 .ok();
                         }
@@ -267,9 +319,7 @@ impl LlmProvider for OpenAIProvider {
                                             name,
                                             arguments: args,
                                         };
-                                        tx.send(StreamEvent::ToolCall(tool_call))
-                                            .await
-                                            .ok();
+                                        tx.send(StreamEvent::ToolCall(tool_call)).await.ok();
                                     }
                                 }
                             }
@@ -284,8 +334,18 @@ impl LlmProvider for OpenAIProvider {
                                 _ => FinishReason::Stop,
                             };
                             tx.send(StreamEvent::Done(reason)).await.ok();
+                            done = true;
+                            break;
                         }
                     }
+                }
+            }
+
+            // Process any trailing final line that may arrive without a newline terminator.
+            if !done {
+                let line = carry.trim();
+                if line == "data: [DONE]" {
+                    tx.send(StreamEvent::Done(FinishReason::Stop)).await.ok();
                 }
             }
         });

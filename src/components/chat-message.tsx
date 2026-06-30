@@ -3,6 +3,26 @@ import { ChatBlocks } from '@/components/chat-blocks'
 import { User, Bot } from 'lucide-react'
 
 function parseBlocks(content: string): Block[] {
+  const thinkingRegex = /<thinking>\s*([\s\S]*?)\s*<\/thinking>/i
+  const thinkingMatch = thinkingRegex.exec(content)
+
+  let cleaned = content
+  const blocks: Block[] = []
+
+  if (thinkingMatch) {
+    const thinking = thinkingMatch[1].trim()
+    if (thinking) {
+      blocks.push({ type: 'thinking', content: thinking })
+    }
+    cleaned = content.replace(thinkingRegex, '').trim()
+  }
+
+  const parsed = parseTextAndCodeBlocks(cleaned)
+  blocks.push(...parsed)
+  return blocks
+}
+
+function parseTextAndCodeBlocks(content: string): Block[] {
   const blocks: Block[] = []
   let remaining = content
   const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g

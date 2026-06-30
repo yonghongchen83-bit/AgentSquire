@@ -29,7 +29,7 @@ export const useLayoutStore = create<LayoutStore>((set) => ({
   leftPanelWidth: 280,
   rightPanelVisible: false,
   rightPanelWidth: 380,
-  bottomPanelVisible: false,
+  bottomPanelVisible: true,
   bottomPanelHeight: 200,
   bottomPanelActiveTab: 'terminal',
   uiFontZoom: 100,

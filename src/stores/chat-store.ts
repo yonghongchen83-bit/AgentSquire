@@ -8,6 +8,7 @@ import {
   sendMessage as sendMessageIpc,
   listProviders,
   onStreamChunk,
+  onStreamThinking,
   onStreamToolCall,
   onStreamToolResult,
   onStreamToolPending,
@@ -46,6 +47,19 @@ function parseBlocks(content: string): Block[] {
   return blocks
 }
 
+function composeStreamingBlocks(thinkingText: string, responseText: string, existing: Block[]): Block[] {
+  const nonTextBlocks = existing.filter((b) => b.type === 'tool_call')
+  const blocks: Block[] = []
+
+  if (thinkingText.trim()) {
+    blocks.push({ type: 'thinking', content: thinkingText })
+  }
+
+  blocks.push(...parseBlocks(responseText))
+  blocks.push(...nonTextBlocks)
+  return blocks
+}
+
 interface ChatState {
   conversations: SessionSummary[]
   activeConversationId: string | null
@@ -54,6 +68,7 @@ interface ChatState {
   streamingMessageId: string | null
   streamingBlocks: Block[]
   streamingText: string
+  streamingThinkingText: string
   error: string | null
   providers: ProviderInfo[]
   selectedProvider: string
@@ -85,7 +100,24 @@ export const useChatStore = create<ChatState>((set, get) => {
       await onStreamChunk((text) => {
         set((s) => ({
           streamingText: s.streamingText + text,
-          streamingBlocks: parseBlocks(s.streamingText + text),
+          streamingBlocks: composeStreamingBlocks(
+            s.streamingThinkingText,
+            s.streamingText + text,
+            s.streamingBlocks,
+          ),
+        }))
+      }),
+    )
+
+    cleanupFns.push(
+      await onStreamThinking((text) => {
+        set((s) => ({
+          streamingThinkingText: s.streamingThinkingText + text,
+          streamingBlocks: composeStreamingBlocks(
+            s.streamingThinkingText + text,
+            s.streamingText,
+            s.streamingBlocks,
+          ),
         }))
       }),
     )
@@ -152,18 +184,22 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     cleanupFns.push(
       await onStreamDone(() => {
-        const { streamingText } = get()
+        const { streamingText, streamingThinkingText } = get()
+        const content = streamingThinkingText.trim()
+          ? `<thinking>\n${streamingThinkingText}\n</thinking>\n\n${streamingText}`.trim()
+          : streamingText
         const newMsg: Message = {
           id: crypto.randomUUID(),
           sessionId,
           role: 'assistant',
-          content: streamingText,
+          content,
           createdAt: new Date().toISOString(),
         }
         set({
           isStreaming: false,
           streamingMessageId: null,
           streamingText: '',
+          streamingThinkingText: '',
           streamingBlocks: [],
           pendingApprovals: [],
         })
@@ -180,6 +216,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           isStreaming: false,
           streamingMessageId: null,
           streamingText: '',
+          streamingThinkingText: '',
           streamingBlocks: [],
           pendingApprovals: [],
           error: err,
@@ -196,6 +233,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     streamingMessageId: null,
     streamingBlocks: [],
     streamingText: '',
+    streamingThinkingText: '',
     error: null,
     providers: [],
     selectedProvider: '',
@@ -240,6 +278,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           messages: session.messages,
           error: null,
           streamingText: '',
+          streamingThinkingText: '',
           streamingBlocks: [],
           isStreaming: false,
           streamingMessageId: null,
@@ -299,6 +338,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         isStreaming: true,
         streamingMessageId: assistantId,
         streamingText: '',
+        streamingThinkingText: '',
         streamingBlocks: [],
         error: null,
         pendingApprovals: [],
@@ -324,6 +364,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         isStreaming: false,
         streamingMessageId: null,
         streamingText: '',
+        streamingThinkingText: '',
         streamingBlocks: [],
         pendingApprovals: [],
       })

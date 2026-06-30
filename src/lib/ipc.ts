@@ -105,6 +105,10 @@ export function onStreamChunk(cb: (text: string) => void) {
   return listen<string>('stream-chunk', (event) => cb(event.payload))
 }
 
+export function onStreamThinking(cb: (text: string) => void) {
+  return listen<string>('stream-thinking', (event) => cb(event.payload))
+}
+
 export function onStreamToolCall(cb: (toolCall: { id: string; name: string; arguments: Record<string, unknown> }) => void) {
   return listen('stream-tool-call', (event) => cb(event.payload as { id: string; name: string; arguments: Record<string, unknown> }))
 }

@@ -9,7 +9,7 @@ describe('LayoutStore', () => {
       leftPanelWidth: 280,
       rightPanelVisible: false,
       rightPanelWidth: 380,
-      bottomPanelVisible: false,
+      bottomPanelVisible: true,
       bottomPanelHeight: 200,
       bottomPanelActiveTab: 'terminal',
       uiFontZoom: 100,
@@ -41,9 +41,9 @@ describe('LayoutStore', () => {
 
   it('toggles bottom panel', () => {
     useLayoutStore.getState().toggleBottomPanel()
-    expect(useLayoutStore.getState().bottomPanelVisible).toBe(true)
-    useLayoutStore.getState().toggleBottomPanel()
     expect(useLayoutStore.getState().bottomPanelVisible).toBe(false)
+    useLayoutStore.getState().toggleBottomPanel()
+    expect(useLayoutStore.getState().bottomPanelVisible).toBe(true)
   })
 
   it('sets bottom panel tab', () => {

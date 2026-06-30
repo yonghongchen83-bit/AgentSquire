@@ -164,6 +164,7 @@ pub enum FinishReason {
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
     Chunk(String),
+    ThinkingChunk(String),
     ToolCall(ToolCall),
     Log(String),
     Done(FinishReason),
@@ -186,12 +187,11 @@ pub enum LlmError {
 
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
-    async fn chat(
-        &self,
-        request: ChatRequest,
-    ) -> Result<mpsc::Receiver<StreamEvent>, LlmError>;
+    async fn chat(&self, request: ChatRequest) -> Result<mpsc::Receiver<StreamEvent>, LlmError>;
 
     fn supports_model(&self, model: &str) -> bool;
     fn provider_name(&self) -> &'static str;
-    fn verbose(&self) -> bool { false }
+    fn verbose(&self) -> bool {
+        false
+    }
 }

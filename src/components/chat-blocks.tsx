@@ -8,7 +8,7 @@ function TextBlock({ content }: { content: string }) {
 }
 
 function ThinkingBlock({ content }: { content: string }) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   return (
     <div className="border border-border rounded-md overflow-hidden my-1">
       <button

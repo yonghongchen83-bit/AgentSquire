@@ -188,6 +188,9 @@ export interface AppConfig {
   terminalShell: string
   terminalFontSize: number
   verboseLogging: boolean
+  leftPanelWidth?: number
+  rightPanelWidth?: number
+  bottomPanelHeight?: number
 }
 
 export interface LlmProviderConfig {

@@ -351,14 +351,6 @@ export function SettingsDialog() {
     try {
       const models = await fetchModels(provider.providerType, provider.endpoint, provider.apiKey)
       setFetchedModels((prev) => ({ ...prev, [index]: models }))
-      if (models.length > 0) {
-        const merged = Array.from(new Set([...(provider.models ?? []), ...models]))
-        updateLlmProvider(index, {
-          models: merged,
-          model: provider.model || merged[0] || '',
-        })
-      }
-      setTestResults((prev) => ({ ...prev, [index]: { status: 'ok', message: `Fetched ${models.length} models` } }))
     } catch (e) {
       setTestResults((prev) => ({ ...prev, [index]: { status: 'error', message: String(e) } }))
     } finally {
@@ -556,7 +548,7 @@ export function SettingsDialog() {
                   </p>
                 </div>
 
-                {(provId || provider.model || (provider.models?.length ?? 0) > 0) && (
+                {provider.model && (
                   <div className="space-y-1.5">
                     <Label>Models</Label>
                     <div className="flex flex-wrap gap-1.5 mb-2">

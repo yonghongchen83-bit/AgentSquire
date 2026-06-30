@@ -164,7 +164,6 @@ pub enum FinishReason {
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
     Chunk(String),
-    ThinkingChunk(String),
     ToolCall(ToolCall),
     Log(String),
     Done(FinishReason),

@@ -9,10 +9,7 @@ pub fn set_config_dir(path: PathBuf) {
 }
 
 pub fn config_dir() -> PathBuf {
-    CONFIG_DIR
-        .get()
-        .cloned()
-        .unwrap_or_else(dirs_fallback)
+    CONFIG_DIR.get().cloned().unwrap_or_else(dirs_fallback)
 }
 
 fn dirs_fallback() -> PathBuf {
@@ -37,6 +34,9 @@ pub struct AppConfig {
     pub terminal_shell: Option<String>,
     pub terminal_font_size: u16,
     pub verbose_logging: bool,
+    pub left_panel_width: Option<f64>,
+    pub right_panel_width: Option<f64>,
+    pub bottom_panel_height: Option<f64>,
 }
 
 impl Default for AppConfig {
@@ -56,6 +56,9 @@ impl Default for AppConfig {
             terminal_shell: None,
             terminal_font_size: 13,
             verbose_logging: false,
+            left_panel_width: None,
+            right_panel_width: None,
+            bottom_panel_height: None,
         }
     }
 }
@@ -137,18 +140,16 @@ mod tests {
     #[test]
     fn test_provider_config() {
         let config = AppConfig {
-            llm_providers: vec![
-                ProviderConfig {
-                    provider_type: "openai".into(),
-                    name: "openai-main".into(),
-                    api_key: "sk-xxx".into(),
-                    model: "gpt-4".into(),
-                    models: vec!["gpt-4".into()],
-                    endpoint: None,
-                    metadata: std::collections::HashMap::new(),
-                    category: None,
-                },
-            ],
+            llm_providers: vec![ProviderConfig {
+                provider_type: "openai".into(),
+                name: "openai-main".into(),
+                api_key: "sk-xxx".into(),
+                model: "gpt-4".into(),
+                models: vec!["gpt-4".into()],
+                endpoint: None,
+                metadata: std::collections::HashMap::new(),
+                category: None,
+            }],
             ..Default::default()
         };
         assert_eq!(config.llm_providers.len(), 1);

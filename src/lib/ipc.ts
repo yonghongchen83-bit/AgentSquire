@@ -35,7 +35,8 @@ export async function loadConfig(): Promise<AppConfig> {
 }
 
 export async function saveConfig(config: Partial<AppConfig>): Promise<void> {
-  return invoke('save_config', { config })
+  const current = await loadConfig()
+  return invoke('save_config', { newConfig: { ...current, ...config } })
 }
 
 export async function listConversations(): Promise<SessionSummary[]> {

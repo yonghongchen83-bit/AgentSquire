@@ -140,12 +140,6 @@ pub async fn send_message(
         .await
         .map_err(|e| e.to_string())?;
 
-    let verbose_logging = state
-        .config
-        .read()
-        .map(|c| c.verbose_logging)
-        .unwrap_or(false);
-
     let (provider_arc, selected_model) = {
         let reg = state.registry.read().map_err(|e| e.to_string())?;
         let name = provider_name
@@ -211,9 +205,6 @@ pub async fn send_message(
                         full_response.push_str(&text);
                         let _ = app_clone.emit("stream-chunk", text);
                     }
-                    StreamEvent::ThinkingChunk(text) => {
-                        let _ = app_clone.emit("stream-thinking", text);
-                    }
                     StreamEvent::ToolCall(tc) => {
                         tool_calls.push(tc.clone());
                         let _ = app_clone.emit("stream-tool-call", tc);
@@ -242,17 +233,8 @@ pub async fn send_message(
             let reason = match finish_reason {
                 Some(r) => r,
                 None => {
-                    // Some OpenAI-compatible backends (including Ollama variants) may close
-                    // the stream without an explicit finish_reason. Infer a reasonable end state.
-                    if !tool_calls.is_empty() {
-                        FinishReason::ToolCalls
-                    } else if !full_response.is_empty() {
-                        FinishReason::Stop
-                    } else {
-                        let _ =
-                            app_clone.emit("stream-error", "Stream ended without finish reason");
-                        return;
-                    }
+                    let _ = app_clone.emit("stream-error", "Stream ended without finish reason");
+                    return;
                 }
             };
 
@@ -337,16 +319,6 @@ pub async fn send_message(
                 }
                 FinishReason::Stop | FinishReason::Length => {
                     let content = std::mem::take(&mut full_response);
-                    if verbose_logging {
-                        let _ = app_clone.emit(
-                            "output:append",
-                            serde_json::json!({
-                                "source": "chat",
-                                "line": format!("<<< FINAL_RESPONSE\n{}", content),
-                                "timestamp": chrono::Utc::now().to_rfc3339(),
-                            }),
-                        );
-                    }
                     if !content.is_empty() {
                         let _ = store
                             .append_message(NewMessage {
@@ -561,58 +533,6 @@ pub async fn fetch_models(
     endpoint: String,
     api_key: Option<String>,
 ) -> Result<Vec<String>, String> {
-    fn parse_model_names(json: &serde_json::Value) -> Vec<String> {
-        if let Some(arr) = json["data"].as_array() {
-            let names: Vec<String> = arr
-                .iter()
-                .filter_map(|m| m["id"].as_str().map(|s| s.to_string()))
-                .collect();
-            if !names.is_empty() {
-                return names;
-            }
-        }
-
-        if let Some(arr) = json["models"].as_array() {
-            let names: Vec<String> = arr
-                .iter()
-                .filter_map(|m| {
-                    m["name"]
-                        .as_str()
-                        .or_else(|| m["model"].as_str())
-                        .map(|s| s.to_string())
-                })
-                .collect();
-            if !names.is_empty() {
-                return names;
-            }
-        }
-
-        Vec::new()
-    }
-
-    async fn fetch_openai_models(
-        client: &reqwest::Client,
-        models_url: &str,
-        api_key: Option<&String>,
-    ) -> Result<Vec<String>, String> {
-        let url = format!("{}/models", models_url);
-        let mut req = client.get(&url);
-        if let Some(key) = api_key {
-            if !key.is_empty() {
-                req = req.header("Authorization", format!("Bearer {}", key));
-            }
-        }
-        let resp = req.send().await.map_err(|e| format!("HTTP error: {}", e))?;
-        let status = resp.status();
-        let text = resp.text().await.map_err(|e| e.to_string())?;
-        if !status.is_success() {
-            return Err(format!("Server returned {}: {}", status, text));
-        }
-        let json: serde_json::Value =
-            serde_json::from_str(&text).map_err(|e| format!("Invalid JSON: {}", e))?;
-        Ok(parse_model_names(&json))
-    }
-
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
@@ -636,29 +556,26 @@ pub async fn fetch_models(
 
     match provider_type.to_lowercase().as_str() {
         "openai" | "custom" => {
-            let mut names = fetch_openai_models(&client, &models_url, api_key.as_ref()).await?;
-
-            // Ollama compatibility: some versions expose model list via /api/tags only.
-            if names.is_empty()
-                && (models_url.contains("localhost:11434")
-                    || models_url.contains("127.0.0.1:11434"))
-            {
-                let base = models_url.trim_end_matches("/v1").trim_end_matches('/');
-                let tags_url = format!("{}/api/tags", base);
-                let resp = client
-                    .get(&tags_url)
-                    .send()
-                    .await
-                    .map_err(|e| format!("HTTP error: {}", e))?;
-                let status = resp.status();
-                let text = resp.text().await.map_err(|e| e.to_string())?;
-                if status.is_success() {
-                    let json: serde_json::Value =
-                        serde_json::from_str(&text).map_err(|e| format!("Invalid JSON: {}", e))?;
-                    names = parse_model_names(&json);
-                }
+            let url = format!("{}/models", models_url);
+            let mut req = client.get(&url);
+            if let Some(key) = &api_key {
+                req = req.header("Authorization", format!("Bearer {}", key));
             }
-
+            let resp = req.send().await.map_err(|e| format!("HTTP error: {}", e))?;
+            let status = resp.status();
+            let text = resp.text().await.map_err(|e| e.to_string())?;
+            if !status.is_success() {
+                return Err(format!("Server returned {}: {}", status, text));
+            }
+            let json: serde_json::Value =
+                serde_json::from_str(&text).map_err(|e| format!("Invalid JSON: {}", e))?;
+            let models = json["data"]
+                .as_array()
+                .ok_or_else(|| "No 'data' array in response".to_string())?;
+            let names: Vec<String> = models
+                .iter()
+                .filter_map(|m| m["id"].as_str().map(|s| s.to_string()))
+                .collect();
             if names.is_empty() {
                 return Err("No models found in response".to_string());
             }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Terminal, FileText, AlertCircle, Plus, X, ChevronDown } from 'lucide-react'
 import { useLayoutStore, type BottomPanelTab } from '@/stores/ui-store'
 import { XtermTerminal } from '@/components/xterm-terminal'

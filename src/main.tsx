@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ErrorBoundary } from '@/components/error-boundary'
-import { initTheme } from '@/components/settings-dialog'
+import { initTheme } from '@/components/settings/theme-utils'
 import './index.css'
 import App from './App.tsx'
 

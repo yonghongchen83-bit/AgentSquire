@@ -88,7 +88,7 @@ export async function deleteItem(path: string): Promise<void> {
 }
 
 export async function renameItem(oldPath: string, newPath: string): Promise<void> {
-  return invoke('rename_item', { oldPath, newPath })
+  return invoke('rename_item', { from: oldPath, to: newPath })
 }
 
 export async function gitStatus(path?: string): Promise<{ file: string; status: string }[]> {
@@ -285,8 +285,8 @@ export async function replaceInFiles(options: ReplaceOptions): Promise<number> {
 
 // ─── File System Events ────────────────────────────────
 
-export function onFsChange(cb: (payload: { path: string; kind: string }) => void) {
-  return listen<{ path: string; kind: string }>('fs:change', (event) => cb(event.payload))
+export function onFsChange(cb: (payload: { kind: string; paths: string[] }) => void) {
+  return listen<{ kind: string; paths: string[] }>('file-event', (event) => cb(event.payload))
 }
 
 // ─── Output & Errors ────────────────────────────────────

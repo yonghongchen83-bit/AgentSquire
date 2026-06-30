@@ -262,10 +262,7 @@ export function FileTree() {
     let unlisten: (() => void) | undefined
     const setup = async () => {
       try {
-        const result = await onFsChange(() => { refreshTree() })
-        if (result && typeof result.unlisten === 'function') {
-          unlisten = result.unlisten
-        }
+        unlisten = await onFsChange(() => { refreshTree() })
       } catch {}
     }
     setup()

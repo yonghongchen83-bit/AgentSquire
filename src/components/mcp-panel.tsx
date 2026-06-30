@@ -174,7 +174,7 @@ export function McpPanel() {
           <p className="text-xs text-[#6B7B8D]">Configure Model Context Protocol server entries</p>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={reload} title="Reload">
+          <Button variant="ghost" size="sm" onClick={() => { void reload() }} title="Reload">
             <RefreshCw className="h-4 w-4" />
           </Button>
           <Button variant="ghost" size="sm" onClick={addServer} title="Add server">

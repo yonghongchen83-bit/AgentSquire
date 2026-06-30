@@ -92,9 +92,7 @@ export function XtermTerminal() {
           const inst = terminalsRef.current.get(terminal_id)
           if (inst) inst.term.write(data)
         })
-        if (output && typeof output.unlisten === 'function') {
-          cleanupRef.current.push(output.unlisten)
-        }
+        cleanupRef.current.push(output)
       } catch {}
 
       try {
@@ -104,9 +102,7 @@ export function XtermTerminal() {
             inst.term.write(`\r\n\x1b[31mProcess exited with code ${code}\x1b[0m\r\n`)
           }
         })
-        if (exit && typeof exit.unlisten === 'function') {
-          cleanupRef.current.push(exit.unlisten)
-        }
+        cleanupRef.current.push(exit)
       } catch {}
     }
     setupListeners()
@@ -119,7 +115,7 @@ export function XtermTerminal() {
       })
       cleanupRef.current = []
     }
-  }, [])
+  }, [createTerminal])
 
   useEffect(() => {
     terminals.forEach((inst) => {

@@ -1,0 +1,14 @@
+theme = "system"
+fontSize = 14
+tabSize = 4
+wordWrap = false
+llmProviders = []
+mcpServers = []
+searchExclude = [
+    "node_modules",
+    ".git",
+    "target",
+    "dist",
+]
+terminalFontSize = 13
+verboseLogging = false

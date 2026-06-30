@@ -1,0 +1,41 @@
+{
+  "nodePath": "root/CodeRefactor",
+  "items": [
+    {
+      "id": "cr-001",
+      "title": "Contract safety fixes (IPC args and event names)",
+      "status": "done",
+      "priority": "high"
+    },
+    {
+      "id": "cr-002",
+      "title": "Split backend commands module by domain",
+      "status": "done",
+      "priority": "high"
+    },
+    {
+      "id": "cr-003",
+      "title": "Decompose settings dialog into focused modules",
+      "status": "done",
+      "priority": "high"
+    },
+    {
+      "id": "cr-004",
+      "title": "Decompose chat store side effects and parsing",
+      "status": "done",
+      "priority": "high"
+    },
+    {
+      "id": "cr-005",
+      "title": "Deduplicate provider shared logic",
+      "status": "done",
+      "priority": "medium"
+    },
+    {
+      "id": "cr-006",
+      "title": "Repo hygiene and standards cleanup",
+      "status": "done",
+      "priority": "medium"
+    }
+  ]
+}

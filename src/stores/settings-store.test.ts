@@ -25,6 +25,7 @@ describe('settings-store', () => {
       tabSize: 4,
       wordWrap: true,
       llmProviders: [],
+      mcpServers: [],
       searchExclude: ['node_modules'],
       terminalShell: '/bin/zsh',
       terminalFontSize: 14,
@@ -42,7 +43,7 @@ describe('settings-store', () => {
   it('updateVerboseLogging toggles verbose logging', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
-      llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      llmProviders: [], mcpServers: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
       verboseLogging: false,
     })
     useSettingsStore.getState().updateVerboseLogging(true)
@@ -52,7 +53,7 @@ describe('settings-store', () => {
   it('updateTheme changes theme', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
-      llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      llmProviders: [], mcpServers: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
       verboseLogging: false,
     })
     useSettingsStore.getState().updateTheme('dark')
@@ -62,7 +63,7 @@ describe('settings-store', () => {
   it('updateEditorFontSize changes font size', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 13, tabSize: 4, wordWrap: false,
-      llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      llmProviders: [], mcpServers: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
       verboseLogging: false,
     })
     useSettingsStore.getState().updateEditorFontSize(18)
@@ -72,7 +73,7 @@ describe('settings-store', () => {
   it('updateEditorWordWrap toggles word wrap', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
-      llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      llmProviders: [], mcpServers: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
       verboseLogging: false,
     })
     useSettingsStore.getState().updateEditorWordWrap(true)
@@ -82,7 +83,7 @@ describe('settings-store', () => {
   it('updateEditorTabSize changes tab size', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
-      llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      llmProviders: [], mcpServers: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
       verboseLogging: false,
     })
     useSettingsStore.getState().updateEditorTabSize(2)
@@ -92,7 +93,7 @@ describe('settings-store', () => {
   it('updateTerminalFontSize changes terminal font size', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
-      llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      llmProviders: [], mcpServers: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
       verboseLogging: false,
     })
     useSettingsStore.getState().updateTerminalFontSize(16)
@@ -102,7 +103,7 @@ describe('settings-store', () => {
   it('updateTerminalShell changes shell path', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
-      llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      llmProviders: [], mcpServers: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
       verboseLogging: false,
     })
     useSettingsStore.getState().updateTerminalShell('/bin/bash')
@@ -112,7 +113,7 @@ describe('settings-store', () => {
   it('updateSearchExclude changes exclude patterns', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
-      llmProviders: [], searchExclude: ['node_modules'], terminalShell: '', terminalFontSize: 13,
+      llmProviders: [], mcpServers: [], searchExclude: ['node_modules'], terminalShell: '', terminalFontSize: 13,
       verboseLogging: false,
     })
     useSettingsStore.getState().updateSearchExclude(['.git', 'dist'])
@@ -122,7 +123,7 @@ describe('settings-store', () => {
   it('addLlmProvider adds empty provider', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
-      llmProviders: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
+      llmProviders: [], mcpServers: [], searchExclude: [], terminalShell: '', terminalFontSize: 13,
       verboseLogging: false,
     })
     useSettingsStore.getState().addLlmProvider()
@@ -133,7 +134,8 @@ describe('settings-store', () => {
   it('removeLlmProvider removes by index', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
-      llmProviders: [{ id: 'a', name: 'A', apiKey: '', model: '', endpoint: '' }],
+      llmProviders: [{ providerType: 'openai', name: 'A', apiKey: '', model: '', models: [], endpoint: '' }],
+      mcpServers: [],
       searchExclude: [], terminalShell: '', terminalFontSize: 13,
       verboseLogging: false,
     })
@@ -144,7 +146,8 @@ describe('settings-store', () => {
   it('updateLlmProvider updates specific provider field', () => {
     useSettingsStore.getState().setConfig({
       theme: 'light', fontSize: 14, tabSize: 4, wordWrap: false,
-      llmProviders: [{ id: 'a', name: 'A', apiKey: '', model: 'gpt-3', endpoint: '' }],
+      llmProviders: [{ providerType: 'openai', name: 'A', apiKey: '', model: 'gpt-3', models: ['gpt-3'], endpoint: '' }],
+      mcpServers: [],
       searchExclude: [], terminalShell: '', terminalFontSize: 13,
       verboseLogging: false,
     })

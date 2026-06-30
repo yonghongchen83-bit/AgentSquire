@@ -26,9 +26,11 @@ describe('SettingsDialog', () => {
         llmProviders: [
           { providerType: 'openai', name: 'My OpenAI', apiKey: 'sk-xxx', model: 'gpt-4', models: [], endpoint: '', category: 'openai' },
         ],
+        mcpServers: [],
         searchExclude: ['node_modules', '.git'],
         terminalShell: '',
         terminalFontSize: 13,
+        verboseLogging: false,
       },
     })
   })

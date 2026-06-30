@@ -33,10 +33,14 @@ fn test_config_serde_roundtrip() {
                 category: None,
             },
         ],
+        mcp_servers: vec![],
         search_exclude: vec!["node_modules".into()],
         terminal_shell: Some("powershell.exe".into()),
         terminal_font_size: 12,
         verbose_logging: false,
+        left_panel_width: None,
+        right_panel_width: None,
+        bottom_panel_height: None,
     };
 
     let json = serde_json::to_string(&config).unwrap();

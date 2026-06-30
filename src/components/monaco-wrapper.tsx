@@ -37,7 +37,7 @@ export function MonacoWrapper() {
       .catch(() => {
         setLoading(activeTab.id, false)
       })
-  }, [activeTab?.id])
+  }, [activeTab, setLoading, markDirty])
 
   useEffect(() => {
     if (!gotoLine || !editorRef.current) return
@@ -59,7 +59,7 @@ export function MonacoWrapper() {
         tabSize: config.tabSize,
       })
     }
-  }, [config?.fontSize, config?.wordWrap, config?.tabSize])
+  }, [config])
 
   const handleMount: OnMount = (editor) => {
     editorRef.current = editor

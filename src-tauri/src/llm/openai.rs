@@ -11,6 +11,7 @@ use tokio::sync::mpsc;
 use super::provider::{
     ChatRequest, ChatRole, FinishReason, LlmError, LlmProvider, StreamEvent, ToolCall,
 };
+use super::thinking::normalize_level;
 
 pub struct OpenAIProvider {
     client: Client,
@@ -119,14 +120,6 @@ fn truncate_chars(input: &str, max_chars: usize) -> String {
         format!("{}...", head)
     } else {
         head
-    }
-}
-
-fn normalize_level(level: Option<String>) -> String {
-    let raw = level.unwrap_or_else(|| "mid".to_string()).to_lowercase();
-    match raw.as_str() {
-        "none" | "low" | "mid" | "high" => raw,
-        _ => "mid".to_string(),
     }
 }
 

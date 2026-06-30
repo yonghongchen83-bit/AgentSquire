@@ -1,16 +1,5 @@
 import { expect } from '@wdio/globals'
 
-async function waitForAppReady(): Promise<void> {
-  await browser.url('http://localhost:5173/')
-  await browser.waitUntil(
-    async () => {
-      const exists = await $('#left-panel').isExisting()
-      return exists
-    },
-    { timeout: 15000, timeoutMsg: 'App did not render left panel within 15s' },
-  )
-}
-
 async function setupProject(): Promise<WebdriverIO.Element> {
   await browser.url('http://localhost:5173/')
   await browser.waitUntil(

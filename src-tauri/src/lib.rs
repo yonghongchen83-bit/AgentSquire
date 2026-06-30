@@ -49,6 +49,8 @@ pub fn run() {
             commands::reject_tool_call,
             commands::load_config,
             commands::check_update,
+            commands::get_output,
+            commands::get_errors,
             commands::test_connection,
             commands::test_mcp_connection,
             commands::fetch_models,

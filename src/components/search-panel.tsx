@@ -67,7 +67,7 @@ export function SearchPanel() {
     } finally {
       setIsSearching(false)
     }
-  }, [query, path, regex, caseSensitive, wholeWord, glob, contextLines, setIsSearching, setResults])
+  }, [query, path, projectPath, regex, caseSensitive, wholeWord, glob, contextLines, setIsSearching, setResults])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSearch()

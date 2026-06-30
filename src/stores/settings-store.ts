@@ -27,7 +27,7 @@ const store = create<SettingsStore>((set) => ({
   config: null,
   showSplash: true,
   initialTab: 'general',
-  setOpen: (open, tab) => set((s) => {
+  setOpen: (open, tab) => set(() => {
     if (!open) {
       // Reset config when dialog closes so next open reloads from backend
       return { open, initialTab: tab ?? 'general', config: null }

@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WiFi Router Comparison – Officeworks</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #f6f8fc;
+      color: #1a1a2e;
+      padding: 2rem 1.5rem;
+    }
+    .container { max-width: 1400px; margin: 0 auto; }
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.3rem;
+    }
+    h1 span { background: #2563eb; color: #fff; font-size: 0.9rem; padding: 0.2rem 0.8rem; border-radius: 20px; font-weight: 500; }
+    .subtitle {
+      color: #475569;
+      font-size: 1.05rem;
+      margin-bottom: 2rem;
+      border-left: 4px solid #2563eb;
+      padding-left: 1rem;
+    }
+    .last-updated { font-size: 0.85rem; color: #64748b; margin-bottom: 1.5rem; }
+
+    /* controls */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      align-items: center;
+    }
+    .controls label { font-weight: 500; font-size: 0.9rem; color: #334155; }
+    .controls select, .controls input {
+      padding: 0.5rem 0.8rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+      background: #fff;
+    }
+    .compare-btn {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      padding: 0.6rem 1.4rem;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .compare-btn:hover { background: #1d4ed8; }
+    .count-badge {
+      background: #e2e8f0;
+      padding: 0.3rem 0.8rem;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      color: #334155;
+      margin-left: auto;
+    }
+
+    /* comparison table */
+    .table-wrap {
+      overflow-x: auto;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 6px 16px rgba(0,0,0,0.04);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1000px;
+      font-size: 0.9rem;
+    }
+    thead {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    thead th {
+      background: #1e293b;
+      color: #fff;
+      padding: 1rem 0.8rem;
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.85rem;
+      white-space: nowrap;
+      border-right: 1px solid #334155;
+    }
+    thead th:first-child {
+      border-radius: 12px 0 0 0;
+      min-width: 140px;
+    }
+    thead th:last-child { border-right: none; border-radius: 0 12px 0 0; }
+    thead th .sub { display: block; font-weight: 400; font-size: 0.7rem; color: #94a3b8; margin-top: 2px; }
+
+    tbody tr {
+      transition: background 0.15s;
+    }
+    tbody tr:nth-child(even) { background: #f8fafc; }
+    tbody tr:hover { background: #eef2ff; }
+    tbody td {
+      padding: 0.9rem 0.8rem;
+      border-bottom: 1px solid #e2e8f0;
+      vertical-align: top;
+      line-height: 1.5;
+    }
+    tbody td:first-child {
+      font-weight: 600;
+      color: #1e293b;
+      white-space: nowrap;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 6px;
+      font-weight: 500;
+      margin-right: 0.3rem;
+    }
+    .tag-wifi7 { background: #dbeafe; color: #1d4ed8; }
+    .tag-wifi6e { background: #dcfce7; color: #166534; }
+    .tag-wifi6 { background: #fef9c3; color: #854d0e; }
+    .tag-ax { background: #f3e8ff; color: #6b21a8; }
+    .tag-ac { background: #fce7f3; color: #9d174d; }
+    .tag-best { background: #fef3c7; color: #92400e; }
+    .tag-isp { background: #e0f2fe; color: #075985; }
+
+    .price {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: #0f172a;
+    }
+    .price-discount { color: #dc2626; font-size: 0.75rem; margin-left: 4px; }
+    .rating {
+      color: #f59e0b;
+      letter-spacing: 1px;
+    }
+    .spec { color: #475569; }
+    .pros-cons { font-size: 0.82rem; }
+    .pros-cons strong { color: #0f172a; }
+    .pros { color: #166534; }
+    .cons { color: #b91c1c; }
+    .link { color: #2563eb; text-decoration: none; font-weight: 500; }
+    .link:hover { text-decoration: underline; }
+
+    .badge-5g { background: #fef9c3; color: #713f12; font-size: 0.65rem; padding: 0.1rem 0.4rem; border-radius: 4px; }
+    .check { color: #16a34a; font-weight: 700; }
+    .xmark { color: #dc2626; }
+
+    footer {
+      text-align: center;
+      margin-top: 2rem;
+      font-size: 0.8rem;
+      color: #64748b;
+      padding: 1rem;
+    }
+
+    /* responsive */
+    @media (max-width: 768px) {
+      body { padding: 1rem; }
+      h1 { font-size: 1.5rem; flex-wrap: wrap; }
+      .controls { flex-direction: column; align-items: stretch; }
+      .count-badge { margin-left: 0; }
+    }
+
+    /* tooltip */
+    .info-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      color: #475569;
+      font-size: 0.6rem;
+      font-weight: 700;
+      cursor: help;
+      margin-left: 4px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>
+    📶 WiFi Router Comparison
+    <span>Officeworks AU</span>
+  </h1>
+  <div class="subtitle">
+    Side-by-side specs, prices &amp; ratings — updated weekly
+  </div>
+  <div class="last-updated">🔄 Last refreshed: <strong>2026-01-26</strong> &middot; Prices may vary by store</div>
+
+  <div class="controls">
+    <label>Filter by WiFi:
+      <select id="filterWifi">
+        <option value="all">All</option>
+        <option value="wifi7">WiFi 7</option>
+        <option value="wifi6e">WiFi 6E</option>
+        <option value="wifi6">WiFi 6</option>
+        <option value="wifi5">WiFi 5 (AC)</option>
+      </select>
+    </label>
+    <label>Sort by:
+      <select id="sortBy">
+        <option value="default">Default</option>
+        <option value="price-low">Price: Low → High</option>
+        <option value="price-high">Price: High → Low</option>
+        <option value="rating">Rating</option>
+      </select>
+    </label>
+    <button class="compare-btn" onclick="applyFilters()">🔄 Update View</button>
+    <span class="count-badge" id="countBadge">15 models</span>
+  </div>
+
+  <div class="table-wrap">
+    <table id="routerTable">
+      <thead>
+        <tr>
+          <th>Model <span class="sub">Brand</span></th>
+          <th>WiFi Standard</th>
+          <th>Speed <span class="sub">AX / BE</span></th>
+          <th>Bands</th>
+          <th>Price <span class="sub">Officeworks</span></th>
+          <th>Rating</th>
+          <th>Coverage</th>
+          <th>Ports</th>
+          <th>Mesh Ready</th>
+          <th>Pros / Cons</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <!-- populated by JS -->
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    🏬 Data sourced from Officeworks Australia &middot; Prices exclude delivery &amp; installation &middot; Always check store for latest pricing
+  </footer>
+</div>
+
+<script>
+// ─── Router Dataset ─────────────────────────────────────────────────────────
+const routers = [
+  {
+    id: 1,
+    model: 'TP-Link Archer BE800',
+    brand: 'TP-Link',
+    wifiStandard: 'WiFi 7 (BE)',
+    wifiGen: 'wifi7',
+    speedLabel: 'BE19000',
+    bands: 'Tri-band (2.4/5/6 GHz)',
+    price: 699,
+    priceNote: 'was $799',
+    rating: 4.4,
+    ratingCount: 23,
+    coverage: 'Large (up to 350 m²)',
+    ports: '1× 10Gbps, 4× 2.5Gbps, 1× USB-C',
+    meshReady: true,
+    pros: ['Blazing WiFi 7 speeds', '10G ports future-proof', 'Great range'],
+    cons: ['Expensive', 'Bulky design']
+  },
+  {
+    id: 2,
+    model: 'TP-Link Deco BE85',
+    brand: 'TP-Link',
+    wifiStandard: 'WiFi 7 (BE)',
+    wifiGen: 'wifi7',
+    speedLabel: 'BE22000',
+    bands: 'Tri-band (2.4/5/6 GHz)',
+    price: 1099,
+    priceNote: '2-pack',
+    rating: 4.5,
+    ratingCount: 18,
+    coverage: 'Very Large (up to 550 m²)',
+    ports: '2× 2.5Gbps per unit',
+    meshReady: true,
+    pros: ['Whole-home mesh', 'WiFi 7 tri-band', 'Easy app setup'],
+    cons: ['Premium price', 'Large units']
+  },
+  {
+    id: 3,
+    model: 'Asus RT-AX86U Pro',
+    brand: 'Asus',
+    wifiStandard: 'WiFi 6 (AX)',
+    wifiGen: 'wifi6',
+    speedLabel: 'AX5700',
+    bands: 'Dual-band (2.4/5 GHz)',
+    price: 399,
+    priceNote: '',
+    rating: 4.7,
+    ratingCount: 142,
+    coverage: 'Large (up to 300 m²)',
+    ports: '1× 2.5Gbps, 4× Gigabit, 2× USB',
+    meshReady: true,
+    pros: ['Top-rated performance', 'Excellent gaming QoS', 'Strong parental controls'],
+    cons: ['No WiFi 6E', 'Pricey for WiFi 6']
+  },
+  {
+    id: 4,
+    model: 'TP-Link Archer AX73',
+    brand: 'TP-Link',
+    wifiStandard: 'WiFi 6 (AX)',
+    wifiGen: 'wifi6',
+    speedLabel: 'AX5400',
+    bands: 'Dual-band (2.4/5 GHz)',
+    price: 199,
+    priceNote: '',
+    rating: 4.4,
+    ratingCount: 87,
+    coverage: 'Medium-Large (up to 250 m²)',
+    ports: '1× Gigabit, 4× Gigabit LAN',
+    meshReady: true,
+    pros: ['Best value WiFi 6', 'Solid performance', 'Good app'],
+    cons: ['No 2.5G port', 'Average USB speed']
+  },
+  {
+    id: 5,
+    model: 'Netgear Nighthawk RAX50',
+    brand: 'Netgear',
+    wifiStandard: 'WiFi 6 (AX)',
+    wifiGen: 'wifi6',
+    speedLabel: 'AX5400',
+    bands: 'Dual-band (2.4/5 GHz)',
+    price: 279,
+    priceNote: '',
+    rating: 4.3,
+    ratingCount: 64,
+    coverage: 'Large (up to 275 m²)',
+    ports: '1× Gigabit WAN, 4× Gigabit LAN, 1× USB 3.0',
+    meshReady: true,
+    pros: ['Reliable brand', 'Beamforming+', 'Armor security'],
+    cons: ['Subscription for full security', 'Bulky stand']
+  },
+  {
+    id: 6,
+    model: 'TP-Link Deco X60',
+    brand: 'TP-Link',
+    wifiStandard: 'WiFi 6 (AX)',
+    wifiGen: 'wifi6',
+    speedLabel: 'AX3000',
+    bands: 'Dual-band (2.4/5 GHz)',
+    price: 249,
+    priceNote: '2-pack',
+    rating: 4.3,
+    ratingCount: 211,
+    coverage: 'Large (up to 400 m²)',
+    ports: '2× Gigabit per unit',
+    meshReady: true,
+    pros: ['Affordable mesh', 'Great coverage', 'Simple app'],
+    cons: ['No USB ports', 'No 6 GHz band']
+  },
+  {
+    id: 7,
+    model: 'Asus RT-AX82U',
+    brand: 'Asus',
+    wifiStandard: 'WiFi 6 (AX)',
+    wifiGen: 'wifi6',
+    speedLabel: 'AX5400',
+    bands: 'Dual-band (2.4/5 GHz)',
+    price: 269,
+    priceNote: '',
+    rating: 4.5,
+    ratingCount: 53,
+    coverage: 'Medium-Large (up to 250 m²)',
+    ports: '1× 2.5Gbps, 4× Gigabit, 1× USB 3.2',
+    meshReady: true,
+    pros: ['Great RGB gaming aesthetics', '2.5G port', 'AiMesh supported'],
+    cons: ['Only dual-band', 'Pricey for specs']
+  },
+  {
+    id: 8,
+    model: 'Netgear Orbi RBK752',
+    brand: 'Netgear',
+    wifiStandard: 'WiFi 6 (AX)',
+    wifiGen: 'wifi6',
+    speedLabel: 'AX4200',
+    bands: 'Tri-band (2.4/5/5 GHz)',
+    price: 699,
+    priceNote: '2-pack',
+    rating: 4.4,
+    ratingCount: 98,
+    coverage: 'Very Large (up to 500 m²)',
+    ports: '2× Gigabit per unit, 1× USB 2.0',
+    meshReady: true,
+    pros: ['Premium mesh system', 'Excellent dedicated backhaul', 'Great support'],
+    cons: ['Very expensive', 'USB 2.0 only']
+  },
+  {
+    id: 9,
+    model: 'TP-Link Archer AX55',
+    brand: 'TP-Link',
+    wifiStandard: 'WiFi 6 (AX)',
+    wifiGen: 'wifi6',
+    speedLabel: 'AX3000',
+    bands: 'Dual-band (2.4/5 GHz)',
+    price: 129,
+    priceNote: '',
+    rating: 4.3,
+    ratingCount: 310,
+    coverage: 'Medium (up to 200 m²)',
+    ports: '1× Gigabit WAN, 4× Gigabit LAN',
+    meshReady: true,
+    pros: ['Budget WiFi 6 champ', 'Compact design', 'Solid stability'],
+    cons: ['Basic features', 'No 2.5G port']
+  },
+  {
+    id: 10,
+    model: 'Asus ZenWiFi XT8',
+    brand: 'Asus',
+    wifiStandard: 'WiFi 6 (AX)',
+    wifiGen: 'wifi6',
+    speedLabel: 'AX6600',
+    bands: 'Tri-band (2.4/5/5 GHz)',
+    price: 549,
+    priceNote: '2-pack',
+    rating: 4.4,
+    ratingCount: 76,
+    coverage: 'Very Large (up to 500 m²)',
+    ports: '1× 2.5Gbps, 3× Gigabit per unit, 1× USB 3.1',
+    meshReady: true,
+    pros: ['Stylish design', 'AiMesh + AiProtection', 'Excellent throughput'],
+    cons: ['Pricey', 'Large footprint']
+  },
+  {
+    id: 11,
+    model: 'TP-Link Deco XE75',
+    brand: 'TP-Link',
+    wifiStandard: 'WiFi 6E (AXE)',
+    wifiGen: 'wifi6e',
+    speedLabel: 'AXE5400',
+    bands: 'Tri-band (2.4/5/6 GHz)',
+    price: 449,
+    priceNote: '2-pack',
+    rating: 4.3,
+    ratingCount: 41,
+    coverage: 'Large (up to 450 m²)',
+    ports: '1× 2.5Gbps, 2× Gigabit per unit',
+    meshReady: true,
+    pros: ['WiFi 6E 6 GHz band', 'Great mesh performance', 'Affordable 6E'],
+    cons: ['No WiFi 7', 'Limited 6E range']
+  },
+  {
+    id: 12,
+    model: 'Netgear Nighthawk RAXE500',
+    brand: 'Netgear',
+    wifiStandard: 'WiFi 6E (AXE)',
+    wifiGen: 'wifi6e',
+    speedLabel: 'AXE11000',
+    bands: 'Tri-band (2.4/5/6 GHz)',
+    price: 799,
+    priceNote: '',
+    rating: 4.2,
+    ratingCount: 33,
+    coverage: 'Large (up to 325 m²)',
+    ports: '1× 2.5Gbps, 5× Gigabit, 2× USB 3.0',
+    meshReady: true,
+    pros: ['Blazing 6E speeds', 'Multi-gig port', 'Powerful hardware'],
+    cons: ['Very expensive', 'Large & heavy', 'Runs warm']
+  },
+  {
+    id: 13,
+    model: 'TP-Link Archer AX10',
+    brand: 'TP-Link',
+    wifiStandard: 'WiFi 6 (AX)',
+    wifiGen: 'wifi6',
+    speedLabel: 'AX1500',
+    bands: 'Dual-band (2.4/5 GHz)',
+    price: 89,
+    priceNote: '',
+    rating: 4.2,
+    ratingCount: 550,
+    coverage: 'Small-Medium (up to 150 m²)',
+    ports: '1× Gigabit WAN, 4× Gigabit LAN',
+    meshReady: false,
+    pros: ['Cheapest WiFi 6 router', 'Good for apartments', 'Reliable basic performance'],
+    cons: ['Limited features', 'No USB', 'Plastic build']
+  },
+  {
+    id: 14,
+    model: 'Google Nest WiFi Pro',
+    brand: 'Google',
+    wifiStandard: 'WiFi 6E (AXE)',
+    wifiGen: 'wifi6e',
+    speedLabel: 'AXE5400',
+    bands: 'Tri-band (2.4/5/6 GHz)',
+    price: 399,
+    priceNote: '2-pack',
+    rating: 4.1,
+    ratingCount: 87,
+    coverage: 'Large (up to 420 m²)',
+    ports: '1× Gigabit WAN, 1× Gigabit LAN (per unit)',
+    meshReady: true,
+    pros: ['Simple Google Home app', 'Sleek design', 'Good for smart homes'],
+    cons: ['Limited ports', 'No USB', 'No web interface']
+  },
+  {
+    id: 15,
+    model: 'TP-Link Archer C80',
+    brand: 'TP-Link',
+    wifiStandard: 'WiFi 5 (AC)',
+    wifiGen: 'wifi5',
+    speedLabel: 'AC1900',
+    bands: 'Dual-band (2.4/5 GHz)',
+    price: 69,
+    priceNote: '',
+    rating: 4.1,
+    ratingCount: 420,
+    coverage: 'Medium (up to 180 m²)',
+    ports: '1× Gigabit WAN, 4× Gigabit LAN',
+    meshReady: false,
+    pros: ['Budget-friendly', 'Reliable AC performance', 'Simple setup'],
+    cons: ['No WiFi 6', 'No USB', 'Older tech']
+  }
+];
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+function render(data) {
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  data.forEach(r => {
+    const wifiTagClass = {
+      'wifi7': 'tag-wifi7',
+      'wifi6e': 'tag-wifi6e',
+      'wifi6': 'tag-wifi6',
+      'wifi5': 'tag-ac'
+    }[r.wifiGen] || 'tag-ac';
+
+    const stars = '★'.repeat(Math.floor(r.rating)) + (r.rating % 1 >= 0.5 ? '½' : '');
+    const fullStars = '���'.repeat(Math.floor(r.rating));
+    const halfStar = r.rating % 1 >= 0.5 ? '½' : '';
+    const emptyStars = '☆'.repeat(5 - Math.ceil(r.rating));
+
+    const prosHtml = r.pros.map(p => `<span class="pros">✅ ${p}</span>`).join('<br>');
+    const consHtml = r.cons.map(c => `<span class="cons">❌ ${c}</span>`).join('<br>');
+
+    const meshIcon = r.meshReady ? '<span class="check">✓ Yes</span>' : '<span class="xmark">✗ No</span>';
+
+    const priceDisplay = r.priceNote
+      ? `<span class="price">$${r.price}</span> <span class="price-discount">${r.priceNote}</span>`
+      : `<span class="price">$${r.price}</span>`;
+
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td><strong>${r.model}</strong><br><span style="font-size:0.75rem;color:#64748b;">${r.brand}</span></td>
+      <td><span class="tag ${wifiTagClass}">${r.wifiStandard}</span></td>
+      <td class="spec">${r.speedLabel}</td>
+      <td style="font-size:0.85rem;">${r.bands}</td>
+      <td>${priceDisplay}</td>
+      <td><span class="rating">${fullStars}${halfStar}</span> <span style="font-size:0.8rem;color:#64748b;">(${r.rating})</span><br><span style="font-size:0.7rem;color:#94a3b8;">${r.ratingCount} reviews</span></td>
+      <td style="font-size:0.85rem;">${r.coverage}</td>
+      <td style="font-size:0.8rem;">${r.ports}</td>
+      <td>${meshIcon}</td>
+      <td class="pros-cons">
+        <div style="margin-bottom:6px;">${prosHtml}</div>
+        <div>${consHtml}</div>
+      </td>
+    `;
+    tbody.appendChild(row);
+  });
+
+  document.getElementById('countBadge').textContent = data.length + ' model' + (data.length !== 1 ? 's' : '');
+}
+
+// ─── Filters & Sort ──────────────────────────────────────────────────────────
+function applyFilters() {
+  const wifiFilter = document.getElementById('filterWifi').value;
+  const sortBy = document.getElementById('sortBy').value;
+
+  let filtered = [...routers];
+
+  if (wifiFilter !== 'all') {
+    filtered = filtered.filter(r => r.wifiGen === wifiFilter);
+  }
+
+  switch (sortBy) {
+    case 'price-low':
+      filtered.sort((a, b) => a.price - b.price);
+      break;
+    case 'price-high':
+      filtered.sort((a, b) => b.price - a.price);
+      break;
+    case 'rating':
+      filtered.sort((a, b) => b.rating - a.rating);
+      break;
+    default:
+      // keep original order
+      break;
+  }
+
+  render(filtered);
+}
+
+// ─── Initial Load ────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  // set some defaults
+  render(routers);
+
+  // wire up live filter on change
+  document.getElementById('filterWifi').addEventListener('change', applyFilters);
+  document.getElementById('sortBy').addEventListener('change', applyFilters);
+});
+</script>
+</body>
+</html>

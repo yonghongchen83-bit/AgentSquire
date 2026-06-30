@@ -1,7 +1,6 @@
 import { expect } from '@wdio/globals'
 
 const SIDEBAR_WIDTH = 48
-const TOLERANCE_PX = 5
 
 async function getContentWidth(): Promise<number> {
   const winWidth = await browser.getWindowSize().then(s => s.width)

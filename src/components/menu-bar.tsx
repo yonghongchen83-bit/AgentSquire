@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useLayoutStore } from '@/stores/ui-store'
-import { useSettingsStore } from '@/stores/settings-store'
 
 interface MenuItem {
   label: string
@@ -26,7 +25,6 @@ export function MenuBar() {
   const setProjectPath = useLayoutStore((s) => s.setProjectPath)
   const uiFontZoom = useLayoutStore((s) => s.uiFontZoom)
   const setUiFontZoom = useLayoutStore((s) => s.setUiFontZoom)
-  const setSettingsOpen = useSettingsStore((s) => s.setOpen)
 
   const handleOpenProject = useCallback(async () => {
     try {

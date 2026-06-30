@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use super::provider::{
     ChatRequest, ChatRole, FinishReason, LlmError, LlmProvider, StreamEvent, ToolCall,
 };
+use super::thinking::normalize_level;
 
 pub struct AnthropicProvider {
     client: Client,
@@ -25,14 +26,6 @@ impl AnthropicProvider {
             model,
             verbose: false,
         }
-    }
-}
-
-fn normalize_level(level: Option<String>) -> String {
-    let raw = level.unwrap_or_else(|| "mid".to_string()).to_lowercase();
-    match raw.as_str() {
-        "none" | "low" | "mid" | "high" => raw,
-        _ => "mid".to_string(),
     }
 }
 

@@ -142,6 +142,7 @@ pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<ChatMessage>,
     pub tools: Vec<ToolDefinition>,
+    pub thinking_level: Option<String>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
 }
@@ -164,6 +165,7 @@ pub enum FinishReason {
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
     Chunk(String),
+    Thinking(String),
     ToolCall(ToolCall),
     Log(String),
     Done(FinishReason),

@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useChatStore } from './chat-store'
 
+let streamDoneHandler: (() => void) | null = null
+let streamErrorHandler: ((error: string) => void) | null = null
+
 vi.mock('@/lib/ipc', () => ({
   listConversations: vi.fn().mockResolvedValue([
     { id: '1', title: 'Chat 1', messageCount: 2, lastMessageAt: new Date().toISOString(), createdAt: new Date().toISOString() },
@@ -21,15 +24,30 @@ vi.mock('@/lib/ipc', () => ({
   createConversation: vi.fn().mockResolvedValue({ id: 'new-id', title: 'New Chat', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
   deleteConversation: vi.fn().mockResolvedValue(undefined),
   sendMessage: vi.fn().mockResolvedValue(undefined),
+  abortStream: vi.fn().mockResolvedValue(undefined),
   listProviders: vi.fn().mockResolvedValue([{ name: 'OpenAI', provider_type: 'openai', models: ['gpt-4o'], default_model: 'gpt-4o' }]),
+  onStreamThinking: vi.fn().mockReturnValue(vi.fn()),
   onStreamChunk: vi.fn().mockReturnValue(vi.fn()),
   onStreamToolCall: vi.fn().mockReturnValue(vi.fn()),
-  onStreamDone: vi.fn().mockReturnValue(vi.fn()),
-  onStreamError: vi.fn().mockReturnValue(vi.fn()),
+  onStreamToolResult: vi.fn().mockReturnValue(vi.fn()),
+  onStreamToolPending: vi.fn().mockReturnValue(vi.fn()),
+  onStreamStatus: vi.fn().mockReturnValue(vi.fn()),
+  onStreamDone: vi.fn().mockImplementation(async (cb: () => void) => {
+    streamDoneHandler = cb
+    return vi.fn()
+  }),
+  onStreamError: vi.fn().mockImplementation(async (cb: (error: string) => void) => {
+    streamErrorHandler = cb
+    return vi.fn()
+  }),
+  approveToolCall: vi.fn().mockResolvedValue(undefined),
+  rejectToolCall: vi.fn().mockResolvedValue(undefined),
 }))
 
 describe('ChatStore', () => {
   beforeEach(() => {
+    streamDoneHandler = null
+    streamErrorHandler = null
     useChatStore.setState({
       conversations: [],
       activeConversationId: null,
@@ -38,10 +56,14 @@ describe('ChatStore', () => {
       streamingMessageId: null,
       streamingBlocks: [],
       streamingText: '',
+      streamingThinkingText: '',
+      streamingStatus: '',
       error: null,
       providers: [],
       selectedProvider: '',
       selectedModel: '',
+      selectedThinkingLevel: 'mid',
+      pendingApprovals: [],
     })
   })
 
@@ -87,5 +109,37 @@ describe('ChatStore', () => {
     expect(state.streamingMessageId).toBeNull()
     expect(state.streamingText).toBe('')
     expect(state.streamingBlocks).toEqual([])
+  })
+
+  it('reloads persisted conversation messages on stream done', async () => {
+    await useChatStore.getState().selectConversation('1')
+    await useChatStore.getState().sendMessage('Test prompt')
+    expect(streamDoneHandler).not.toBeNull()
+
+    streamDoneHandler?.()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const state = useChatStore.getState()
+    expect(state.isStreaming).toBe(false)
+    expect(state.messages).toHaveLength(2)
+    expect(state.messages[0].role).toBe('user')
+    expect(state.messages[1].role).toBe('assistant')
+  })
+
+  it('reloads persisted conversation messages on stream error', async () => {
+    await useChatStore.getState().selectConversation('1')
+    await useChatStore.getState().sendMessage('Test prompt')
+    expect(streamErrorHandler).not.toBeNull()
+
+    streamErrorHandler?.('boom')
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const state = useChatStore.getState()
+    expect(state.isStreaming).toBe(false)
+    expect(state.error).toBe('boom')
+    expect(state.messages).toHaveLength(2)
+    expect(state.messages[0].role).toBe('user')
   })
 })

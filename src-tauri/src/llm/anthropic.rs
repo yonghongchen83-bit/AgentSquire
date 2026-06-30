@@ -28,6 +28,23 @@ impl AnthropicProvider {
     }
 }
 
+fn normalize_level(level: Option<String>) -> String {
+    let raw = level.unwrap_or_else(|| "mid".to_string()).to_lowercase();
+    match raw.as_str() {
+        "none" | "low" | "mid" | "high" => raw,
+        _ => "mid".to_string(),
+    }
+}
+
+fn anthropic_budget_tokens(level: &str) -> Option<u32> {
+    match level {
+        "low" => Some(1024),
+        "mid" => Some(4096),
+        "high" => Some(8192),
+        _ => None,
+    }
+}
+
 #[async_trait]
 impl LlmProvider for AnthropicProvider {
     fn provider_name(&self) -> &'static str {
@@ -116,10 +133,15 @@ impl LlmProvider for AnthropicProvider {
             .map(|m| m.content.as_str())
             .collect();
 
+        let thinking_level = normalize_level(request.thinking_level.clone());
+        let thinking_budget = anthropic_budget_tokens(&thinking_level);
+
+        let default_max_tokens = if thinking_budget.is_some() { 16384 } else { 4096 };
+
         let mut body = json!({
             "model": model,
             "messages": messages,
-            "max_tokens": request.max_tokens.unwrap_or(4096),
+            "max_tokens": request.max_tokens.unwrap_or(default_max_tokens),
             "stream": true,
         });
 
@@ -133,12 +155,34 @@ impl LlmProvider for AnthropicProvider {
         if let Some(t) = request.temperature {
             body["temperature"] = json!(t);
         }
+        if let Some(budget_tokens) = thinking_budget {
+            body["thinking"] = json!({
+                "type": "enabled",
+                "budget_tokens": budget_tokens,
+            });
+        }
 
         let client = self.client.clone();
         let api_key = self.api_key.clone();
         let base_url = self.base_url.clone();
+        let verbose = self.verbose();
 
         tokio::spawn(async move {
+            if verbose {
+                let body_pretty = serde_json::to_string_pretty(&body).unwrap_or_default();
+                tx.send(StreamEvent::Log(format!(
+                    ">>> REQUEST to {}\n{}",
+                    if base_url.ends_with("/messages") {
+                        base_url.clone()
+                    } else {
+                        format!("{}/messages", base_url)
+                    },
+                    body_pretty,
+                )))
+                .await
+                .ok();
+            }
+
             let response = client
                 .post(if base_url.ends_with("/messages") {
                     base_url.clone()
@@ -155,6 +199,11 @@ impl LlmProvider for AnthropicProvider {
             let resp = match response {
                 Ok(r) => r,
                 Err(e) => {
+                    if verbose {
+                        tx.send(StreamEvent::Log(format!("<<< CONNECTION FAILED: {}", e)))
+                            .await
+                            .ok();
+                    }
                     tx.send(StreamEvent::Error(e.to_string())).await.ok();
                     tx.send(StreamEvent::Done(FinishReason::Error)).await.ok();
                     return;
@@ -164,6 +213,16 @@ impl LlmProvider for AnthropicProvider {
             if !resp.status().is_success() {
                 let status = resp.status();
                 let err_text = resp.text().await.unwrap_or_default();
+                if verbose {
+                    tx.send(StreamEvent::Log(format!(
+                        "<<< RESPONSE {} {}\n{}",
+                        status.as_u16(),
+                        status.canonical_reason().unwrap_or(""),
+                        err_text,
+                    )))
+                    .await
+                    .ok();
+                }
                 let err = match status.as_u16() {
                     401 => LlmError::Auth,
                     429 => LlmError::RateLimited,
@@ -174,6 +233,17 @@ impl LlmProvider for AnthropicProvider {
                 return;
             }
 
+            if verbose {
+                tx.send(StreamEvent::Log(format!(
+                    "<<< RESPONSE {} {} (stream opened)",
+                    resp.status().as_u16(),
+                    resp.status().canonical_reason().unwrap_or(""),
+                )))
+                .await
+                .ok();
+            }
+
+            let mut emitted_done = false;
             let mut stream = resp.bytes_stream();
             while let Some(chunk_result) = stream.next().await {
                 let bytes = match chunk_result {
@@ -209,6 +279,10 @@ impl LlmProvider for AnthropicProvider {
                                 tx.send(StreamEvent::Chunk(text_val.to_string()))
                                     .await
                                     .ok();
+                            } else if let Some(thinking_val) = val["delta"]["thinking"].as_str() {
+                                tx.send(StreamEvent::Thinking(thinking_val.to_string()))
+                                    .await
+                                    .ok();
                             }
                         }
                         "content_block_start" => {
@@ -229,6 +303,14 @@ impl LlmProvider for AnthropicProvider {
                         }
                         "message_delta" => {
                             if let Some(stop_reason) = val["delta"]["stop_reason"].as_str() {
+                                if verbose {
+                                    tx.send(StreamEvent::Log(format!(
+                                        "<<< STREAM stop_reason={}",
+                                        stop_reason
+                                    )))
+                                    .await
+                                    .ok();
+                                }
                                 let reason = match stop_reason {
                                     "end_turn" | "stop_sequence" => FinishReason::Stop,
                                     "max_tokens" => FinishReason::Length,
@@ -236,11 +318,35 @@ impl LlmProvider for AnthropicProvider {
                                     _ => FinishReason::Stop,
                                 };
                                 tx.send(StreamEvent::Done(reason)).await.ok();
+                                emitted_done = true;
+                            }
+                        }
+                        "message_stop" => {
+                            if !emitted_done {
+                                if verbose {
+                                    tx.send(StreamEvent::Log("<<< STREAM message_stop received".to_string()))
+                                        .await
+                                        .ok();
+                                }
+                                tx.send(StreamEvent::Done(FinishReason::Stop)).await.ok();
+                                emitted_done = true;
                             }
                         }
                         _ => {}
                     }
                 }
+            }
+
+            if !emitted_done {
+                if verbose {
+                    tx.send(StreamEvent::Log(
+                        "<<< STREAM closed without explicit stop_reason, applying fallback=stop"
+                            .to_string(),
+                    ))
+                    .await
+                    .ok();
+                }
+                tx.send(StreamEvent::Done(FinishReason::Stop)).await.ok();
             }
         });
 

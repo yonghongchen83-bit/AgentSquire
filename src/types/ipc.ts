@@ -184,6 +184,7 @@ export interface AppConfig {
   tabSize: number
   wordWrap: boolean
   llmProviders: LlmProviderConfig[]
+  mcpServers: McpServerConfig[]
   searchExclude: string[]
   terminalShell: string
   terminalFontSize: number
@@ -202,4 +203,16 @@ export interface LlmProviderConfig {
   endpoint?: string
   metadata?: Record<string, string>
   category?: string
+}
+
+export interface McpServerConfig {
+  id: string
+  name: string
+  transport?: 'stdio' | 'http' | 'sse'
+  command: string
+  args: string[]
+  url?: string
+  enabled: boolean
+  env?: Record<string, string>
+  headers?: Record<string, string>
 }

@@ -1,11 +1,12 @@
-pub mod commands;
-pub mod llm;
-pub mod storage;
-pub mod fs;
-pub mod search;
-pub mod state;
 pub mod agent;
+pub mod commands;
+pub mod fs;
+pub mod llm;
+pub mod mcp;
+pub mod search;
 pub mod shell;
+pub mod state;
+pub mod storage;
 pub mod terminal;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -25,8 +26,10 @@ pub fn run() {
             commands::list_conversations,
             commands::get_conversation,
             commands::create_conversation,
+            commands::rename_conversation,
             commands::delete_conversation,
             commands::send_message,
+            commands::abort_stream,
             commands::list_providers,
             commands::read_file,
             commands::write_file,
@@ -47,6 +50,7 @@ pub fn run() {
             commands::load_config,
             commands::check_update,
             commands::test_connection,
+            commands::test_mcp_connection,
             commands::fetch_models,
             commands::spawn_terminal,
             commands::write_stdin,

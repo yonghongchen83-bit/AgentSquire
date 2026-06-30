@@ -3,6 +3,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::state::config::McpServerConfig;
+
 pub use crate::llm::provider::ToolCall;
 pub use crate::llm::provider::ToolDefinition;
 
@@ -510,6 +512,48 @@ impl Tool for GitTool {
             call_id: call_id.to_string(),
             output,
             is_error: false,
+        }
+    }
+}
+
+pub struct McpProxyTool {
+    pub local_name: String,
+    pub local_description: String,
+    pub schema: Value,
+    pub server: McpServerConfig,
+    pub remote_name: String,
+}
+
+#[async_trait]
+impl Tool for McpProxyTool {
+    fn name(&self) -> &str {
+        &self.local_name
+    }
+
+    fn description(&self) -> &str {
+        &self.local_description
+    }
+
+    fn input_schema(&self) -> Value {
+        self.schema.clone()
+    }
+
+    fn danger(&self) -> ToolDanger {
+        ToolDanger::Destructive
+    }
+
+    async fn execute(&self, call_id: &str, args: Value) -> ToolResult {
+        match crate::mcp::call_tool(self.server.clone(), self.remote_name.clone(), args).await {
+            Ok((output, is_error)) => ToolResult {
+                call_id: call_id.to_string(),
+                output,
+                is_error,
+            },
+            Err(e) => ToolResult {
+                call_id: call_id.to_string(),
+                output: format!("MCP tool call failed: {}", e),
+                is_error: true,
+            },
         }
     }
 }

@@ -28,6 +28,7 @@ pub struct Message {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MessageRole {
     User,
     Assistant,
@@ -91,6 +92,7 @@ pub trait ConversationStore: Send + Sync {
     async fn append_message(&self, msg: NewMessage) -> Result<Message, StoreError>;
     async fn get_session(&self, id: SessionId) -> Result<SessionWithMessages, StoreError>;
     async fn list_sessions(&self) -> Result<Vec<SessionSummary>, StoreError>;
+    async fn update_session_title(&self, id: SessionId, title: String) -> Result<(), StoreError>;
     async fn delete_session(&self, id: SessionId) -> Result<(), StoreError>;
 }
 
@@ -103,8 +105,19 @@ mod tests {
         assert_eq!(MessageRole::User.as_str(), "user");
         assert_eq!(MessageRole::Assistant.as_str(), "assistant");
         assert_eq!(MessageRole::System.as_str(), "system");
-        assert_eq!(MessageRole::from_str("user").unwrap() as usize, MessageRole::User as usize);
+        assert_eq!(
+            MessageRole::from_str("user").unwrap() as usize,
+            MessageRole::User as usize
+        );
         assert!(MessageRole::from_str("unknown").is_none());
+        assert_eq!(
+            serde_json::to_string(&MessageRole::User).unwrap(),
+            "\"user\""
+        );
+        assert_eq!(
+            serde_json::to_string(&MessageRole::Assistant).unwrap(),
+            "\"assistant\""
+        );
     }
 
     #[test]

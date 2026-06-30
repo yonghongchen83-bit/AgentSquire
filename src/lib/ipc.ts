@@ -1,6 +1,71 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import type { FileEntry, AppConfig, SessionSummary, SessionWithMessages, Session, SearchMatch, ReplaceOptions, ProviderInfo } from '@/types/ipc'
+import type { FileEntry, AppConfig, SessionSummary, SessionWithMessages, Session, SearchMatch, ReplaceOptions, ProviderInfo, McpServerConfig } from '@/types/ipc'
+
+type RawSessionSummary = {
+  id: string
+  title: string
+  message_count: number
+  last_message_at: string
+  created_at: string
+}
+
+type RawMessage = {
+  id: string
+  session_id: string
+  role: string
+  content: string
+  created_at: string
+}
+
+type RawSession = {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+}
+
+type RawSessionWithMessages = {
+  session: RawSession
+  messages: RawMessage[]
+}
+
+function mapSessionSummary(raw: RawSessionSummary): SessionSummary {
+  return {
+    id: raw.id,
+    title: raw.title,
+    messageCount: raw.message_count,
+    lastMessageAt: raw.last_message_at,
+    createdAt: raw.created_at,
+  }
+}
+
+export function normalizeMessageRole(role: string): 'user' | 'assistant' | 'system' {
+  const normalized = role.toLowerCase()
+  if (normalized === 'user' || normalized === 'assistant' || normalized === 'system') {
+    return normalized
+  }
+  return 'assistant'
+}
+
+function mapMessage(raw: RawMessage) {
+  return {
+    id: raw.id,
+    sessionId: raw.session_id,
+    role: normalizeMessageRole(raw.role),
+    content: raw.content,
+    createdAt: raw.created_at,
+  }
+}
+
+function mapSession(raw: RawSession): Session {
+  return {
+    id: raw.id,
+    title: raw.title,
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+  }
+}
 
 export async function listDirectory(path: string): Promise<FileEntry[]> {
   return invoke('list_directory', { path })
@@ -40,19 +105,29 @@ export async function saveConfig(config: Partial<AppConfig>): Promise<void> {
 }
 
 export async function listConversations(): Promise<SessionSummary[]> {
-  return invoke('list_conversations')
+  const rows = await invoke<RawSessionSummary[]>('list_conversations')
+  return rows.map(mapSessionSummary)
 }
 
 export async function getConversation(id: string): Promise<SessionWithMessages> {
-  return invoke('get_conversation', { id })
+  const raw = await invoke<RawSessionWithMessages>('get_conversation', { id })
+  return {
+    session: mapSession(raw.session),
+    messages: raw.messages.map(mapMessage),
+  }
 }
 
 export async function createConversation(title: string): Promise<Session> {
-  return invoke('create_conversation', { title })
+  const raw = await invoke<RawSession>('create_conversation', { title })
+  return mapSession(raw)
 }
 
 export async function deleteConversation(id: string): Promise<void> {
   return invoke('delete_conversation', { id })
+}
+
+export async function renameConversation(id: string, title: string): Promise<void> {
+  return invoke('rename_conversation', { id, title })
 }
 
 export async function sendMessage(
@@ -60,8 +135,19 @@ export async function sendMessage(
   content: string,
   providerName?: string,
   model?: string,
+  thinkingLevel?: 'none' | 'low' | 'mid' | 'high',
 ): Promise<void> {
-  return invoke('send_message', { sessionId, content, providerName, model: model ?? null })
+  return invoke('send_message', {
+    sessionId,
+    content,
+    providerName,
+    model: model ?? null,
+    thinkingLevel: thinkingLevel ?? null,
+  })
+}
+
+export async function abortStream(sessionId: string): Promise<void> {
+  return invoke('abort_stream', { sessionId })
 }
 
 export async function listProviders(): Promise<ProviderInfo[]> {
@@ -94,6 +180,10 @@ export async function testConnection(
   })
 }
 
+export async function testMcpConnection(server: McpServerConfig): Promise<string> {
+  return invoke('test_mcp_connection', { server })
+}
+
 export async function checkUpdate(): Promise<{ available: boolean; version?: string; body?: string }> {
   try {
     return await invoke('check_update')
@@ -120,6 +210,10 @@ export function onStreamDone(cb: () => void) {
 
 export function onStreamError(cb: (error: string) => void) {
   return listen<string>('stream-error', (event) => cb(event.payload))
+}
+
+export function onStreamStatus(cb: (status: string) => void) {
+  return listen<string>('stream-status', (event) => cb(event.payload))
 }
 
 // ─── Terminal ──────────────────────────────────────────

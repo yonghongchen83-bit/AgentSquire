@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Sun, Moon, Monitor, Plus, Trash2, Wifi, Check, X, RefreshCw } from 'lucide-react'
+import { Sun, Moon, Monitor, Plus, Trash2, Wifi, Check, X, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { emit } from '@tauri-apps/api/event'
 import { testConnection, fetchModels } from '@/lib/ipc'
@@ -142,6 +142,19 @@ const PROVIDERS: ProviderCategory[] = [
     ],
   },
   {
+    id: 'nvidia-nim',
+    label: 'NVIDIA NIM',
+    defaultProviderType: 'openai',
+    defaultEndpoint: 'https://integrate.api.nvidia.com/v1',
+    canFetchModels: true,
+    knownModels: [
+      { id: 'meta/llama-3.1-8b-instruct', metadata: {} },
+      { id: 'meta/llama-3.1-70b-instruct', metadata: {} },
+      { id: 'nvidia/llama-3.1-nemotron-70b-instruct', metadata: {} },
+      { id: 'mistralai/mixtral-8x7b-instruct-v0.1', metadata: {} },
+    ],
+  },
+  {
     id: 'custom',
     label: 'Custom',
     defaultProviderType: 'openai',
@@ -200,6 +213,7 @@ export function SettingsDialog() {
   const [fetchingModels, setFetchingModels] = useState<Record<number, boolean>>({})
   const [showCustomModel, setShowCustomModel] = useState<Record<number, boolean>>({})
   const [selectedProviderId, setSelectedProviderId] = useState<Record<number, string>>({})
+  const [collapsedProviders, setCollapsedProviders] = useState<Record<number, boolean>>({})
   const queryClient = useQueryClient()
   const loadedRef = useRef(false)
 
@@ -232,6 +246,11 @@ export function SettingsDialog() {
         if (p.category) initial[i] = p.category
       })
       setSelectedProviderId(initial)
+      const initiallyCollapsed: Record<number, boolean> = {}
+      providers.forEach((_, i) => {
+        initiallyCollapsed[i] = true
+      })
+      setCollapsedProviders(initiallyCollapsed)
     }
   }, [open, fetchedConfig, setConfig])
 
@@ -247,6 +266,12 @@ export function SettingsDialog() {
   const handleSave = useCallback(() => {
     if (config) saveMutation.mutate(config)
   }, [config, saveMutation])
+
+  const handleAddProvider = useCallback(() => {
+    const nextIndex = useSettingsStore.getState().config?.llmProviders.length ?? 0
+    addLlmProvider()
+    setCollapsedProviders((prev) => ({ ...prev, [nextIndex]: false }))
+  }, [addLlmProvider])
 
   const handleThemeChange = (value: string) => {
     updateTheme(value as 'light' | 'dark' | 'system')
@@ -512,15 +537,30 @@ export function SettingsDialog() {
               const knownModels = prov?.knownModels ?? []
               const fetched = fetchedModels[i] ?? []
               const showCustom = showCustomModel[i] ?? false
+              const isCollapsed = !!collapsedProviders[i]
+              const providerHeading = provider.name || prov?.label || `Provider ${i + 1}`
 
               return (
-              <div key={i} className="space-y-3 p-4 rounded-lg border border-border relative">
-                <button
-                  onClick={() => removeLlmProvider(i)}
-                  className="absolute top-2 right-2 p-1 text-muted-foreground hover:text-destructive transition-colors"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+              <div key={i} className="space-y-3 p-4 rounded-lg border border-border">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => setCollapsedProviders((prev) => ({ ...prev, [i]: !prev[i] }))}
+                    className="flex items-center gap-2 text-left min-w-0"
+                  >
+                    {isCollapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                    <span className="text-sm font-medium truncate">{providerHeading}</span>
+                  </button>
+                  <button
+                    onClick={() => removeLlmProvider(i)}
+                    className="p-1 text-muted-foreground hover:text-destructive transition-colors"
+                    title="Delete provider"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {!isCollapsed && (
+                  <>
 
                 <div className="space-y-1.5">
                   <Label>Provider</Label>
@@ -702,9 +742,11 @@ export function SettingsDialog() {
                     </div>
                   )}
                 </div>
+                  </>
+                )}
               </div>
             )})}
-            <Button variant="outline" size="sm" onClick={addLlmProvider} className="w-full">
+            <Button variant="outline" size="sm" onClick={handleAddProvider} className="w-full">
               <Plus className="h-4 w-4 mr-2" />
               Add Provider
             </Button>

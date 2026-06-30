@@ -17,6 +17,7 @@ describe('ConversationSidebar', () => {
         activeId={null}
         onSelect={vi.fn()}
         onCreate={vi.fn()}
+        onRename={vi.fn()}
         onDelete={vi.fn()}
       />,
     )
@@ -33,6 +34,7 @@ describe('ConversationSidebar', () => {
         activeId={null}
         onSelect={onSelect}
         onCreate={vi.fn()}
+        onRename={vi.fn()}
         onDelete={vi.fn()}
       />,
     )
@@ -49,10 +51,11 @@ describe('ConversationSidebar', () => {
         activeId={null}
         onSelect={vi.fn()}
         onCreate={onCreate}
+        onRename={vi.fn()}
         onDelete={vi.fn()}
       />,
     )
-    await user.click(screen.getByTitle('New chat'))
+    await user.click(screen.getByTitle('New session'))
     expect(onCreate).toHaveBeenCalledOnce()
   })
 
@@ -63,6 +66,7 @@ describe('ConversationSidebar', () => {
         activeId="1"
         onSelect={vi.fn()}
         onCreate={vi.fn()}
+        onRename={vi.fn()}
         onDelete={vi.fn()}
       />,
     )
@@ -77,9 +81,10 @@ describe('ConversationSidebar', () => {
         activeId={null}
         onSelect={vi.fn()}
         onCreate={vi.fn()}
+        onRename={vi.fn()}
         onDelete={vi.fn()}
       />,
     )
-    expect(screen.getByText('No conversations yet')).toBeInTheDocument()
+    expect(screen.getByText('No sessions yet')).toBeInTheDocument()
   })
 })

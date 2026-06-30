@@ -122,6 +122,21 @@ impl ConversationStore for Database {
         Ok(summaries)
     }
 
+    async fn update_session_title(&self, id: SessionId, title: String) -> Result<(), StoreError> {
+        let conn = self.connection();
+        let now = Utc::now().to_rfc3339();
+        let affected = conn
+            .execute(
+                "UPDATE sessions SET title = ?1, updated_at = ?2 WHERE id = ?3",
+                params![title, now, id.to_string()],
+            )
+            .map_err(|e| StoreError::Database(e.to_string()))?;
+        if affected == 0 {
+            return Err(StoreError::NotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
     async fn delete_session(&self, id: SessionId) -> Result<(), StoreError> {
         let conn = self.connection();
         let affected = conn

@@ -4,8 +4,10 @@ import {
   listConversations,
   getConversation,
   createConversation,
+  renameConversation,
   deleteConversation,
   sendMessage as sendMessageIpc,
+  abortStream,
   listProviders,
   onStreamChunk,
   onStreamThinking,
@@ -14,9 +16,61 @@ import {
   onStreamToolPending,
   onStreamDone,
   onStreamError,
+  onStreamStatus,
   approveToolCall as approveIpc,
   rejectToolCall as rejectIpc,
 } from '@/lib/ipc'
+
+const CHAT_MODEL_PREF_KEY = 'chat:last-model-selection'
+const CHAT_THINKING_PREF_KEY = 'chat:last-thinking-level'
+
+function loadStoredSelection(): { provider: string; model: string } {
+  if (typeof window === 'undefined') {
+    return { provider: '', model: '' }
+  }
+  try {
+    const raw = window.localStorage.getItem(CHAT_MODEL_PREF_KEY)
+    if (!raw) return { provider: '', model: '' }
+    const parsed = JSON.parse(raw) as { provider?: string; model?: string }
+    return {
+      provider: parsed.provider ?? '',
+      model: parsed.model ?? '',
+    }
+  } catch {
+    return { provider: '', model: '' }
+  }
+}
+
+function saveStoredSelection(provider: string, model: string) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(CHAT_MODEL_PREF_KEY, JSON.stringify({ provider, model }))
+  } catch {
+    // Ignore storage errors (private mode/quota/etc.)
+  }
+}
+
+function loadStoredThinkingLevel(): 'none' | 'low' | 'mid' | 'high' {
+  if (typeof window === 'undefined') return 'mid'
+  try {
+    const raw = window.localStorage.getItem(CHAT_THINKING_PREF_KEY)
+    if (raw === 'none' || raw === 'low' || raw === 'mid' || raw === 'high') {
+      return raw
+    }
+  } catch {
+    // ignore
+  }
+  return 'mid'
+}
+
+function saveStoredThinkingLevel(level: 'none' | 'low' | 'mid' | 'high') {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(CHAT_THINKING_PREF_KEY, level)
+  } catch {
+    // ignore
+  }
+}
 
 function parseBlocks(content: string): Block[] {
   const blocks: Block[] = []
@@ -69,19 +123,23 @@ interface ChatState {
   streamingBlocks: Block[]
   streamingText: string
   streamingThinkingText: string
+  streamingStatus: string
   error: string | null
   providers: ProviderInfo[]
   selectedProvider: string
   selectedModel: string
+  selectedThinkingLevel: 'none' | 'low' | 'mid' | 'high'
   pendingApprovals: ToolApprovalRequest[]
 
   loadConversations: () => Promise<void>
   loadProviders: () => Promise<void>
   selectConversation: (id: string) => Promise<void>
   createNewConversation: () => Promise<string | null>
+  renameConversation: (id: string, title: string) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
   setSelectedProvider: (name: string) => void
   setSelectedModel: (model: string) => void
+  setSelectedThinkingLevel: (level: 'none' | 'low' | 'mid' | 'high') => void
   sendMessage: (content: string) => Promise<void>
   cancelStreaming: () => void
   clearError: () => void
@@ -91,6 +149,8 @@ interface ChatState {
 
 export const useChatStore = create<ChatState>((set, get) => {
   let cleanupFns: (() => void)[] = []
+  const storedSelection = loadStoredSelection()
+  const storedThinkingLevel = loadStoredThinkingLevel()
 
   async function setupStreamListeners(sessionId: string) {
     cleanupFns.forEach((fn) => fn())
@@ -176,51 +236,62 @@ export const useChatStore = create<ChatState>((set, get) => {
           }
           return {
             streamingBlocks: blocks,
-            pendingApprovals: [...s.pendingApprovals, approval],
+            pendingApprovals: s.pendingApprovals.some((a) => a.call_id === approval.call_id)
+              ? s.pendingApprovals
+              : [...s.pendingApprovals, approval],
           }
         })
       }),
     )
 
     cleanupFns.push(
+      await onStreamStatus((status) => {
+        set({ streamingStatus: status })
+      }),
+    )
+
+    cleanupFns.push(
       await onStreamDone(() => {
-        const { streamingText, streamingThinkingText } = get()
-        const content = streamingThinkingText.trim()
-          ? `<thinking>\n${streamingThinkingText}\n</thinking>\n\n${streamingText}`.trim()
-          : streamingText
-        const newMsg: Message = {
-          id: crypto.randomUUID(),
-          sessionId,
-          role: 'assistant',
-          content,
-          createdAt: new Date().toISOString(),
-        }
-        set({
+          set({
           isStreaming: false,
           streamingMessageId: null,
           streamingText: '',
           streamingThinkingText: '',
+          streamingStatus: '',
           streamingBlocks: [],
           pendingApprovals: [],
         })
-        set((s) => ({
-          messages: [...s.messages, newMsg],
-        }))
-        get().loadConversations()
+          // Reload from DB so both user and assistant messages are correct
+          // and no synthetic local message is needed
+          const activeId = get().activeConversationId
+          if (activeId) {
+            getConversation(activeId)
+              .then((session) => set({ messages: session.messages }))
+              .catch(() => {})
+          }
+          get().loadConversations()
       }),
     )
 
     cleanupFns.push(
       await onStreamError((err) => {
-        set({
+          // Reload from DB on error too so user message isn't lost from view
+          const activeId = get().activeConversationId
+          set({
           isStreaming: false,
           streamingMessageId: null,
           streamingText: '',
           streamingThinkingText: '',
+          streamingStatus: '',
           streamingBlocks: [],
           pendingApprovals: [],
           error: err,
         })
+          if (activeId) {
+            getConversation(activeId)
+              .then((session) => set({ messages: session.messages }))
+              .catch(() => {})
+          }
       }),
     )
   }
@@ -234,10 +305,12 @@ export const useChatStore = create<ChatState>((set, get) => {
     streamingBlocks: [],
     streamingText: '',
     streamingThinkingText: '',
+    streamingStatus: '',
     error: null,
     providers: [],
-    selectedProvider: '',
-    selectedModel: '',
+    selectedProvider: storedSelection.provider,
+    selectedModel: storedSelection.model,
+    selectedThinkingLevel: storedThinkingLevel,
     pendingApprovals: [],
 
     loadConversations: async () => {
@@ -254,11 +327,37 @@ export const useChatStore = create<ChatState>((set, get) => {
         const providers = await listProviders()
         set((s) => {
           const firstProvider = providers[0]
-          const firstModel = firstProvider?.models[0] || ''
+          const firstProviderName = firstProvider?.name || ''
+          const firstModel = firstProvider?.default_model || firstProvider?.models[0] || ''
+
+          const stateProvider = s.selectedProvider
+          const stateModel = s.selectedModel
+
+          const stored = loadStoredSelection()
+
+          const hasValidPair = (providerName: string, modelName: string) => {
+            if (!providerName || !modelName) return false
+            const provider = providers.find((p) => p.name === providerName)
+            return !!provider && provider.models.includes(modelName)
+          }
+
+          let selectedProvider = firstProviderName
+          let selectedModel = firstModel
+
+          if (hasValidPair(stateProvider, stateModel)) {
+            selectedProvider = stateProvider
+            selectedModel = stateModel
+          } else if (hasValidPair(stored.provider, stored.model)) {
+            selectedProvider = stored.provider
+            selectedModel = stored.model
+          }
+
+          saveStoredSelection(selectedProvider, selectedModel)
+
           return {
             providers,
-            selectedProvider: s.selectedProvider || firstProvider?.name || '',
-            selectedModel: s.selectedModel || firstModel,
+            selectedProvider,
+            selectedModel,
           }
         })
       } catch {
@@ -266,9 +365,20 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
     },
 
-    setSelectedProvider: (name: string) => set({ selectedProvider: name }),
+    setSelectedProvider: (name: string) => set((s) => {
+      saveStoredSelection(name, s.selectedModel)
+      return { selectedProvider: name }
+    }),
 
-    setSelectedModel: (model: string) => set({ selectedModel: model }),
+    setSelectedModel: (model: string) => set((s) => {
+      saveStoredSelection(s.selectedProvider, model)
+      return { selectedModel: model }
+    }),
+
+    setSelectedThinkingLevel: (level: 'none' | 'low' | 'mid' | 'high') => set(() => {
+      saveStoredThinkingLevel(level)
+      return { selectedThinkingLevel: level }
+    }),
 
     selectConversation: async (id: string) => {
       try {
@@ -279,6 +389,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           error: null,
           streamingText: '',
           streamingThinkingText: '',
+          streamingStatus: '',
           streamingBlocks: [],
           isStreaming: false,
           streamingMessageId: null,
@@ -314,8 +425,21 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
     },
 
+    renameConversation: async (id: string, title: string) => {
+      try {
+        await renameConversation(id, title)
+        set((s) => ({
+          conversations: s.conversations.map((c) => (
+            c.id === id ? { ...c, title } : c
+          )),
+        }))
+      } catch (e) {
+        set({ error: String(e) })
+      }
+    },
+
     sendMessage: async (content: string) => {
-      const { activeConversationId, selectedProvider, selectedModel } = get()
+      const { activeConversationId, selectedProvider, selectedModel, selectedThinkingLevel } = get()
       let sessionId = activeConversationId
 
       if (!sessionId) {
@@ -339,6 +463,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         streamingMessageId: assistantId,
         streamingText: '',
         streamingThinkingText: '',
+        streamingStatus: 'Starting generation...',
         streamingBlocks: [],
         error: null,
         pendingApprovals: [],
@@ -347,7 +472,13 @@ export const useChatStore = create<ChatState>((set, get) => {
       await setupStreamListeners(sessionId)
 
       try {
-        await sendMessageIpc(sessionId, content, selectedProvider || undefined, selectedModel || undefined)
+        await sendMessageIpc(
+          sessionId,
+          content,
+          selectedProvider || undefined,
+          selectedModel || undefined,
+          selectedThinkingLevel,
+        )
       } catch (e) {
         set({
           isStreaming: false,
@@ -358,6 +489,10 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     cancelStreaming: () => {
+      const { activeConversationId } = get()
+      if (activeConversationId) {
+        void abortStream(activeConversationId)
+      }
       cleanupFns.forEach((fn) => fn())
       cleanupFns = []
       set({
@@ -365,6 +500,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         streamingMessageId: null,
         streamingText: '',
         streamingThinkingText: '',
+        streamingStatus: '',
         streamingBlocks: [],
         pendingApprovals: [],
       })

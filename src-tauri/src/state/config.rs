@@ -30,6 +30,8 @@ pub struct AppConfig {
     pub tab_size: u8,
     pub word_wrap: bool,
     pub llm_providers: Vec<ProviderConfig>,
+    #[serde(default)]
+    pub mcp_servers: Vec<McpServerConfig>,
     pub search_exclude: Vec<String>,
     pub terminal_shell: Option<String>,
     pub terminal_font_size: u16,
@@ -47,6 +49,7 @@ impl Default for AppConfig {
             tab_size: 4,
             word_wrap: false,
             llm_providers: Vec::new(),
+            mcp_servers: Vec::new(),
             search_exclude: vec![
                 "node_modules".into(),
                 ".git".into(),
@@ -80,6 +83,34 @@ pub struct ProviderConfig {
     pub metadata: std::collections::HashMap<String, String>,
     #[serde(default)]
     pub category: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerConfig {
+    pub id: String,
+    pub name: String,
+    #[serde(default = "default_transport")]
+    pub transport: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub env: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub headers: std::collections::HashMap<String, String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_transport() -> String {
+    "stdio".to_string()
 }
 
 #[derive(Debug, thiserror::Error)]

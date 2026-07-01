@@ -269,30 +269,52 @@ export function ChatPanel() {
                     </button>
                   </div>
                 )}
-                {pendingApprovals.map((approval) => (
+                {pendingApprovals.map((approval) => {
+                  const isTerminal = approval.tool_name === 'run_terminal'
+                  const cmdAnalysis = approval.commandAnalysis
+                  const displayLabel = isTerminal && cmdAnalysis
+                    ? `${cmdAnalysis.command} ${cmdAnalysis.args.join(' ')}`
+                    : null
+                  const hasOutsidePaths = cmdAnalysis?.paths?.some(p => p.isOutsideWorkspace)
+                  return (
                   <div
                     key={approval.call_id}
-                    className="flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-2 py-1.5"
+                    className="flex flex-col gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5"
                   >
-                    <span className="text-xs text-amber-800 flex-1 truncate">
-                      Approval required: {approval.tool_name}
-                    </span>
-                    <button
-                      onClick={() => approveToolCall(approval.call_id)}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded"
-                    >
-                      <Check className="h-3 w-3" />
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => rejectToolCall(approval.call_id)}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded"
-                    >
-                      <X className="h-3 w-3" />
-                      Reject
-                    </button>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {displayLabel ? (
+                        <span className="text-xs text-amber-800 flex-1 truncate font-mono">
+                          {displayLabel}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-amber-800 flex-1 truncate">
+                          Approval required: {approval.tool_name}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => approveToolCall(approval.call_id)}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded flex-shrink-0"
+                      >
+                        <Check className="h-3 w-3" />
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => rejectToolCall(approval.call_id)}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded flex-shrink-0"
+                      >
+                        <X className="h-3 w-3" />
+                        Reject
+                      </button>
+                    </div>
+                    {hasOutsidePaths && (
+                      <span className="text-[11px] text-orange-600 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" />
+                        Some paths are outside your workspace
+                      </span>
+                    )}
                   </div>
-                ))}
+                  )
+                })}
                 {autoApproveScope !== 'none' && (
                   <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 rounded px-2 py-1">
                     <Check className="h-3 w-3" />

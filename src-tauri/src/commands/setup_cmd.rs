@@ -34,11 +34,16 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
         }
     });
 
+    let initial_project_path = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
     app.manage(AppState {
         config: RwLock::new(config),
         store: Arc::new(db),
         registry: RwLock::new(registry),
         stream_tasks: Arc::new(TokioMutex::new(HashMap::new())),
+        project_path: RwLock::new(initial_project_path),
     });
 
     app.manage(WatcherState {

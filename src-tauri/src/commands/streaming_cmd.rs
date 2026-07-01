@@ -152,6 +152,12 @@ pub async fn send_message_impl(
         )
     };
 
+    let project_path = state
+        .project_path
+        .read()
+        .map(|p| p.clone())
+        .unwrap_or_default();
+
     let store = state.store.clone();
     let app_clone = app.clone();
     let pending = pending_state.pending.clone();
@@ -439,11 +445,32 @@ pub async fn send_message_impl(
                                         p.insert(tc.id.clone(), tx);
                                     }
 
-                                    let approval_event = serde_json::json!({
+                                    let mut approval_event = serde_json::json!({
                                         "call_id": tc.id,
                                         "tool_name": tc.name,
                                         "arguments": tc.arguments,
                                     });
+
+                                    // Enrich with command analysis for terminal tools
+                                    if tc.name == "run_terminal" {
+                                        let cmd = tc.arguments.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                                        let args: Vec<String> = tc.arguments
+                                            .get("args")
+                                            .and_then(|v| v.as_array())
+                                            .map(|a| {
+                                                a.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+                                            })
+                                            .unwrap_or_default();
+                                        let workdir = tc.arguments.get("workdir").and_then(|v| v.as_str());
+
+                                        if !project_path.is_empty() {
+                                            let analysis = crate::commands::utils::analyze_terminal_command(
+                                                cmd, &args, workdir, &project_path,
+                                            );
+                                            approval_event["commandAnalysis"] =
+                                                serde_json::to_value(&analysis).unwrap_or_default();
+                                        }
+                                    }
                                     let _ = app_clone
                                         .emit("stream-tool-pending", approval_event.to_string());
                                     emit_stream_status(

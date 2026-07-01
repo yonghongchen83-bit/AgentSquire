@@ -32,15 +32,36 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
   const approveToolCall = useChatStore((s) => s.approveToolCall)
   const rejectToolCall = useChatStore((s) => s.rejectToolCall)
 
+  // For run_terminal: build a nice display label
+  const isTerminalTool = block.toolName === 'run_terminal'
+  const cmdAnalysis = block.commandAnalysis
+  const displayLabel = isTerminalTool && cmdAnalysis
+    ? `${cmdAnalysis.command} ${cmdAnalysis.args.join(' ')}`
+    : null
+
+  const hasOutsidePaths = cmdAnalysis?.paths?.some(p => p.isOutsideWorkspace)
+
   return (
     <div className="border border-border rounded-md overflow-hidden my-1">
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-2 w-full px-3 py-2 text-xs font-medium text-[#6B7B8D] bg-muted hover:bg-[#E8EDF2] transition-colors"
       >
-        <Wrench className="h-3 w-3" />
-        <span>
-          Tool: {block.toolName}
+        <Wrench className="h-3 w-3 flex-shrink-0" />
+        <span className="flex-1 min-w-0 text-left">
+          {displayLabel ? (
+            <>
+              <span className="font-mono text-[11px]">{displayLabel}</span>
+              {hasOutsidePaths && (
+                <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-700">
+                  <AlertCircle className="h-2.5 w-2.5" />
+                  Outside workspace
+                </span>
+              )}
+            </>
+          ) : (
+            <>Tool: {block.toolName}</>
+          )}
           {block.isPending && (
             <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">
               <AlertCircle className="h-2.5 w-2.5" />
@@ -53,10 +74,25 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
             </span>
           )}
         </span>
-        {expanded ? <ChevronDown className="h-3 w-3 ml-auto" /> : <ChevronRight className="h-3 w-3 ml-auto" />}
+        {expanded ? <ChevronDown className="h-3 w-3 ml-auto flex-shrink-0" /> : <ChevronRight className="h-3 w-3 ml-auto flex-shrink-0" />}
       </button>
       {expanded && (
         <div className="px-3 py-2 text-sm font-mono whitespace-pre-wrap bg-[#F8F9FB] max-h-48 overflow-auto">
+          {/* Command info summary for terminal tools */}
+          {cmdAnalysis && cmdAnalysis.paths.length > 0 && (
+            <div className="mb-2 pb-2 border-b border-border text-xs">
+              <div className="font-semibold text-[#6B7B8D] mb-1">Paths:</div>
+              {cmdAnalysis.paths.map((p, i) => (
+                <div key={i} className={`flex items-center gap-1.5 py-0.5 ${p.isOutsideWorkspace ? 'text-orange-600' : ''}`}>
+                  {p.isOutsideWorkspace ? <AlertCircle className="h-3 w-3 flex-shrink-0" /> : <span className="w-3" />}
+                  <span className="truncate">{p.original}</span>
+                  {p.isOutsideWorkspace && (
+                    <span className="text-[10px] font-medium text-orange-600 ml-auto flex-shrink-0">outside workspace</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           {block.args}
           {block.result && (
             <div className={`mt-2 pt-2 border-t ${block.isError ? 'border-red-200' : 'border-border'}`}>
@@ -69,28 +105,41 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
         </div>
       )}
       {block.isPending && block.callId && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border-t border-amber-200">
-          <span className="text-xs text-amber-700 flex-1">This tool modifies files or runs commands. Approve?</span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              approveToolCall(block.callId!)
-            }}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
-          >
-            <Check className="h-3 w-3" />
-            Approve
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              rejectToolCall(block.callId!)
-            }}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded transition-colors"
-          >
-            <X className="h-3 w-3" />
-            Reject
-          </button>
+        <div className="flex flex-col gap-2 px-3 py-2 bg-amber-50 border-t border-amber-200">
+          {/* Rich approval text */}
+          <span className="text-xs text-amber-700">
+            {isTerminalTool && displayLabel
+              ? `Allow this command to run?`
+              : `This tool modifies files or runs commands. Approve?`}
+          </span>
+          {hasOutsidePaths && (
+            <span className="text-[11px] text-orange-600 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" />
+              Some paths are outside your workspace — review before approving
+            </span>
+          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                approveToolCall(block.callId!)
+              }}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
+            >
+              <Check className="h-3 w-3" />
+              Approve
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                rejectToolCall(block.callId!)
+              }}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded transition-colors"
+            >
+              <X className="h-3 w-3" />
+              Reject
+            </button>
+          </div>
         </div>
       )}
     </div>

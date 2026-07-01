@@ -200,14 +200,8 @@ impl Tool for CodeSearchTool {
                 }
             }
         };
-        let path = args
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or(".");
-        let regex = args
-            .get("regex")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+        let regex = args.get("regex").and_then(|v| v.as_bool()).unwrap_or(false);
         let case_sensitive = args
             .get("case_sensitive")
             .and_then(|v| v.as_bool())
@@ -315,9 +309,7 @@ impl Tool for TerminalTool {
                     .collect()
             })
             .unwrap_or_default();
-        let workdir = args
-            .get("workdir")
-            .and_then(|v| v.as_str());
+        let workdir = args.get("workdir").and_then(|v| v.as_str());
 
         match crate::shell::exec::execute(command, &cmd_args, workdir) {
             Ok(result) => {
@@ -400,10 +392,7 @@ impl Tool for GitTool {
                 }
             }
         };
-        let path = args
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or(".");
+        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
         let output = match operation {
             "status" => match crate::fs::git::status(path) {
@@ -453,20 +442,13 @@ impl Tool for GitTool {
                 }
             }
             "log" => {
-                let max_count = args
-                    .get("max_count")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(10) as i32;
+                let max_count = args.get("max_count").and_then(|v| v.as_i64()).unwrap_or(10) as i32;
                 match crate::fs::git::log(path, max_count) {
                     Ok(entries) => {
                         let mut out = String::new();
                         for e in &entries {
-                            let short_hash =
-                                e.hash.chars().take(7).collect::<String>();
-                            out.push_str(&format!(
-                                "{} {} ({})\n",
-                                short_hash, e.message, e.author
-                            ));
+                            let short_hash = e.hash.chars().take(7).collect::<String>();
+                            out.push_str(&format!("{} {} ({})\n", short_hash, e.message, e.author));
                         }
                         out
                     }
@@ -512,6 +494,105 @@ impl Tool for GitTool {
             call_id: call_id.to_string(),
             output,
             is_error: false,
+        }
+    }
+}
+
+// ── Web Fetch Tool ──
+
+pub struct WebFetchTool;
+
+#[async_trait]
+impl Tool for WebFetchTool {
+    fn name(&self) -> &str {
+        "web_fetch"
+    }
+    fn description(&self) -> &str {
+        "Fetch a web page and return its HTML content. Useful for reading documentation, checking APIs, or scraping web content."
+    }
+    fn input_schema(&self) -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "URL to fetch"
+                },
+                "max_length": {
+                    "type": "number",
+                    "description": "Maximum number of characters to return (default: 10000)"
+                }
+            },
+            "required": ["url"]
+        })
+    }
+    async fn execute(&self, call_id: &str, args: Value) -> ToolResult {
+        let url = match args.get("url").and_then(|v| v.as_str()) {
+            Some(u) => u,
+            None => {
+                return ToolResult {
+                    call_id: call_id.to_string(),
+                    output: "Missing required argument: url".to_string(),
+                    is_error: true,
+                }
+            }
+        };
+        let max_length = args
+            .get("max_length")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(10000) as usize;
+
+        let client = match reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                return ToolResult {
+                    call_id: call_id.to_string(),
+                    output: format!("Failed to create HTTP client: {}", e),
+                    is_error: true,
+                }
+            }
+        };
+
+        match client.get(url).send().await {
+            Ok(response) => {
+                let status = response.status();
+                if !status.is_success() {
+                    return ToolResult {
+                        call_id: call_id.to_string(),
+                        output: format!("HTTP {} {}: {}", status.as_u16(), status.canonical_reason().unwrap_or("Unknown"), url),
+                        is_error: true,
+                    }
+                }
+                match response.text().await {
+                    Ok(body) => {
+                        let truncated = if body.len() > max_length {
+                            format!("{}...\n\n[Response truncated to {} characters]",
+                                &body[..max_length], max_length)
+                        } else {
+                            body
+                        };
+                        ToolResult {
+                            call_id: call_id.to_string(),
+                            output: format!("Status: {}\n\n{}", status.as_u16(), truncated),
+                            is_error: false,
+                        }
+                    }
+                    Err(e) => ToolResult {
+                        call_id: call_id.to_string(),
+                        output: format!("Failed to read response body: {}", e),
+                        is_error: true,
+                    },
+                }
+            }
+            Err(e) => ToolResult {
+                call_id: call_id.to_string(),
+                output: format!("Request failed: {}", e),
+                is_error: true,
+            },
         }
     }
 }
@@ -569,11 +650,13 @@ impl ToolRegistry {
         let mut reg = Self {
             tools: HashMap::new(),
         };
-        reg.register(Box::new(FileReadTool));
-        reg.register(Box::new(FileWriteTool));
-        reg.register(Box::new(CodeSearchTool));
+        // Remove other built-in tools for now, only keep TerminalTool
+        //        reg.register(Box::new(FileReadTool));
+        //        reg.register(Box::new(FileWriteTool));
+        //        reg.register(Box::new(CodeSearchTool));
         reg.register(Box::new(TerminalTool));
-        reg.register(Box::new(GitTool));
+        reg.register(Box::new(WebFetchTool));
+        //        reg.register(Box::new(GitTool));
         reg
     }
 
@@ -637,22 +720,16 @@ mod tests {
         let reg = ToolRegistry::new();
         let defs = reg.definitions();
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
-        assert!(names.contains(&"read_file"));
-        assert!(names.contains(&"write_file"));
-        assert!(names.contains(&"search_code"));
         assert!(names.contains(&"run_terminal"));
-        assert!(names.contains(&"git"));
-        assert_eq!(defs.len(), 5);
+        assert!(names.contains(&"web_fetch"));
+        assert_eq!(defs.len(), 2);
     }
 
     #[test]
     fn test_tool_danger_levels() {
         let reg = ToolRegistry::new();
-        assert_eq!(reg.danger("read_file"), Some(ToolDanger::Safe));
-        assert_eq!(reg.danger("write_file"), Some(ToolDanger::Destructive));
-        assert_eq!(reg.danger("search_code"), Some(ToolDanger::Safe));
         assert_eq!(reg.danger("run_terminal"), Some(ToolDanger::Destructive));
-        assert_eq!(reg.danger("git"), Some(ToolDanger::Safe));
+        assert_eq!(reg.danger("web_fetch"), Some(ToolDanger::Safe));
         assert_eq!(reg.danger("nonexistent"), None);
     }
 
@@ -736,9 +813,7 @@ mod tests {
     #[tokio::test]
     async fn test_git_tool_bad_operation() {
         let tool = GitTool;
-        let result = tool
-            .execute("call_1", json!({"operation": "blarg"}))
-            .await;
+        let result = tool.execute("call_1", json!({"operation": "blarg"})).await;
         assert!(result.is_error);
         assert!(result.output.contains("blarg"));
     }

@@ -10,25 +10,24 @@ use crate::llm::registry::{ProviderInfo, ProviderRegistry};
 use crate::search::grep::SearchMatch;
 use crate::shell::exec::CommandResult;
 use crate::state::config::{self, AppConfig, McpServerConfig};
-use crate::storage::conversation_store::{
-    ConversationStore, SessionSummary, SessionWithMessages,
-};
+use crate::storage::conversation_store::{ConversationStore, SessionSummary, SessionWithMessages};
 use crate::terminal::manager::PtyManager;
 
+mod config_update;
+mod conversations;
 mod diagnostics;
 mod files;
 mod git;
+mod providers_cmd;
 mod search;
+mod setup_cmd;
 mod shell;
+mod stream_control;
+mod streaming_cmd;
 mod terminal_cmd;
+mod tools_cmd;
 mod utils;
 mod watcher_cmd;
-mod config_update;
-mod conversations;
-mod providers_cmd;
-mod stream_control;
-mod setup_cmd;
-mod streaming_cmd;
 pub use diagnostics::{ErrorEntry, OutputEntry};
 
 pub struct AppState {
@@ -36,6 +35,7 @@ pub struct AppState {
     pub store: Arc<dyn ConversationStore>,
     pub registry: RwLock<ProviderRegistry>,
     pub stream_tasks: Arc<TokioMutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
+    pub project_path: RwLock<String>,
 }
 
 pub struct WatcherState {
@@ -77,6 +77,23 @@ pub fn load_config() -> Result<AppConfig, String> {
 #[tauri::command]
 pub fn check_update() -> Result<serde_json::Value, String> {
     Ok(config_update::check_update_impl())
+}
+
+// ── Project Path ──
+
+#[tauri::command]
+pub fn set_project_path(path: String, state: State<'_, AppState>) -> Result<(), String> {
+    *state.project_path.write().map_err(|e| e.to_string())? = path;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_project_path(state: State<'_, AppState>) -> Result<String, String> {
+    state
+        .project_path
+        .read()
+        .map(|p| p.clone())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -195,6 +212,13 @@ pub async fn reject_tool_call(
     call_id: String,
 ) -> Result<(), String> {
     stream_control::reject_tool_call_impl(pending_state, call_id).await
+}
+
+#[tauri::command]
+pub async fn list_available_tools(
+    state: State<'_, AppState>,
+) -> Result<Vec<tools_cmd::ToolInfo>, String> {
+    tools_cmd::list_available_tools(state).await
 }
 
 // ── LLM Providers ──

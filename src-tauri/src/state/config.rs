@@ -39,6 +39,8 @@ pub struct AppConfig {
     pub left_panel_width: Option<f64>,
     pub right_panel_width: Option<f64>,
     pub bottom_panel_height: Option<f64>,
+    #[serde(default)]
+    pub disabled_tools: Vec<String>,
 }
 
 impl Default for AppConfig {
@@ -62,6 +64,7 @@ impl Default for AppConfig {
             left_panel_width: None,
             right_panel_width: None,
             bottom_panel_height: None,
+            disabled_tools: Vec::new(),
         }
     }
 }

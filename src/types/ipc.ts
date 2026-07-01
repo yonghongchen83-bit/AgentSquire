@@ -59,6 +59,18 @@ export interface ThinkingBlock {
   content: string
 }
 
+export interface AnalyzedPath {
+  original: string
+  resolved: string
+  isOutsideWorkspace: boolean
+}
+
+export interface CommandAnalysis {
+  command: string
+  args: string[]
+  paths: AnalyzedPath[]
+}
+
 export interface ToolCallBlock {
   type: 'tool_call'
   toolName: string
@@ -67,6 +79,8 @@ export interface ToolCallBlock {
   callId?: string
   isPending?: boolean
   isError?: boolean
+  /** Command analysis for terminal tools */
+  commandAnalysis?: CommandAnalysis
 }
 
 export interface ToolResult {
@@ -79,6 +93,8 @@ export interface ToolApprovalRequest {
   call_id: string
   tool_name: string
   arguments: Record<string, unknown>
+  /** Command analysis (enriched for run_terminal) */
+  commandAnalysis?: CommandAnalysis
 }
 
 export interface CodeBlock {
@@ -204,6 +220,17 @@ export interface LlmProviderConfig {
   endpoint?: string
   metadata?: Record<string, string>
   category?: string
+}
+
+// ─── Tools ──────────────────────────────────────────────
+
+export interface ToolInfo {
+  name: string
+  description: string
+  category: string
+  serverName?: string
+  danger: string
+  enabled: boolean
 }
 
 export interface McpServerConfig {

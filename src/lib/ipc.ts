@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import type { FileEntry, AppConfig, SessionSummary, SessionWithMessages, Session, SearchMatch, ReplaceOptions, ProviderInfo, McpServerConfig } from '@/types/ipc'
+import type { FileEntry, AppConfig, SessionSummary, SessionWithMessages, Session, SearchMatch, ReplaceOptions, ProviderInfo, McpServerConfig, ToolApprovalRequest, ToolInfo } from '@/types/ipc'
 
 type RawSessionSummary = {
   id: string
@@ -108,6 +108,18 @@ export async function loadConfig(): Promise<AppConfig> {
 export async function saveConfig(config: Partial<AppConfig>): Promise<void> {
   const current = await loadConfig()
   return invoke('save_config', { newConfig: { ...current, ...config } })
+
+export async function listAvailableTools(): Promise<ToolInfo[]> {
+  return invoke('list_available_tools')
+}
+
+export async function setProjectPath(path: string): Promise<void> {
+  return invoke('set_project_path', { path })
+}
+
+export async function getProjectPath(): Promise<string> {
+  return invoke('get_project_path')
+}
 }
 
 export async function listConversations(): Promise<SessionSummary[]> {
@@ -337,7 +349,7 @@ export function onStreamToolResult(cb: (result: { call_id: string; output: strin
   return listen('stream-tool-result', (event) => cb(event.payload as { call_id: string; output: string; is_error: boolean }))
 }
 
-export function onStreamToolPending(cb: (approval: { call_id: string; tool_name: string; arguments: Record<string, unknown> }) => void) {
+export function onStreamToolPending(cb: (approval: ToolApprovalRequest) => void) {
   return listen<string>('stream-tool-pending', (event) => {
     try {
       const parsed = JSON.parse(event.payload)

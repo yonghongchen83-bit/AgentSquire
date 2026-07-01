@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useLayoutStore } from '@/stores/ui-store'
+import { setProjectPath as setBackendProjectPath } from '@/lib/ipc'
 
 interface MenuItem {
   label: string
@@ -29,7 +30,10 @@ export function MenuBar() {
   const handleOpenProject = useCallback(async () => {
     try {
       const selected = await open({ directory: true, multiple: false, title: 'Open Project' })
-      if (selected) setProjectPath(selected)
+      if (selected) {
+        setProjectPath(selected)
+        setBackendProjectPath(selected).catch(() => {})
+      }
     } catch {}
     setOpenMenu(null)
   }, [setProjectPath])

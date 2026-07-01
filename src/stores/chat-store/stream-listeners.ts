@@ -103,7 +103,7 @@ export async function setupStreamListeners({
         void approveIpc(approval.call_id)
         return
       }
-      set((s: { streamingBlocks: Block[]; pendingApprovals: Array<{ call_id: string }> }) => {
+      set((s: { streamingBlocks: Block[]; pendingApprovals: Array<{ call_id: string; commandAnalysis?: import('@/types/ipc').CommandAnalysis }> }) => {
         const blocks = [...s.streamingBlocks]
         const idx = blocks.findIndex(
           (b) => b.type === 'tool_call' && b.callId === approval.call_id,
@@ -111,7 +111,11 @@ export async function setupStreamListeners({
         if (idx !== -1) {
           const block = blocks[idx]
           if (block.type === 'tool_call') {
-            blocks[idx] = { ...block, isPending: true }
+            blocks[idx] = {
+              ...block,
+              isPending: true,
+              commandAnalysis: approval.commandAnalysis,
+            }
           }
         }
         return {

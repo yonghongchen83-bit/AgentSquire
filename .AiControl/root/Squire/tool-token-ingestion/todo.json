@@ -1,0 +1,75 @@
+{
+  "nodePath": "root/Squire/tool-token-ingestion",
+  "items": [
+    {
+      "id": "tti-1",
+      "text": "Read context: squire-storage/todo.json ss-9 exact wording, squire-storage/decisions.md (SquireStore trait contract, SquireInvokeTool fallback design), squire-adapter/decisions.md (Q5 tool boundary), context_squire_spec_v2.md sections 3.1/3.2/6.1 (tool token shape, explore() tool_skill return shape)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tti-2",
+      "text": "Read the actual code in full: squire.rs (SquireStore trait, SquireExploreTool/SquireInvokeTool, StoredToken/TokenSummary), squire_lancedb.rs (LanceDbSquireStore, squire_tokens schema), agent/mod.rs (ToolRegistry, McpProxyTool), mcp/mod.rs (MCP discovery), commands/streaming_cmd.rs (where ToolRegistry is actually built each turn)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tti-3",
+      "text": "Verify baseline: cargo build + cargo test --lib clean, 158/158 passing",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tti-4",
+      "text": "Design the ingestion write path in decisions.md before implementing: trigger point, token ID scheme, content/summary shape, update-not-duplicate behavior, removal/staleness handling",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tti-5",
+      "text": "Implement a backend-agnostic ingestion function in agent::squire (e.g. ingest_tool_registry) that upserts one tool_skill token per ToolDefinition via SquireStore::upsert_token, no new trait method, no per-backend duplication",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tti-6",
+      "text": "Wire the ingestion call site into streaming_cmd.rs's existing per-turn ToolRegistry construction (after tool_registry is finalized, before it's wrapped in Arc / passed to the adapter)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tti-7",
+      "text": "Add unit tests for the ingestion function: token shape/ID scheme, re-ingestion updates rather than duplicates, both InMemorySquireStore and LanceDbSquireStore",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tti-8",
+      "text": "Full verification: cargo build + cargo test --lib (expect 158 baseline + new)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tti-9",
+      "text": "Verify manually/e2e if practical that a real tool now shows up via explore(resource_type=\"tool_skill\") sourced from the store. Done via a new headless integration harness (src-tauri/examples/tool_token_ingestion_e2e.rs) running the real production call chain against a real LanceDbSquireStore, not a WDIO/GUI spec (no new user-facing surface exists to exercise) - see decisions.md's verification-methodology section",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tti-10",
+      "text": "Update root/Squire/state.md Child Nodes list and root/Squire/handoff.md to reflect this session's work, current build/test status, and remaining backlog with ss-9 marked resolved",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    }
+  ]
+}

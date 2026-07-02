@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex, RwLock};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex as TokioMutex;
 
-use crate::agent::PendingApprovals;
+use crate::agent::squire::SquireStore;
+use crate::agent::{PendingApprovals, PendingAskUserQuestions};
 use crate::fs::ops::FileEntry;
 use crate::fs::watcher::FileWatcher;
 use crate::llm::registry::{ProviderInfo, ProviderRegistry};
@@ -36,6 +37,12 @@ pub struct AppState {
     pub registry: RwLock<ProviderRegistry>,
     pub stream_tasks: Arc<TokioMutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
     pub project_path: RwLock<String>,
+    /// Squire context-mode memory store. Real LanceDB-backed implementation
+    /// (`storage::squire_lancedb::LanceDbSquireStore`, Q4), constructed once
+    /// at app startup in `setup_cmd.rs` against `<app_config_dir>/squire_lancedb`;
+    /// persists across restarts. `agent::squire::InMemorySquireStore` remains
+    /// available as a fast in-process test double for unit tests.
+    pub squire_store: Arc<dyn SquireStore>,
 }
 
 pub struct WatcherState {
@@ -169,6 +176,7 @@ pub async fn send_message(
     app: AppHandle,
     state: State<'_, AppState>,
     pending_state: State<'_, PendingApprovals>,
+    pending_ask_user_state: State<'_, PendingAskUserQuestions>,
     session_id: String,
     content: String,
     provider_name: Option<String>,
@@ -179,6 +187,7 @@ pub async fn send_message(
         app,
         state,
         pending_state,
+        pending_ask_user_state,
         session_id,
         content,
         provider_name,
@@ -213,6 +222,17 @@ pub async fn reject_tool_call(
     call_id: String,
 ) -> Result<(), String> {
     stream_control::reject_tool_call_impl(pending_state, call_id).await
+}
+
+// ── Answer AskUser Question (sa-5) ──
+
+#[tauri::command]
+pub async fn answer_ask_user_question(
+    pending_state: State<'_, PendingAskUserQuestions>,
+    question_id: String,
+    answer: String,
+) -> Result<(), String> {
+    stream_control::answer_ask_user_question_impl(pending_state, question_id, answer).await
 }
 
 #[tauri::command]

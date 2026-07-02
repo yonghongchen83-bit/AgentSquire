@@ -1,0 +1,75 @@
+{
+  "nodePath": "root/Squire/raw-partition-storage",
+  "items": [
+    {
+      "id": "rps-1",
+      "text": "Read context: context_squire_spec_v2.md sections 4.1/4.3/5.2/9.4 step 4/11/17 (every mention of the raw partition), protocol-doc-sync/decisions.md item 12, squire-storage/decisions.md's storage-layout section",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "rps-2",
+      "text": "Read the actual code in full: squire.rs (finalize_turn, extract_spans, SquireStore trait, InMemorySquireStore) and squire_lancedb.rs (all five existing tables' schema/open/query/write patterns)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "rps-3",
+      "text": "Verify baseline: cargo build + cargo test --lib clean, 193/193 passing",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "rps-4",
+      "text": "Resolve the verbatim-everything vs. unmarked-only ambiguity in decisions.md before implementing, with exact textual basis; also resolve whether this partition is ever read back by the model",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "rps-5",
+      "text": "Design and implement: new SquireStore trait method (record_raw_output or equivalent), new squire_raw_partition LanceDB table + InMemorySquireStore equivalent, append-only, no read-back trait method",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "rps-6",
+      "text": "Wire the call site into SquireContextAdapter::finalize_turn immediately after extract_spans, on the compliant path only, persisting only the unmarked residual text",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "rps-7",
+      "text": "Add unit tests: unmarked-residual extraction helper (pure function), InMemorySquireStore-backed record/read-for-test coverage, LanceDbSquireStore-backed schema/persistence coverage, finalize_turn integration test confirming only unmarked text is stored and fully-spanned responses store nothing/empty",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "rps-8",
+      "text": "Full verification: cargo build + cargo build --bins + cargo test --lib (expect 193 baseline + new)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "rps-9",
+      "text": "Verify manually/e2e: repo-wide frontend grep to confirm no UI surface, then a headless integration harness (src-tauri/examples/raw_partition_storage_e2e.rs) against a real LanceDbSquireStore, matching tool-token-ingestion/user-input-chunking precedent",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "rps-10",
+      "text": "Update root/Squire/state.md Child Nodes list and root/Squire/handoff.md to reflect this session's work, current build/test status, and remaining backlog with raw-partition storage marked resolved",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    }
+  ]
+}

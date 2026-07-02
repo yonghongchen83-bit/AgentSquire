@@ -1,0 +1,75 @@
+{
+  "nodePath": "root/Squire/session-ux-polish",
+  "items": [
+    {
+      "id": "sup-1",
+      "text": "Read context: session-creation-ux/decisions.md + state.md in full (Risks section, toggle/badge design, non-goals)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "sup-2",
+      "text": "Read the actual frontend code: conversation-sidebar.tsx, chat-store.ts, chat-store/preferences.ts, chat-panel.tsx",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "sup-3",
+      "text": "Verify baseline: npx tsc --noEmit (7 pre-existing tools-panel errors only), npm test -- --run (82/84, same 2 pre-existing failures), cargo build + cargo test --lib (clean/206)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "sup-4",
+      "text": "Design both items in decisions.md before implementing: persistence mechanism choice (in-memory vs localStorage) with rationale, chat header indicator placement/style/show-condition",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "sup-5",
+      "text": "Implement toggle persistence in conversation-sidebar.tsx / chat-store",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "sup-6",
+      "text": "Implement chat header mode indicator in chat-panel.tsx",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "sup-7",
+      "text": "Add/update frontend tests for both changes",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "sup-8",
+      "text": "Full verification: npx tsc --noEmit, npm test -- --run, cargo build, cargo test --lib",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "sup-9",
+      "text": "Manual/e2e verification: extended session-creation-ux.test.ts with a remount-persistence case (4/4 clean full-suite runs after fixing a pre-existing toggle-assertion race the new persistence write made more likely to surface); judged component tests sufficient for the header indicator; re-ran ask-user-loop.test.ts once, no regression",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "sup-10",
+      "text": "Update root/Squire/state.md Child Nodes list and root/Squire/handoff.md to reflect this session's work and remaining backlog",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    }
+  ]
+}

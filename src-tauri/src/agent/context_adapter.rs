@@ -14,6 +14,31 @@ pub struct TurnInput {
     pub tools: Vec<ToolDefinition>,
 }
 
+/// Result of `finalize_turn`: whether orchestration should treat the turn as
+/// closed, or loop back into `provider.chat()` because the adapter rejected
+/// the model's output and wants to give it another attempt (see Squire Q6).
+pub enum TurnOutcome {
+    /// Turn closed normally; nothing more to send to the provider.
+    Done,
+    /// Adapter appended a continuation message (e.g. a rejection payload) to
+    /// `messages` and wants orchestration to call `provider.chat()` again.
+    Retry,
+    /// Adapter exhausted its retry budget. `reason` and `failed_content` are
+    /// surfaced to the user as a compliance-failure error.
+    Failed {
+        reason: String,
+        failed_content: String,
+    },
+    /// Adapter's response asked a clarifying question instead of closing the
+    /// turn (Squire spec §8.2/§9.3's response-field AskUser loop). Not an
+    /// error — a valid, expected turn state. Orchestration is responsible
+    /// for pausing the turn, surfacing `question` to the user, collecting an
+    /// answer, appending both to `messages`, and resuming (see
+    /// `commands::streaming_cmd`'s `TurnOutcome::AskUser` handling and
+    /// `.AiControl/root/Squire/ask-user-loop/decisions.md`).
+    AskUser { question: String },
+}
+
 /// Pluggable per-session context strategy. Orchestration (provider calls,
 /// streaming, tool approval/watchdog, MCP discovery) stays in
 /// `commands::streaming_cmd`; adapters own only history assembly,
@@ -38,13 +63,16 @@ pub trait ContextManagerAdapter: Send + Sync {
     ) -> Result<(), String>;
 
     /// Called once when the turn reaches a terminal Stop/Length state.
+    /// `messages` is passed mutably so an adapter can append a continuation
+    /// message when returning `TurnOutcome::Retry`.
     async fn finalize_turn(
         &mut self,
         session_id: SessionId,
         assistant_content: String,
         thinking: Option<String>,
+        messages: &mut Vec<ChatMessage>,
         store: &dyn ConversationStore,
-    ) -> Result<(), String>;
+    ) -> Result<TurnOutcome, String>;
 }
 
 fn to_chat_role(role: &MessageRole) -> ChatRole {
@@ -119,10 +147,11 @@ impl ContextManagerAdapter for LegacyContextAdapter {
         session_id: SessionId,
         assistant_content: String,
         thinking: Option<String>,
+        _messages: &mut Vec<ChatMessage>,
         store: &dyn ConversationStore,
-    ) -> Result<(), String> {
+    ) -> Result<TurnOutcome, String> {
         if assistant_content.is_empty() {
-            return Ok(());
+            return Ok(TurnOutcome::Done);
         }
 
         store
@@ -133,7 +162,7 @@ impl ContextManagerAdapter for LegacyContextAdapter {
                 thinking_content: thinking,
             })
             .await
-            .map(|_| ())
+            .map(|_| TurnOutcome::Done)
             .map_err(|e| e.to_string())
     }
 }
@@ -333,9 +362,10 @@ mod tests {
         let store = RecordingStore {
             appended: Mutex::new(Vec::new()),
         };
+        let mut messages = Vec::new();
 
         adapter
-            .finalize_turn(Uuid::new_v4(), String::new(), None, &store)
+            .finalize_turn(Uuid::new_v4(), String::new(), None, &mut messages, &store)
             .await
             .unwrap();
 
@@ -349,12 +379,14 @@ mod tests {
             appended: Mutex::new(Vec::new()),
         };
         let sid = Uuid::new_v4();
+        let mut messages = Vec::new();
 
         adapter
             .finalize_turn(
                 sid,
                 "final answer".to_string(),
                 Some("chain of thought".to_string()),
+                &mut messages,
                 &store,
             )
             .await

@@ -1,0 +1,75 @@
+{
+  "nodePath": "root/Squire/user-input-chunking",
+  "items": [
+    {
+      "id": "uic-1",
+      "text": "Read context: context_squire_spec_v2.md sections 3.1/3.2/4.1/4.3/9.1/11/17 (every mention of USR_TN_NNN chunking), protocol-doc-sync/decisions.md item 11, planning/decisions.md Q1-Q7 (confirm no explicit descope)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "uic-2",
+      "text": "Read the actual code in full: squire.rs (SquireContextAdapter::build_turn_input, SquireStore trait, NewTokenSpec, upsert_token in both InMemorySquireStore and LanceDbSquireStore)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "uic-3",
+      "text": "Verify baseline: cargo build + cargo test --lib clean, 173/173 passing",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "uic-4",
+      "text": "Design the chunking scheme in decisions.md before implementing: chunk trigger condition, chunk granularity/algorithm, USR_TN_NNN id/numbering scheme, how chunk tokens are meant to be referenced afterward - document every judgment call explicitly",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "uic-5",
+      "text": "Implement chunk_user_input + first_sentence + ingest_user_input_chunks in agent::squire, backend-agnostic via SquireStore::upsert_token, no new trait method",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "uic-6",
+      "text": "Wire the call site into SquireContextAdapter::build_turn_input, before the bootstrap explore_memory call, using the current (about-to-open) turn number",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "uic-7",
+      "text": "Add unit tests: chunk_user_input (paragraph split, sentence split on long paragraphs, single short message = one chunk, empty input = no chunks), first_sentence, ingest_user_input_chunks (id scheme/numbering, token_type, short_desc/full_desc shape, per-turn reset), build_turn_input integration test confirming chunk tokens exist and are bootstrap-discoverable same turn",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "uic-8",
+      "text": "Full verification: cargo build + cargo build --bins + cargo test --lib (193/193: 173 baseline + 17 in squire.rs + 3 in squire_lancedb.rs)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "uic-9",
+      "text": "Verify manually/e2e: judged a headless integration harness (src-tauri/examples/user_input_chunking_e2e.rs) running the real build_turn_input call chain against a real LanceDbSquireStore as the right tier (no new user-facing surface exists for a WDIO/GUI spec to exercise - confirmed via repo-wide frontend grep), matching tool-token-ingestion's precedent. Ran successfully, all assertions passed - see state.md for full transcript",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "uic-10",
+      "text": "Update root/Squire/state.md Child Nodes list and root/Squire/handoff.md to reflect this session's work, current build/test status, and remaining backlog with user-input auto-chunking marked resolved",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    }
+  ]
+}

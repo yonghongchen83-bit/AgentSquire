@@ -1,12 +1,21 @@
 import { Trash2, Plus, MessageSquare, Pencil, Check, X } from 'lucide-react'
 import { useState } from 'react'
-import type { SessionSummary } from '@/types/ipc'
+import type { SessionSummary, ContextMode } from '@/types/ipc'
+import { Switch } from '@/components/ui/switch'
+import {
+  loadStoredSquireModeDefault,
+  saveStoredSquireModeDefault,
+} from '@/stores/chat-store/preferences'
 
 interface ConversationSidebarProps {
   conversations: SessionSummary[]
   activeId: string | null
   onSelect: (id: string) => void
-  onCreate: () => void
+  /** contextMode reflects the "Squire mode" toggle at creation time — undefined/omitted
+   *  means Legacy (the default), matching createNewConversation's own default. Mode is
+   *  chosen once, here, and is immutable afterward (session-mode/decisions.md) — there is
+   *  deliberately no equivalent "change mode" callback for an existing conversation. */
+  onCreate: (contextMode?: ContextMode) => void
   onDelete: (id: string) => void
   onRename: (id: string, title: string) => void | Promise<void>
   standalone?: boolean
@@ -41,6 +50,17 @@ export function ConversationSidebar({
 }: ConversationSidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
+  // Squire mode is an explicit opt-in at creation time; Legacy is the default so existing
+  // muscle memory / expectations aren't disrupted (session-creation-ux/decisions.md). The
+  // last-chosen value is persisted (session-ux-polish/decisions.md) so it survives a
+  // remount instead of always resetting to Legacy — a brand-new/never-toggled install still
+  // defaults to Legacy since loadStoredSquireModeDefault() returns false when unset.
+  const [nextSessionSquireMode, setNextSessionSquireMode] = useState(() => loadStoredSquireModeDefault())
+
+  const handleSquireModeToggle = (checked: boolean) => {
+    setNextSessionSquireMode(checked)
+    saveStoredSquireModeDefault(checked)
+  }
 
   const startEditing = (id: string, title: string) => {
     setEditingId(id)
@@ -68,13 +88,26 @@ export function ConversationSidebar({
     <div className={`flex flex-col h-full bg-[#F8F9FB] ${standalone ? '' : 'border-r border-border'}`}>
       <div className="flex items-center justify-between px-3 h-10 border-b border-border">
         <span className="text-xs font-semibold text-[#6B7B8D] uppercase tracking-wider">Sessions</span>
-        <button
-          onClick={onCreate}
-          className="flex items-center justify-center w-6 h-6 rounded hover:bg-[#E8EDF2] text-[#6B7B8D] hover:text-[#1A2332] transition-colors"
-          title="New session"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 cursor-pointer select-none" title="New sessions use Squire's curated protocol context instead of full-history replay. This choice is fixed once a session is created.">
+            <span className={`text-[10px] font-medium uppercase tracking-wide ${nextSessionSquireMode ? 'text-[#4A90D9]' : 'text-[#6B7B8D]'}`}>
+              Squire
+            </span>
+            <Switch
+              checked={nextSessionSquireMode}
+              onCheckedChange={handleSquireModeToggle}
+              className="h-4 w-7 [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
+              aria-label="Create new sessions in Squire mode"
+            />
+          </label>
+          <button
+            onClick={() => onCreate(nextSessionSquireMode ? 'squire' : 'legacy')}
+            className="flex items-center justify-center w-6 h-6 rounded hover:bg-[#E8EDF2] text-[#6B7B8D] hover:text-[#1A2332] transition-colors"
+            title="New session"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto">
         {conversations.length === 0 && (
@@ -117,7 +150,17 @@ export function ConversationSidebar({
                   }}
                 />
               ) : (
-                <div className="text-sm truncate">{conv.title}</div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-sm truncate">{conv.title}</span>
+                  {conv.contextMode === 'squire' && (
+                    <span
+                      className="flex-shrink-0 text-[9px] font-semibold uppercase tracking-wide text-[#4A90D9] bg-[#4A90D9]/10 rounded px-1 py-[1px]"
+                      title="This session uses Squire's curated protocol context"
+                    >
+                      Squire
+                    </span>
+                  )}
+                </div>
               )}
               <div className="text-xs text-[#6B7B8D]">{formatDate(conv.lastMessageAt)}</div>
             </div>

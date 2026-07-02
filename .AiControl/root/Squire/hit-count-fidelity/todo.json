@@ -1,0 +1,75 @@
+{
+  "nodePath": "root/Squire/hit-count-fidelity",
+  "items": [
+    {
+      "id": "hcf-1",
+      "text": "Read context: retrieval-fidelity/decisions.md + todo.json (rf-13's exact wording and the event-wiring rationale section) in full",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "hcf-2",
+      "text": "Read context_squire_spec_v2.md sections 3.2/3.3 plus cross references (5.1, 9.4 step 7, 10.1 step 7) to confirm exact event wording",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "hcf-3",
+      "text": "Read the actual code in full: squire.rs (SquireStore::record_hit, SquireExploreTool, SquireTokenToDetailTool, SquireInvokeTool, finalize_turn, build_turn_input, expand_for_display, extract_inline_refs/extract_spans/unmarked_residual)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "hcf-4",
+      "text": "Verify baseline: cargo build + cargo test --lib clean, 206/206 passing",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "hcf-5",
+      "text": "Design and document in decisions.md before implementing: operationalize the two remaining events, resolve the double-count-vs-new_tokens edge case, document the deliberately-deferred nested chunk-citing-chunk case and its tradeoff",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "hcf-6",
+      "text": "Implement: new record_hit call site in finalize_turn crediting every already-existing token referenced via §! in the compliant response's content (covers event 1's second disjunct + event 3 for the AI's own output), guarded against double-crediting same-turn new_tokens",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "hcf-7",
+      "text": "Add unit tests in squire.rs: cite-existing-token-without-token_to_detail earns a hit; same-turn new_tokens+citation earns exactly one hit not two; multiple citations of the same token in one response still credit exactly one hit",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "hcf-8",
+      "text": "Add/confirm parity coverage against the real LanceDbSquireStore (squire_lancedb.rs) — the new call site lives in backend-agnostic finalize_turn, so confirm existing record_hit unit tests already exercise the real backend, add a targeted one if a gap is found",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "hcf-9",
+      "text": "Full verification: cargo build + cargo test --lib (expect 206 baseline + new); repo-wide frontend grep to confirm no WDIO/GUI surface is warranted",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "hcf-10",
+      "text": "Update root/Squire/state.md Child Nodes list and root/Squire/handoff.md to reflect this session's work, current build/test status, and remaining backlog with rf-13 resolved",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    }
+  ]
+}

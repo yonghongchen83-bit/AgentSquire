@@ -1,17 +1,33 @@
 use super::utils::{derive_session_title_from_message, is_valid_tool_schema};
 use super::AppState;
-use crate::agent::context_adapter::{ContextManagerAdapter, LegacyContextAdapter};
-use crate::agent::{self, McpProxyTool, PendingApprovals, ToolDanger, ToolRegistry};
-use crate::llm::provider::{ChatMessage, ChatRequest, FinishReason, StreamEvent, ToolCall};
+use crate::agent::context_adapter::{ContextManagerAdapter, LegacyContextAdapter, TurnOutcome};
+use crate::agent::squire::{SquireContextAdapter, SquireExploreTool, SquireInvokeTool, SquireTokenToDetailTool};
+use crate::agent::{self, McpProxyTool, PendingApprovals, PendingAskUserQuestions, ToolDanger, ToolRegistry};
+use crate::llm::provider::{ChatMessage, ChatRole, ChatRequest, FinishReason, StreamEvent, ToolCall};
 use crate::state::config::McpServerConfig;
 use crate::storage::conversation_store::{ContextMode, NewMessage, SessionId};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
 
 fn emit_stream_status(app: &AppHandle, status: &str) {
     let _ = app.emit("stream-status", status.to_string());
+}
+
+/// sa-4: whether raw per-token model output should be forwarded live to the
+/// `stream-chunk` UI channel as it arrives. Legacy mode's content is always
+/// display-ready prose, so it streams live as before. Squire mode's raw
+/// content is protocol JSON containing unexpanded `§!`/`§^` sigils until
+/// `SquireContextAdapter::finalize_turn` parses and expands it — forwarding
+/// it live would violate the spec's display-boundary guarantee ("no protocol
+/// artefacts are ever visible to the user", `context_squire_spec_v2.md` §14).
+/// Extracted as a small pure function so the mode-gating policy itself is
+/// unit-testable independent of the surrounding Tauri/streaming orchestration
+/// (which has no test harness today — see `commands::streaming_cmd` has no
+/// `mod tests` because of its `AppHandle`/`State` dependencies).
+fn should_stream_live_chunks(context_mode: ContextMode) -> bool {
+    !matches!(context_mode, ContextMode::Squire)
 }
 
 async fn execute_tool_with_watchdog<F>(
@@ -96,10 +112,55 @@ async fn await_approval_with_watchdog(
     }
 }
 
+/// sa-5: waits for the user's answer to a paused ask_user question, with the
+/// same periodic-nudge watchdog UX as `await_approval_with_watchdog` (see
+/// `ask-user-loop/decisions.md` — a stuck ask_user question should look and
+/// feel like a stuck approval prompt, not a silently different pattern).
+/// Returns `None` if the sender was dropped without ever answering (e.g. the
+/// turn task itself is being aborted concurrently — see the abandonment
+/// handling note in decisions.md); callers should treat that the same as an
+/// aborted turn, not retry.
+async fn await_answer_with_watchdog(
+    app: &AppHandle,
+    rx: tokio::sync::oneshot::Receiver<String>,
+) -> Option<String> {
+    let start = Instant::now();
+    tokio::pin!(rx);
+
+    loop {
+        tokio::select! {
+            answer = &mut rx => {
+                return answer.ok();
+            }
+            _ = tokio::time::sleep(Duration::from_secs(10)) => {
+                let elapsed = start.elapsed().as_secs();
+                emit_stream_status(
+                    app,
+                    &format!("Waiting for your answer... ({}s)", elapsed),
+                );
+                if elapsed >= 30 {
+                    let _ = app.emit(
+                        "output:append",
+                        serde_json::json!({
+                            "source": "chat",
+                            "line": format!(
+                                "INFO: Squire ask_user question still pending after {}s. User action is required.",
+                                elapsed
+                            ),
+                            "timestamp": chrono::Utc::now().to_rfc3339(),
+                        }),
+                    );
+                }
+            }
+        }
+    }
+}
+
 pub async fn send_message_impl(
     app: AppHandle,
     state: State<'_, AppState>,
     pending_state: State<'_, PendingApprovals>,
+    pending_ask_user_state: State<'_, PendingAskUserQuestions>,
     session_id: String,
     content: String,
     provider_name: Option<String>,
@@ -160,8 +221,10 @@ pub async fn send_message_impl(
         .unwrap_or_default();
 
     let store = state.store.clone();
+    let squire_store = state.squire_store.clone();
     let app_clone = app.clone();
     let pending = pending_state.pending.clone();
+    let pending_ask_user = pending_ask_user_state.pending.clone();
     let stream_tasks = state.stream_tasks.clone();
     let session_key = sid.to_string();
 
@@ -180,6 +243,15 @@ pub async fn send_message_impl(
                 .into_iter()
                 .map(|d| d.name)
                 .collect();
+            // token-detail-endpoint: side-channel map from a tool's registry
+            // (local) name to enough metadata to re-dispatch it purely from
+            // stored data later, even if its server isn't live in some
+            // future turn. Populated only for MCP-sourced tools below —
+            // ToolDefinition itself erases this origin once registered, so
+            // it must be captured here, at the one point origin is still
+            // known. See `agent::squire::ingest_tool_registry`'s doc comment
+            // and `token-detail-endpoint/decisions.md`.
+            let mut tool_endpoints: HashMap<String, agent::squire::ToolEndpoint> = HashMap::new();
 
             for server in &enabled_mcp_servers {
                 match crate::mcp::discover_tools(server.clone()).await {
@@ -224,6 +296,14 @@ pub async fn send_message_impl(
                                 continue;
                             }
 
+                            tool_endpoints.insert(
+                                local_name.clone(),
+                                agent::squire::ToolEndpoint::Mcp {
+                                    server: server.clone(),
+                                    remote_name: remote_tool_name.clone(),
+                                },
+                            );
+
                             tool_registry.register(Box::new(McpProxyTool {
                                 local_name: local_name.clone(),
                                 local_description,
@@ -249,18 +329,53 @@ pub async fn send_message_impl(
                 }
             }
 
+            // ss-9: ingest the full, just-assembled tool registry (local
+            // built-ins + MCP-discovered tools) into the Squire store as
+            // `tool`-typed tokens, so `explore(resource_type="tool_skill")`
+            // and `SquireInvokeTool`'s store-fallback path have real rows to
+            // find. Runs every turn, both context modes — see
+            // `tool-token-ingestion/decisions.md` for why this is the one
+            // real trigger point and why it isn't gated to Squire mode only.
+            // `tool_endpoints` (token-detail-endpoint) carries enough MCP
+            // connection metadata for SquireInvokeTool's store-fallback path
+            // to actually dispatch a call, not just describe the tool.
+            agent::squire::ingest_tool_registry(&tool_registry, squire_store.as_ref(), &tool_endpoints).await;
+
             let tool_registry = Arc::new(tool_registry);
             let tool_defs = tool_registry.definitions();
 
             let mut adapter: Box<dyn ContextManagerAdapter> = match session.session.context_mode {
                 ContextMode::Legacy => Box::new(LegacyContextAdapter),
+                ContextMode::Squire => Box::new(SquireContextAdapter::new(squire_store.clone())),
+            };
+
+            // sa-4: gate the live `stream-chunk` UI channel by context mode —
+            // see `should_stream_live_chunks` for the full rationale.
+            let stream_live_chunks = should_stream_live_chunks(session.session.context_mode);
+
+            // Squire mode (Q5): the model must never see schemas for tools
+            // outside the 3 built-ins. `invoke` mediates access to the full
+            // registry internally, so it alone holds a reference to it; the
+            // dispatch registry the tool-call loop executes against contains
+            // only the 3 built-ins.
+            let dispatch_registry: Arc<ToolRegistry> = match session.session.context_mode {
+                ContextMode::Legacy => tool_registry.clone(),
                 ContextMode::Squire => {
-                    emit_stream_status(&app_clone, "Squire context mode is not yet available");
-                    let _ = app_clone.emit(
-                        "stream-error",
-                        "Squire context mode is not yet implemented",
-                    );
-                    return;
+                    let mut squire_registry = ToolRegistry::empty();
+                    squire_registry.register(Box::new(SquireExploreTool {
+                        store: squire_store.clone(),
+                        tool_registry: tool_registry.clone(),
+                        session_id: session.session.id,
+                    }));
+                    squire_registry.register(Box::new(SquireTokenToDetailTool {
+                        store: squire_store.clone(),
+                        tool_registry: tool_registry.clone(),
+                    }));
+                    squire_registry.register(Box::new(SquireInvokeTool {
+                        tool_registry: tool_registry.clone(),
+                        store: squire_store.clone(),
+                    }));
+                    Arc::new(squire_registry)
                 }
             };
 
@@ -317,7 +432,14 @@ pub async fn send_message_impl(
                     match event {
                         StreamEvent::Chunk(text) => {
                             full_response.push_str(&text);
-                            let _ = app_clone.emit("stream-chunk", text);
+                            // sa-4: suppress the live per-token display event
+                            // in Squire mode — `full_response` still
+                            // accumulates normally for `finalize_turn` to
+                            // parse/expand once the turn closes. Legacy mode
+                            // streams as before.
+                            if stream_live_chunks {
+                                let _ = app_clone.emit("stream-chunk", text);
+                            }
                         }
                         StreamEvent::Thinking(text) => {
                             full_thinking.push_str(&text);
@@ -436,13 +558,13 @@ pub async fn send_message_impl(
                                 }),
                             );
                         }
-                        if !full_response.is_empty() {
+                        if !full_response.is_empty() && stream_live_chunks {
                             let _ = app_clone.emit("stream-chunk", "\n\n");
                         }
 
                         for tc in &tool_calls {
                             emit_stream_status(&app_clone, &format!("Invoking tool {}", tc.name));
-                            let tool = tool_registry.get(&tc.name);
+                            let tool = dispatch_registry.get(&tc.name);
                             let result = if let Some(tool) = tool {
                                 if tool.danger() == ToolDanger::Destructive {
                                     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -492,10 +614,12 @@ pub async fn send_message_impl(
                                                 &app_clone,
                                                 &format!("Approval granted, running {}", tc.name),
                                             );
-                                            let _ = app_clone.emit(
-                                                "stream-chunk",
-                                                format!("[Executing {}...]\n", tc.name),
-                                            );
+                                            if stream_live_chunks {
+                                                let _ = app_clone.emit(
+                                                    "stream-chunk",
+                                                    format!("[Executing {}...]\n", tc.name),
+                                                );
+                                            }
                                             execute_tool_with_watchdog(
                                                 &app_clone,
                                                 &tc.name,
@@ -580,11 +704,130 @@ pub async fn send_message_impl(
                         } else {
                             None
                         };
-                        let _ = adapter
-                            .finalize_turn(sid, content, thinking, store.as_ref())
-                            .await;
-                        let _ = app_clone.emit("stream-done", "");
-                        return;
+                        // sa-5: kept so the AskUser branch below can push the
+                        // model's own question-bearing response into message
+                        // history — `finalize_turn` takes `content` by value.
+                        let raw_assistant_content = content.clone();
+                        match adapter
+                            .finalize_turn(sid, content, thinking, &mut messages, store.as_ref())
+                            .await
+                        {
+                            Ok(TurnOutcome::Done) => {
+                                let _ = app_clone.emit("stream-done", "");
+                                return;
+                            }
+                            Ok(TurnOutcome::Retry) => {
+                                emit_stream_status(&app_clone, "Response rejected, retrying...");
+                                continue;
+                            }
+                            Ok(TurnOutcome::AskUser { question }) => {
+                                // Spec §8.2/§9.3: surface the question to the
+                                // user, collect an answer, append both to the
+                                // turn's message history, and resume
+                                // generation. See ask-user-loop/decisions.md
+                                // for the full pause/resume design (mirrors
+                                // the existing destructive-tool-call approval
+                                // flow).
+                                let question_id = uuid::Uuid::new_v4().to_string();
+                                let (tx, rx) = tokio::sync::oneshot::channel();
+                                {
+                                    let mut p = pending_ask_user.lock().await;
+                                    p.insert(question_id.clone(), tx);
+                                }
+
+                                let _ = app_clone.emit(
+                                    "stream-ask-user-pending",
+                                    serde_json::json!({
+                                        "question_id": question_id,
+                                        "session_id": sid,
+                                        "question": question,
+                                    })
+                                    .to_string(),
+                                );
+                                emit_stream_status(&app_clone, "Waiting for your answer...");
+
+                                match await_answer_with_watchdog(&app_clone, rx).await {
+                                    Some(answer) => {
+                                        // Preserve the model's own
+                                        // question-bearing response in
+                                        // history (mirrors `reject` keeping
+                                        // the rejected response before
+                                        // appending the rejection payload),
+                                        // then feed the answer back in the
+                                        // same structured-JSON idiom the
+                                        // model's system prompt already
+                                        // expects for turn continuations.
+                                        messages.push(ChatMessage {
+                                            role: ChatRole::Assistant,
+                                            content: raw_assistant_content,
+                                            tool_call_id: None,
+                                            tool_calls: None,
+                                            reasoning_content: None,
+                                        });
+                                        messages.push(ChatMessage {
+                                            role: ChatRole::User,
+                                            content: serde_json::json!({ "user_answer": answer })
+                                                .to_string(),
+                                            tool_call_id: None,
+                                            tool_calls: None,
+                                            reasoning_content: None,
+                                        });
+                                        emit_stream_status(&app_clone, "Answer received, resuming...");
+                                        continue;
+                                    }
+                                    None => {
+                                        // Sender dropped without answering
+                                        // (turn task being aborted, or the
+                                        // pending-question entry was cleared
+                                        // some other way) — end the turn
+                                        // quietly rather than erroring; this
+                                        // is the same shape as an aborted
+                                        // stream, not a failure to surface.
+                                        emit_stream_status(&app_clone, "Stopped waiting for answer");
+                                        return;
+                                    }
+                                }
+                            }
+                            Ok(TurnOutcome::Failed { reason, failed_content }) => {
+                                // The real Q6 UX lives in `SquireContextAdapter::
+                                // reject_and_record`: it already persisted a
+                                // visible chat message (reason + the failed
+                                // response) and a structured diagnostic record
+                                // before returning this outcome. Orchestration's
+                                // job here is just to end the turn and let the
+                                // frontend's existing stream-error handling
+                                // (which reloads the conversation from the
+                                // store) pick up that persisted message —
+                                // no separate diagnostic re-log needed.
+                                emit_stream_status(&app_clone, "Squire compliance check failed");
+                                if verbose_logging {
+                                    let _ = app_clone.emit(
+                                        "output:append",
+                                        serde_json::json!({
+                                            "source": "chat",
+                                            "line": format!(
+                                                "[squire] compliance failure after exhausting retries. reason={}\nfinal response:\n{}",
+                                                reason, failed_content
+                                            ),
+                                            "timestamp": chrono::Utc::now().to_rfc3339(),
+                                        }),
+                                    );
+                                }
+                                let _ = app_clone.emit(
+                                    "stream-error",
+                                    format!(
+                                        "Squire compliance failure after exhausting retries: {}",
+                                        reason
+                                    ),
+                                );
+                                return;
+                            }
+                            Err(e) => {
+                                emit_stream_status(&app_clone, "Failed to finalize turn");
+                                let _ = app_clone.emit("stream-error", e);
+                                return;
+                            }
+                        }
                     }
                     FinishReason::Error => {
                         emit_stream_status(&app_clone, "LLM returned an error");
@@ -603,4 +846,19 @@ pub async fn send_message_impl(
     stream_tasks.lock().await.insert(session_key, handle);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_stream_live_chunks_true_for_legacy_mode() {
+        assert!(should_stream_live_chunks(ContextMode::Legacy));
+    }
+
+    #[test]
+    fn should_stream_live_chunks_false_for_squire_mode() {
+        assert!(!should_stream_live_chunks(ContextMode::Squire));
+    }
 }

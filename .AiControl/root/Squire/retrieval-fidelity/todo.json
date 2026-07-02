@@ -1,0 +1,97 @@
+{
+  "nodePath": "root/Squire/retrieval-fidelity",
+  "items": [
+    {
+      "id": "rf-1",
+      "text": "Read context: spec sections 3.2/3.3/4.2/6.1/7.1/7.3/9.4/10.1, planning/decisions.md Q1, squire-adapter/decisions.md, squire-storage/decisions.md, and the full squire.rs/squire_lancedb.rs source",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "rf-2",
+      "text": "Verify baseline: cargo build + cargo test --lib clean, matches handoff.md's 132/132",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "rf-3",
+      "text": "Design and document accumulated_hits/effective_priority scoring formula and hit-increment event wiring in decisions.md before implementing",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "rf-4",
+      "text": "Add accumulated_hits field to InMemorySquireStore's StoredToken and LanceDbSquireStore's tokens table schema; add a hit-increment method (record_hit) on SquireStore",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "rf-5",
+      "text": "Wire hit-count increments at practical call sites: upsert_token (every call, spec 9.4 step 5 / 5.2), preserved_tokens (spec 3.3 preserve-list-load event), token_to_detail tool execute (spec 6.2 + proxy for 5.1's chunk-loaded event) in both stores",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "rf-6",
+      "text": "Compute effective_priority (spec 3.3 formula, exact) and use it as a near-tie secondary sort key for explore() result ordering in both InMemorySquireStore and LanceDbSquireStore",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "rf-7",
+      "text": "Implement real graph traversal in InMemorySquireStore::explore_memory: BFS over squire_relationships up to num_hops from directly-matched tokens, include connected tokens with hop-distance provenance (shared traverse_relationships helper)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "rf-8",
+      "text": "Implement the same graph traversal in LanceDbSquireStore::explore_memory against the squire_relationships table (full-table load + shared BFS helper, load_relationship_edges)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "rf-9",
+      "text": "Add hop_distance/via_token_id/accumulated_hits fields to TokenSummary so callers can see why a token was included and its hit count",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "rf-10",
+      "text": "Unit tests: traversal (1-hop, multi-hop undirected, num_hops=0 no expansion, max_results cap still respected) and scoring (upsert/record_hit/preserve-load hit increments, effective_priority near-tie ordering) added to both squire.rs and squire_lancedb.rs test modules (17 new tests total)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "rf-11",
+      "text": "Full build + cargo test --lib verification; update state.md/decisions.md/todo.json",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "rf-12",
+      "text": "Update root/Squire/state.md Child Nodes list and root/Squire/handoff.md to reflect this session's work and revisit the epic-closeout question",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "rf-13",
+      "text": "FOLLOW-UP (not in this node's scope, not claimed): spec 3.3's 'Token appears in explore() results that AI acts on' hit event is only partially covered (via token_to_detail calls, not via a full context-composition scan for embedded section-reference sigils inside loaded full_desc bodies). Documented as a deliberate narrow reinterpretation in decisions.md, not a silent gap. Left open for a future node if stricter fidelity to the literal spec wording is wanted.",
+      "done": true,
+      "status": "resolved",
+      "updatedAt": "2026-07-03T00:00:00Z",
+      "resolution": "Closed by root/Squire/hit-count-fidelity (2026-07-03): finalize_turn now credits a hit via record_hit for every already-existing token §!-referenced in a compliant response's content (covers the 'references in output' disjunct of event 1, and event 3 for the AI's own response content), guarded so a token defined and cited in the same turn is not double-credited beyond upsert_token's existing event-4 hit. One narrower residual remains, deliberately deferred and documented: a §! reference nested inside a full_desc body itself (a chunk citing another chunk) is still not scanned/credited — see hit-count-fidelity/decisions.md for the explicit disproportionate-infrastructure tradeoff."
+    }
+  ]
+}

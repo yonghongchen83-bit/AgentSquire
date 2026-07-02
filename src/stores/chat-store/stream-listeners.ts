@@ -9,6 +9,7 @@ import {
   onStreamToolCall,
   onStreamToolPending,
   onStreamToolResult,
+  onStreamAskUserPending,
   setMessageBlocks,
   approveToolCall as approveIpc,
 } from '@/lib/ipc'
@@ -129,6 +130,12 @@ export async function setupStreamListeners({
   )
 
   cleanupFns.push(
+    await onStreamAskUserPending((question) => {
+      set({ pendingAskUserQuestion: question })
+    }),
+  )
+
+  cleanupFns.push(
     await onStreamStatus((status) => {
       set({ streamingStatus: status })
     }),
@@ -146,6 +153,7 @@ export async function setupStreamListeners({
         streamingStatus: '',
         streamingBlocks: [],
         pendingApprovals: [],
+        pendingAskUserQuestion: null,
       })
 
       const activeId = get().activeConversationId
@@ -184,6 +192,7 @@ export async function setupStreamListeners({
         streamingStatus: '',
         streamingBlocks: [],
         pendingApprovals: [],
+        pendingAskUserQuestion: null,
         error: err,
       })
       if (activeId) {

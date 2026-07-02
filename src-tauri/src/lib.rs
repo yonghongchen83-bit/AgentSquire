@@ -49,6 +49,7 @@ pub fn run() {
             commands::watch_directory,
             commands::approve_tool_call,
             commands::reject_tool_call,
+            commands::answer_ask_user_question,
             commands::load_config,
             commands::check_update,
             commands::set_project_path,

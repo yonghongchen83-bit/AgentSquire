@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import type { FileEntry, AppConfig, SessionSummary, SessionWithMessages, Session, ContextMode, SearchMatch, ReplaceOptions, ProviderInfo, McpServerConfig, ToolApprovalRequest, ToolInfo } from '@/types/ipc'
+import type { FileEntry, AppConfig, SessionSummary, SessionWithMessages, Session, ContextMode, SearchMatch, ReplaceOptions, ProviderInfo, McpServerConfig, ToolApprovalRequest, ToolInfo, AskUserQuestion } from '@/types/ipc'
 
 type RawSessionSummary = {
   id: string
@@ -8,6 +8,7 @@ type RawSessionSummary = {
   message_count: number
   last_message_at: string
   created_at: string
+  context_mode: ContextMode
 }
 
 type RawMessage = {
@@ -39,6 +40,7 @@ function mapSessionSummary(raw: RawSessionSummary): SessionSummary {
     messageCount: raw.message_count,
     lastMessageAt: raw.last_message_at,
     createdAt: raw.created_at,
+    contextMode: raw.context_mode,
   }
 }
 
@@ -353,6 +355,21 @@ export function onStreamToolResult(cb: (result: { call_id: string; output: strin
 
 export function onStreamToolPending(cb: (approval: ToolApprovalRequest) => void) {
   return listen<string>('stream-tool-pending', (event) => {
+    try {
+      const parsed = JSON.parse(event.payload)
+      cb(parsed)
+    } catch { /* ignore parse errors */ }
+  })
+}
+
+// ─── AskUser Loop (sa-5) ────────────────────────────────
+
+export async function answerAskUserQuestion(questionId: string, answer: string): Promise<void> {
+  return invoke('answer_ask_user_question', { questionId, answer })
+}
+
+export function onStreamAskUserPending(cb: (question: AskUserQuestion) => void) {
+  return listen<string>('stream-ask-user-pending', (event) => {
     try {
       const parsed = JSON.parse(event.payload)
       cb(parsed)

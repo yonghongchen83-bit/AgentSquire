@@ -20,6 +20,7 @@ export interface SessionSummary {
   messageCount: number
   lastMessageAt: string
   createdAt: string
+  contextMode: ContextMode
 }
 
 export interface Message {
@@ -98,6 +99,14 @@ export interface ToolApprovalRequest {
   arguments: Record<string, unknown>
   /** Command analysis (enriched for run_terminal) */
   commandAnalysis?: CommandAnalysis
+}
+
+/** sa-5: Squire response-field AskUser loop — a paused turn awaiting a
+ *  free-text answer from the user (context_squire_spec_v2.md §8.2/§9.3). */
+export interface AskUserQuestion {
+  question_id: string
+  session_id: string
+  question: string
 }
 
 export interface CodeBlock {

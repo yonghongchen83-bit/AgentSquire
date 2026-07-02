@@ -1,0 +1,40 @@
+{
+  "nodePath": "root/Squire/memory-alias-fix",
+  "items": [
+    {
+      "id": "maf-1",
+      "text": "Locate the duplicated type_matches alias-expansion closure in squire.rs and squire_lancedb.rs",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "maf-2",
+      "text": "Add system_referential to the \"memory\" alias branch in both files",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "maf-3",
+      "text": "Add a unit test per backend confirming resource_type=\"memory\" now surfaces system_referential tokens",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "maf-4",
+      "text": "Verify: cargo build + cargo test --lib clean, 221 baseline + 2 new passing",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "maf-5",
+      "text": "Update root/Squire/state.md and root/Squire/handoff.md",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    }
+  ]
+}

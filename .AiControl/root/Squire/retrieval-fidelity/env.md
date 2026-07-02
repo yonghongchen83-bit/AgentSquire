@@ -1,0 +1,20 @@
+# Env
+
+- Parent node: root/Squire
+- Node path: root/Squire/retrieval-fidelity
+- Objective: Implement the two spec-flagged retrieval-quality gaps judged most load-bearing by `protocol-doc-sync` — graph traversal (`num_hops` over the `squire_relationships` triplet store) and `accumulated_hits`/`effective_priority` scoring (spec §3.2/§3.3) — in both `SquireStore` implementations, so `explore()`'s result set and ordering actually reflect the spec's "structured memory, not a RAG wrapper" design (§7.3).
+- Scope now: `SquireStore` trait extension (if needed) + `InMemorySquireStore` + `LanceDbSquireStore` graph-traversal implementation of `explore_memory`; `accumulated_hits` field + hit-increment call sites + `effective_priority` computation + ranking integration in both stores; unit tests for both features in both stores.
+- Non-goal now: sa-4 (raw stream sigil leak), sa-5 (ask_user UI round-trip loop), ss-9 (real tool-token ingestion — noted as possibly related, not required), user-input auto-chunking (`USR_TN_NNN` tokens), raw-partition audit-log storage. All five remain open, unclaimed follow-ups tracked in their original nodes' todo.json files.
+- Depends on: squire-adapter (SquireStore trait, explore() tool wiring), squire-storage (LanceDbSquireStore, embedding/scoring precedent), protocol-doc-sync (accurate spec annotations identifying exactly what's missing and why).
+- Status: implemented and landed 2026-07-02.
+
+## Durable facts (added this session)
+
+- `SquireStore::explore_memory` signature changed: gained a `current_turn: u64` parameter (needed to compute `effective_priority`). All callers updated: `SquireContextAdapter::build_turn_input` and `SquireExploreTool::execute` both look up the requesting session's turn count via `store.current_turn(session_id)` first.
+- `SquireStore` gained a new method: `record_hit(token_id: &str)` — increments a token's `accumulated_hits` by 1, no-op if the token doesn't exist. Implemented in both `InMemorySquireStore` and `LanceDbSquireStore` (the latter via the module's existing delete-then-reinsert replace pattern).
+- `TokenSummary` (`src-tauri/src/agent/squire.rs`) gained three fields: `accumulated_hits: u64`, `hop_distance: u32` (0 = direct match), `via_token_id: Option<String>` (BFS-parent direct match for traversal-discovered tokens, `None` for direct matches). Additive/non-breaking for JSON consumers.
+- `SquireExploreTool` (the model-facing `explore()` tool) gained a required `session_id: SessionId` field, populated at construction time in `streaming_cmd.rs` from the session already in scope — not exposed to the model as a tool argument.
+- New shared free functions in `agent::squire`, used by both `InMemorySquireStore` and `LanceDbSquireStore`: `effective_priority(accumulated_hits, current_turn, creation_turn) -> i64` (spec §3.3's exact formula), `sort_by_score_then_priority` (score descending, near-ties within `1e-6` broken by `effective_priority` descending), `traverse_relationships` (+ `TraversalNode` struct) — a backend-agnostic BFS over an undirected adjacency built from relationship (subject, object) pairs, hop-limited to `num_hops`, producing hop-distance-decayed scores (`base_score * 0.5^hop`).
+- `LanceDbSquireStore`'s `squire_tokens` Arrow schema gained a new non-nullable `accumulated_hits: UInt64` column — a breaking, non-migrated schema change for pre-existing on-disk directories (accepted; see decisions.md, no migration story exists anywhere in this pre-release codebase).
+- `LanceDbSquireStore` gained a private `load_relationship_edges()` helper (full-table load of `squire_relationships`, same no-pagination pattern as the existing `squire_tokens` full scan).
+- `protoc` (via winget, `Google.Protobuf`) was needed again this session despite being previously installed — the binary was present but not on this shell's PATH; resolved by setting `PROTOC` to the winget package's `bin/protoc.exe` path directly for build commands. Confirms squire-storage/decisions.md's finding: this is a per-shell-session PATH issue, not a reinstall requirement, once the winget package itself is present.

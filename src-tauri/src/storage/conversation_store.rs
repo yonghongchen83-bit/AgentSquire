@@ -109,6 +109,8 @@ pub struct SessionSummary {
     pub message_count: i64,
     pub last_message_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub context_mode: ContextMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useChatStore } from './chat-store'
+import { createConversation } from '@/lib/ipc'
 
 let streamDoneHandler: (() => void) | null = null
 let streamErrorHandler: ((error: string) => void) | null = null
 
 vi.mock('@/lib/ipc', () => ({
   listConversations: vi.fn().mockResolvedValue([
-    { id: '1', title: 'Chat 1', messageCount: 2, lastMessageAt: new Date().toISOString(), createdAt: new Date().toISOString() },
-    { id: '2', title: 'Chat 2', messageCount: 5, lastMessageAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+    { id: '1', title: 'Chat 1', messageCount: 2, lastMessageAt: new Date().toISOString(), createdAt: new Date().toISOString(), contextMode: 'legacy' },
+    { id: '2', title: 'Chat 2', messageCount: 5, lastMessageAt: new Date().toISOString(), createdAt: new Date().toISOString(), contextMode: 'legacy' },
   ]),
   getConversation: vi.fn().mockImplementation((id: string) => {
     if (id === '1') {
@@ -31,6 +32,7 @@ vi.mock('@/lib/ipc', () => ({
   onStreamToolCall: vi.fn().mockReturnValue(vi.fn()),
   onStreamToolResult: vi.fn().mockReturnValue(vi.fn()),
   onStreamToolPending: vi.fn().mockReturnValue(vi.fn()),
+  onStreamAskUserPending: vi.fn().mockReturnValue(vi.fn()),
   onStreamStatus: vi.fn().mockReturnValue(vi.fn()),
   onStreamDone: vi.fn().mockImplementation(async (cb: () => void) => {
     streamDoneHandler = cb
@@ -42,6 +44,7 @@ vi.mock('@/lib/ipc', () => ({
   }),
   approveToolCall: vi.fn().mockResolvedValue(undefined),
   rejectToolCall: vi.fn().mockResolvedValue(undefined),
+  answerAskUserQuestion: vi.fn().mockResolvedValue(undefined),
 }))
 
 describe('ChatStore', () => {
@@ -64,6 +67,7 @@ describe('ChatStore', () => {
       selectedModel: '',
       selectedThinkingLevel: 'mid',
       pendingApprovals: [],
+      pendingAskUserQuestion: null,
     })
   })
 
@@ -88,6 +92,22 @@ describe('ChatStore', () => {
     expect(id).toBe('new-id')
     expect(useChatStore.getState().activeConversationId).toBe('new-id')
     expect(useChatStore.getState().messages).toEqual([])
+  })
+
+  // session-creation-ux: createNewConversation must forward an explicitly chosen mode to
+  // the createConversation IPC wrapper, and default to no mode (legacy) when omitted —
+  // mode is chosen once at creation, never changed afterward (session-mode's immutability
+  // guarantee), so this is the only place a mode argument should ever flow through.
+  it('forwards no context mode by default (legacy)', async () => {
+    vi.mocked(createConversation).mockClear()
+    await useChatStore.getState().createNewConversation()
+    expect(createConversation).toHaveBeenCalledWith('New Chat', undefined)
+  })
+
+  it('forwards an explicit squire context mode when requested', async () => {
+    vi.mocked(createConversation).mockClear()
+    await useChatStore.getState().createNewConversation('squire')
+    expect(createConversation).toHaveBeenCalledWith('New Chat', 'squire')
   })
 
   it('clears error on clearError', () => {

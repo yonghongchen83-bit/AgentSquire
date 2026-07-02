@@ -1,5 +1,5 @@
 use super::{AppState, TerminalState, WatcherState};
-use crate::agent::PendingApprovals;
+use crate::agent::{PendingApprovals, PendingAskUserQuestions};
 use crate::fs::watcher::FileWatcher;
 use crate::llm::registry::ProviderRegistry;
 use crate::state::config::{self, AppConfig};
@@ -24,6 +24,25 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
     let db = crate::state::db::Database::open(&db_path)
         .map_err(|e| format!("Failed to open database: {}", e))?;
 
+    // Squire context-mode memory store (Q4): real LanceDB-backed store,
+    // replacing the in-process InMemorySquireStore stand-in. `open` is
+    // async (LanceDB's Connection::table_names/create_empty_table are);
+    // `setup_app_impl` runs inside Tauri's sync `.setup()` closure, so we
+    // block on Tauri's own async runtime here rather than making the whole
+    // setup path async (matches Tauri v2's documented pattern for this).
+    let squire_lancedb_dir = config_dir.join("squire_lancedb");
+    let squire_store: std::sync::Arc<dyn crate::agent::squire::SquireStore> =
+        std::sync::Arc::new(
+            tauri::async_runtime::block_on(crate::storage::squire_lancedb::LanceDbSquireStore::open(
+                &squire_lancedb_dir,
+            ))
+            .map_err(|e| format!("Failed to open Squire LanceDB store: {}", e))?,
+        );
+    // Q7: preserve lists are a strict next-turn-only handoff, not long-lived
+    // continuity state — clear any carryover left over from a previous app
+    // run before any session can read it back as if it were still valid.
+    tauri::async_runtime::block_on(squire_store.clear_all_preserve_lists());
+
     let registry = ProviderRegistry::from_config(&config);
 
     let (file_watcher, mut watcher_rx) = FileWatcher::new();
@@ -44,6 +63,7 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
         registry: RwLock::new(registry),
         stream_tasks: Arc::new(TokioMutex::new(HashMap::new())),
         project_path: RwLock::new(initial_project_path),
+        squire_store,
     });
 
     app.manage(WatcherState {
@@ -55,6 +75,7 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
     });
 
     app.manage(PendingApprovals::new());
+    app.manage(PendingAskUserQuestions::new());
 
     if cfg!(debug_assertions) {
         app.handle().plugin(

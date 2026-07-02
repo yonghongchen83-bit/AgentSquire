@@ -105,7 +105,7 @@ impl ConversationStore for Database {
         let conn = self.connection();
         let mut stmt = conn
             .prepare(
-                "SELECT s.id, s.title, COUNT(m.id) as msg_count, MAX(m.created_at) as last_msg, s.created_at
+                "SELECT s.id, s.title, COUNT(m.id) as msg_count, MAX(m.created_at) as last_msg, s.created_at, s.context_mode
                  FROM sessions s
                  LEFT JOIN messages m ON m.session_id = s.id
                  GROUP BY s.id
@@ -124,6 +124,10 @@ impl ConversationStore for Database {
                         .and_then(|s| s.parse().ok())
                         .unwrap_or_default(),
                     created_at: row.get::<_, String>(4)?.parse().unwrap_or_default(),
+                    context_mode: row
+                        .get::<_, Option<String>>(5)?
+                        .and_then(|s| ContextMode::from_str(&s))
+                        .unwrap_or_default(),
                 })
             })
             .map_err(|e| StoreError::Database(e.to_string()))?
@@ -179,5 +183,55 @@ impl ConversationStore for Database {
         )
         .map_err(|e| StoreError::Database(e.to_string()))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_db() -> (Database, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        (db, dir)
+    }
+
+    // session-creation-ux: list_sessions (backing SessionSummary, used by the sidebar's
+    // conversation list) must carry each session's real context_mode so the frontend can
+    // render a per-row mode badge without a second round-trip per session.
+    #[tokio::test]
+    async fn list_sessions_reports_each_sessions_context_mode() {
+        let (db, _dir) = temp_db();
+        let legacy = db
+            .create_session(NewSession { title: "Legacy one".into(), context_mode: None })
+            .await
+            .unwrap();
+        let squire = db
+            .create_session(NewSession {
+                title: "Squire one".into(),
+                context_mode: Some(ContextMode::Squire),
+            })
+            .await
+            .unwrap();
+
+        let summaries = db.list_sessions().await.unwrap();
+        let legacy_summary = summaries.iter().find(|s| s.id == legacy.id).unwrap();
+        let squire_summary = summaries.iter().find(|s| s.id == squire.id).unwrap();
+        assert_eq!(legacy_summary.context_mode, ContextMode::Legacy);
+        assert_eq!(squire_summary.context_mode, ContextMode::Squire);
+    }
+
+    #[tokio::test]
+    async fn list_sessions_defaults_to_legacy_when_context_mode_omitted() {
+        let (db, _dir) = temp_db();
+        let created = db
+            .create_session(NewSession { title: "Default mode".into(), context_mode: None })
+            .await
+            .unwrap();
+        assert_eq!(created.context_mode, ContextMode::Legacy);
+
+        let summaries = db.list_sessions().await.unwrap();
+        let summary = summaries.iter().find(|s| s.id == created.id).unwrap();
+        assert_eq!(summary.context_mode, ContextMode::Legacy);
     }
 }

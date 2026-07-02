@@ -3,9 +3,114 @@
   "items": [
     {
       "id": "pds-1",
-      "text": "Update context_squire_spec_v2.md to document the system-prompt superset as the canonical v1 contract",
-      "done": false,
-      "status": "todo",
+      "text": "Read runtime source of truth end to end: src-tauri/src/agent/squire.rs (whole file), src-tauri/src/storage/squire_lancedb.rs, context_adapter.rs, streaming_cmd.rs tool-dispatch/TurnOutcome handling, setup_cmd.rs preserve-list-clear call",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-2",
+      "text": "Read planning/decisions.md Q1-Q7, squire-adapter/decisions.md, squire-storage/decisions.md, rejection-ux/decisions.md to separate deliberate decisions from unintentional drift",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-3",
+      "text": "Systematically diff context_squire_spec_v2.md and context_squire_system_prompt_v2.md against runtime behavior (not just the two flagged items) - produce a full divergence inventory with a judgment call per item (doc-update vs flagged-bug)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-4",
+      "text": "Fix spec 8.3 stale line: retry-exhaustion no longer 'closes without storing a response' - now persists a visible failure message plus structured compliance-failure metadata (Q6 Option 3 / rejection-ux)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-5",
+      "text": "Apply Q1's resolved superset to spec 6.1: explore() takes max_results as a 4th parameter; resource_type enum gains tool_skill/concept/referential (additive, base types unchanged)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-6",
+      "text": "Reconcile SQUIRE_SYSTEM_PROMPT (squire.rs) vs context_squire_system_prompt_v2.md: add a governance note to the spec doc explaining the runtime prompt is a deliberately condensed rewrite (transport carries system role natively, no request-JSON system_prompt field, no history replay) rather than an include, per squire-adapter/decisions.md",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-7",
+      "text": "Flag as gap (not silently normalized): ask_user response-field loop (spec 8.2/9.3, system-prompt doc) is unimplemented - finalize_turn returns a hard Err instead of surfacing/looping. Annotate both docs with an implementation-status note pointing at squire-adapter/todo.json sa-5",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-8",
+      "text": "Flag as gap: num_hops graph traversal is accepted but not implemented by either SquireStore impl (InMemory or LanceDB) - explore_memory does flat type+similarity filtering only, no triplet-store traversal. Annotate spec 4.2/6.1/7.1/10.1",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-9",
+      "text": "Flag as gap: accumulated_hits / effective_priority scoring model (spec 3.2/3.3/6/9.4/10.1) has no runtime implementation at all - no such field exists on any token record, ranking is cosine-similarity + substring boost only. Annotate spec sections that depend on this model",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-10",
+      "text": "Flag as gap: user-input auto-chunking into USR_TN_NNN system_referential tokens (spec 3.1/9.1 step 2) is not implemented - build_turn_input uses the raw last user message directly as user_request, no chunking/token creation occurs",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-11",
+      "text": "Flag as gap: raw-partition audit-log storage (spec 4.1/9.4 step 4) is not implemented - there is no raw-partition table anywhere in squire_lancedb.rs; unmarked AI output is not stored at all beyond the already-persisted display message",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-12",
+      "text": "Fix genuine spec/runtime shape mismatch: explore(resource_type='tool_skill') - system-prompt doc documents a {\"tool\": [...], \"skill\": [...]} dict return, runtime SquireExploreTool::execute returns one flat array with mixed type tags. Decide and document actual behavior",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-13",
+      "text": "Add the two adapter-level rejection reasons missing from spec 8.3's table (malformed Squire-protocol JSON parse failure; ask_user-response-field-loop-not-wired failure) so the table matches validate_squire_response + finalize_turn's actual rejection surface",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-14",
+      "text": "Record all judgment calls (doc-updated vs flagged-as-bug) with rationale in decisions.md",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-15",
+      "text": "Update state.md with timeline + closure summary; update env.md only if a new durable fact emerged",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "pds-16",
+      "text": "Update root/Squire/handoff.md and root/Squire/state.md to mark protocol-doc-sync completed and point at next steps (sa-4, sa-5, ss-9, plus newly-flagged pds-7/8/9/10/11/12 gaps); use judgment on epic-closeout framing",
+      "done": true,
+      "status": "done",
       "updatedAt": "2026-07-02T00:00:00Z"
     }
   ]

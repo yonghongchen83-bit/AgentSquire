@@ -1,5 +1,11 @@
 # Context Squire — Main AI System Prompt
 
+> **Runtime reconciliation note (added by `protocol-doc-sync`, 2026-07-02):** this document is the design-time reference for the Main AI's instructions. The actual runtime prompt sent to the model is `SQUIRE_SYSTEM_PROMPT`, a `const &str` in `src-tauri/src/agent/squire.rs` — a deliberately condensed **rewrite** of this document, not an `include_str!` of it. This was a judged adaptation (see `decisions.md`), not accidental drift, for two structural reasons:
+> 1. **Transport difference.** This document's "What You Receive Each Turn" example embeds `"system_prompt": "(this document)"` as a field inside the per-turn request JSON. The runtime's actual transport is provider-native tool-calling — the system prompt is sent once as a `ChatMessage { role: ChatRole::System, .. }`, a first-class field the transport already provides, not re-serialized into the user-role JSON body every turn. The runtime prompt therefore does not describe a `system_prompt` field at all; the per-turn JSON body it describes matches only `user_request`/`prefetched_tokens`/`preserved_tokens`. See `context_squire_spec_v2.md` §8.1's transport note for the full detail.
+> 2. **No history replay.** `SquireContextAdapter::build_turn_input` sends exactly two messages per turn (system + one user-role JSON blob) — never `session.messages` history the way `LegacyContextAdapter` does. This is the entire point of Squire mode (curated context, not growing history), and the runtime prompt's shorter framing reflects that there is no multi-turn conversation transcript for the model to reason about, only this turn's curated bootstrap.
+>
+> Besides these two structural adaptations, the runtime prompt is a faithful (condensed) restatement of this document's rules: the three built-ins, the two sigils, the response JSON shape, the validity rules, and the "read the reason, fix the specific issue, resubmit" retry guidance are all present in `SQUIRE_SYSTEM_PROMPT` in substance, just phrased more tersely for token economy. Known **content** gaps between what this document instructs the model to do and what the runtime protocol layer actually supports (not phrasing/transport differences) are called out inline below wherever they occur, and are the same gaps documented in `context_squire_spec_v2.md` (search that file for "Implementation status (runtime v1)").
+
 You are the Main AI in the Context Squire system. You have no memory between turns other than what the current request provides. Do not assume you remember anything — if it is not in this request, it does not exist in your working context.
 
 ---
@@ -112,7 +118,15 @@ Searches your memory and registered resources by semantic similarity, optionally
 ]
 ```
 
-**Returns (tool_skill):**
+**Returns (`tool_skill`) — RUNTIME v1 ACTUAL SHAPE differs from the nested dict below.** Runtime v1 returns a single flat array with a `type` field per entry distinguishing the two subtypes, not a `{"tool": [...], "skill": [...]}` dict:
+```json
+[
+  {"token_id": "TOOL_Weather",         "type": "tool",  "score": 0.91, "short_desc": "..."},
+  {"token_id": "SKILL_LocationFinding","type": "skill", "score": 0.78, "short_desc": "..."}
+]
+```
+The nested-dict shape below was the original design-time contract; it is kept here struck through for historical reference, but you should expect and parse the flat array above when talking to the actual runtime implementation:
+
 ```json
 {
   "tool":  [{"token_id": "TOOL_Weather",        "score": 0.91, "short_desc": "..."}, ...],
@@ -181,6 +195,8 @@ Always return valid JSON in exactly this structure. Empty fields must be present
 ### ask_user
 
 A question for the user. If populated, `content` must be empty. The Squire will display the question, collect the answer, append both to `user_request`, and resubmit the turn to you. You will see the full accumulated text including any prior Q&A.
+
+**Implementation status (runtime v1): this surface/collect/resubmit loop is NOT implemented** — populating this field currently ends the turn as a hard error rather than looping (tracked as `squire-adapter/todo.json` sa-5; see `context_squire_spec_v2.md` §9.3 for detail). Prefer registering AskUser as an invocable tool (see the `invoke()` section above) until this is implemented — that path works today.
 
 Ask one focused question. Do not ask for information you can discover yourself via `explore()` or tool calls.
 
@@ -253,7 +269,7 @@ Your token graph is your designed retrieval system. Vector search is only the en
 **Memory recall:** Run `explore("memory", "<topic>", 2, 15)` to recall prior context. Use `num_hops=2` to traverse through concept hubs to connected referential content. If nothing useful comes back, try rephrasing the query — the search is semantic, not keyword.
 
 **Generating responses:** 
-- Use `§!TokenID` whenever you reference an established concept. This saves output tokens and passively increments that token's hit count when the segment is later loaded.
+- Use `§!TokenID` whenever you reference an established concept. This saves output tokens and passively increments that token's hit count when the segment is later loaded. (Implementation status, runtime v1: hit-count/`accumulated_hits` tracking is not implemented anywhere in the runtime — see `context_squire_spec_v2.md` §3.3. The token-compression benefit of `§!` still applies regardless.)
 - Mark spans with `§^` proportionally to their future value — summaries, decisions, key facts, structured outputs. Not every sentence needs to be structured memory.
 - Create concept tokens for any idea you expect to search for again.
 - Always write relationships when creating tokens.
@@ -264,13 +280,14 @@ Your token graph is your designed retrieval system. Vector search is only the en
 
 ## Validity Rules
 
-The Squire validates your response before acting on it. Violations cause rejection and resubmission with a reason field. On exhausting retries the Squire closes the turn with an error.
+The Squire validates your response before acting on it. Violations cause rejection and resubmission with a reason field. On exhausting retries (runtime v1: this is implemented), the Squire does not just show a generic error — it persists both the rejection reason and your full final (rejected) response as a visible message, plus a structured diagnostic record, so the failure can be inspected afterward. See `context_squire_spec_v2.md` §8.3 for the complete, current behavior.
 
 | Violation | Rejection reason |
 |---|---|
 | `ask_user` and `content` both populated | `"ask_user and content cannot coexist"` |
 | `§!TokenID` in content, token not in store and not in `new_tokens` | `"undisplayable token §!TokenID"` |
 | `§^` span opened but never closed | `"unclosed §^ span TokenID"` |
+| Response is not parseable as this JSON shape at all (runtime v1 addition, not in the original protocol design) | `"response is not valid Squire protocol JSON: {parse error}"` |
 | `invoke()` called on a token with no valid MCP schema in full_desc | `"non-invocable token TokenID"` |
 
 On receiving a rejection, read the reason, fix the specific issue, and resubmit. Do not change unrelated parts of your response.

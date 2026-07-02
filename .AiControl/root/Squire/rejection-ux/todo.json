@@ -3,23 +3,58 @@
   "items": [
     {
       "id": "ru-1",
-      "text": "Surface compliance-failure reason + final failed AI response to user after retry exhaustion",
-      "done": false,
-      "status": "blocked",
+      "text": "Surface compliance-failure reason + final failed AI response to user after retry exhaustion (Q6): persist a real, visible chat message (not just a transient diagnostic/error toast) so the failure is inspectable in conversation history",
+      "done": true,
+      "status": "done",
       "updatedAt": "2026-07-02T00:00:00Z"
     },
     {
       "id": "ru-2",
-      "text": "Persist structured failure metadata (rule, reason, retry count, timestamp)",
-      "done": false,
-      "status": "blocked",
+      "text": "Persist structured failure metadata (rule violated, validator reason, retry count, timestamp): extend SquireStore with record_compliance_failure + a new squire_compliance_failures LanceDB table (append-only, debugging aid)",
+      "done": true,
+      "status": "done",
       "updatedAt": "2026-07-02T00:00:00Z"
     },
     {
       "id": "ru-3",
-      "text": "Implement preserve-list strict next-turn-only lifecycle, cleared on restart",
+      "text": "Implement preserve-list strict next-turn-only lifecycle, cleared on restart (Q7): add SquireStore::clear_all_preserve_lists, call once at app startup in setup_cmd.rs before any session can read stale carryover",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ru-4",
+      "text": "Update streaming_cmd.rs's TurnOutcome::Failed handling to stop duplicating diagnostic output now that finalize_turn persists the real message itself; verify frontend's existing onStreamError reload-conversation behavior surfaces the persisted message without any frontend changes needed",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ru-5",
+      "text": "Unit tests: classify_rejection_rule mapping, InMemorySquireStore + LanceDbSquireStore record_compliance_failure/clear_all_preserve_lists round-trips, finalize_turn persists visible failure message + structured record on final failure",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ru-6",
+      "text": "Full build + cargo test --lib verification; update handoff.md and root state.md on completion",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ru-7",
+      "text": "FOLLOW-UP (not in this node's scope, not claimed): sa-4 (raw stream leaks protocol sigils before finalize_turn expands them) is a live-stream display-boundary bug independent of compliance failures - considered for this node but judged out of fit (orchestration streaming-buffering change, not rejection/preserve-list UX). Left for squire-adapter/todo.json or a future node.",
       "done": false,
-      "status": "blocked",
+      "status": "deferred",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ru-8",
+      "text": "FOLLOW-UP (not in this node's scope, not claimed): sa-5 (ask_user response-field loop) requires new IPC + frontend UI for a mid-turn question/answer round-trip - materially larger than this node's UX-of-an-existing-outcome scope. Considered and deliberately deferred.",
+      "done": false,
+      "status": "deferred",
       "updatedAt": "2026-07-02T00:00:00Z"
     }
   ]

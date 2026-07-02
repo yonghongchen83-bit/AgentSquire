@@ -3,6 +3,12 @@
 **Scope:** Memory management, resource discovery, and conversational context curation.  
 Sandboxes, cross-session continuity, and cleanup mode are deferred.
 
+> **Runtime reconciliation pass (`protocol-doc-sync`, 2026-07-02):** this document has been annotated inline with "Implementation status (runtime v1)" notes wherever the shipped implementation (`src-tauri/src/agent/squire.rs`, `src-tauri/src/storage/squire_lancedb.rs`) diverges from what's specified here. Two categories of annotation appear:
+> - **Intentional, judged adaptations** (e.g. the system-prompt transport not literally matching the illustrative request-JSON shape in §8.1; the `tool_skill` explore() return shape; the retry-exhaustion/rejection-visibility behavior in §8.3/§14, which is now *more* than this document originally specified, not less) — these describe what runtime v1 actually and deliberately does.
+> - **Genuine unimplemented gaps** (`accumulated_hits`/`effective_priority` scoring, graph traversal via `num_hops`, user-input auto-chunking into `USR_` tokens, raw-partition audit storage, the `ask_user` response-field loop) — these are called out explicitly as not implemented rather than silently glossed over. None of these were deliberately descoped in the planning decisions (`../planning/decisions.md` Q1–Q7); they are drift that emerged during implementation, tracked here for future work rather than treated as done.
+>
+> Search for `Implementation status (runtime v1)` throughout this document for every annotated point. See `../protocol-doc-sync/decisions.md` for the full reasoning behind each judgment call.
+
 ---
 
 ## 1. Overview
@@ -116,6 +122,8 @@ A new token scores 0 at birth. A never-referenced token drifts negative. A frequ
 | §! reference found in a chunk loaded into context | +1 |
 | Token listed in new_tokens at turn close | +1 |
 
+**Implementation status (runtime v1): not implemented.** No token record anywhere in the runtime (`TokenSummary`, `TokenDetail`, or the LanceDB `squire_tokens` schema) carries an `accumulated_hits` field, and `effective_priority` is not computed. `creation_turn` is stored but is not consumed for ranking. `explore_memory` ranks results by cosine similarity against a placeholder hash-based embedding plus a substring-match boost (see `squire-storage/decisions.md`'s "Embedding function" note) — ties are not broken by `effective_priority` because it does not exist. This is a real, unflagged (until this pass) gap between spec and runtime, not a documented simplification — flagged here rather than silently treated as done. No node has claimed this as follow-up work yet; see `decisions.md`.
+
 ---
 
 ## 4. Storage Architecture
@@ -130,6 +138,8 @@ Two partitions exist:
 
 **Raw partition** — auto-stored AI output that was not explicitly marked with §^. Reachable only by vector similarity. No token representation, no graph connections. Treated as an audit log, not as memory. Explore() does not search this partition by default.
 
+**Implementation status (runtime v1): not implemented.** `squire_lancedb.rs` has no raw-partition table (its five tables are `squire_tokens`, `squire_relationships`, `squire_turns`, `squire_preserve_lists`, `squire_compliance_failures` — none of which hold unmarked AI output). `finalize_turn` only persists the display-expanded, sigil-stripped `content` string to `ConversationStore` (the ordinary chat-message history) — unmarked prose is not separately archived to any Squire-owned audit log the way this section describes. A genuine gap, not a deliberate simplification; flagged here rather than silently glossed over. See `decisions.md`.
+
 ### 4.2 Triplet Store
 
 An RDF-style graph of typed relationships between tokens. Used for graph traversal in `explore()` when `num_hops > 0`.
@@ -142,11 +152,17 @@ object      string    token_id
 
 Relationships are directional. The AI may use any predicate names it chooses. Relationship naming consistency is a cleanup concern, not enforced by the Squire.
 
+**Implementation status (runtime v1): write path only.** `SquireStore::insert_relationship` is implemented (both `InMemorySquireStore` and the LanceDB `squire_relationships` table) and the AI's `relationships` field is persisted every compliant turn close — but nothing currently reads the triplet store back for graph expansion. `explore()`'s `num_hops` parameter is accepted end-to-end (tool schema → `SquireStore::explore_memory`) but has no effect on the result set at any `num_hops` value. See the traversal note under §6.1 and `decisions.md`.
+
 ### 4.3 Ingestion Rules
 
 **User input:** Squire auto-chunks by natural language structure. Generates USR_TN_NNN tokens per chunk. No relationships are auto-generated. All relationship building is left to the AI.
 
+**Implementation status (runtime v1): not implemented.** `SquireContextAdapter::build_turn_input` takes the raw text of the most recent user message directly as `user_request` — no auto-chunking occurs, and no `USR_`-prefixed (or any) tokens are created for user input. This is a genuine gap, not an intentional deferral captured anywhere in the planning decisions; flagged here. See `decisions.md`.
+
 **AI output:** AI owns chunking entirely via §^ sigils. If the AI does not mark a span, it is stored only in the raw partition. §^ marking is the act of memory creation.
+
+**Implementation status (runtime v1):** the §^ half of this rule is implemented as described (`finalize_turn` creates/updates a referential token per closed span and captures the span text as `full_desc` when not otherwise supplied). The "stored only in the raw partition" half is not, per the §4.1 note above — content that is not marked with §^ is not persisted as memory or as an audit-log entry; it is simply not retained by Squire once the turn's display message has been shown.
 
 **External world content:** Content arrives in context via tool results (readfile, webfetch, invoke). It is ephemeral — gone at turn end unless the AI explicitly ingests it by marking relevant spans with §^ in its response.
 
@@ -173,9 +189,9 @@ The best approach here follows §!WF_WaterfallDesign, starting with requirements
 
 **Effect at display:** Squire expands `§!TokenID` to the token's `short_desc` (or `full_desc` if configured) before showing output to the user. User sees clean prose.
 
-**Effect at ingestion:** When any chunk containing a `§!TokenID` reference is loaded into context, the referenced token's `accumulated_hits` increments by 1. This means heavily-cited tokens accumulate priority passively through normal context use.
+**Effect at ingestion:** When any chunk containing a `§!TokenID` reference is loaded into context, the referenced token's `accumulated_hits` increments by 1. This means heavily-cited tokens accumulate priority passively through normal context use. **Implementation status (runtime v1): not implemented — see §3.3.**
 
-**Constraint:** The token must exist in the store or be defined in the same response's `new_tokens`. If neither is true, Squire rejects the response with reason `"undisplayable token §!TokenID"`.
+**Constraint:** The token must exist in the store or be defined in the same response's `new_tokens`. If neither is true, Squire rejects the response with reason `"undisplayable token §!TokenID"`. **Implementation status (runtime v1): implemented as described** — `validate_squire_response` in `squire.rs` checks this exact rule.
 
 ### 5.2 §^ — Named Span
 
@@ -188,7 +204,7 @@ Used to mark a region of AI output as a named referential token. This is the pri
 §^TRT_FishingSpots The best spots near Sydney are Middle Harbour for bream and Botany Bay for flathead. Both are accessible by car and have nearby bait shops. §^
 ```
 
-**Effect at turn close:** Squire creates or updates a referential token with `id = TRT_FishingSpots`, stores the span content as a chunk in the vector store, and writes the chunk reference to the token record. If the token already exists, the chunk reference is updated and `accumulated_hits` increments.
+**Effect at turn close:** Squire creates or updates a referential token with `id = TRT_FishingSpots`, stores the span content as a chunk in the vector store, and writes the chunk reference to the token record. If the token already exists, the chunk reference is updated and `accumulated_hits` increments. **Implementation status (runtime v1):** the token create/update half is implemented (`upsert_token`, with the span text captured as `full_desc` when the AI doesn't supply one explicitly) — there is no separate `chunk_ref` field in the runtime schema (the span text is stored directly as `full_desc`, not as a pointer to a distinct LanceDB chunk record), and `accumulated_hits` incrementing is not implemented (see §3.3).
 
 **Note on §@ anchors:** The original spec used `§@NNN` segment anchors in AI output for text slicing. These are no longer required from the AI. The Squire handles all chunking internally on ingestion. The `§@` form is reserved for Squire-internal use if needed.
 
@@ -198,16 +214,17 @@ Used to mark a region of AI output as a named referential token. This is the pri
 
 The Squire exposes exactly three built-in tools to the AI. All other tools must be discovered via `explore()`. The AI never sees raw MCP — the Squire is the sole MCP gateway.
 
-### 6.1 `explore(resource_type, query, num_hops)`
+### 6.1 `explore(resource_type, query, num_hops, max_results)`
 
 Searches the structured partition of the vector store against `query`, then expands results via graph traversal to depth `num_hops`.
 
-**Parameters:**
-- `resource_type`: `workflow | tool | skill | memory | all`
+**Canonical v1 contract (Q1, hybrid-policy resolution — this is the system-prompt superset, now also the spec's contract, not the original narrower table below):**
+- `resource_type`: `workflow | tool | skill | tool_skill | memory | concept | referential | all` — the four types after `skill` (`tool_skill`, `concept`, `referential`) are additive to the original five-value set; existing base types (`workflow | tool | skill | memory | all`) remain supported unchanged, so this is non-breaking.
 - `query`: natural language search string
-- `num_hops`: integer ≥ 0; 0 = vector search only, 1+ = include graph-connected tokens
+- `num_hops`: integer ≥ 0; 0 = vector search only, 1+ = include graph-connected tokens. **Implementation status (runtime v1): accepted but not implemented — see the traversal note below.**
+- `max_results`: integer ≥ 1; caps the number of results returned (default 10 in runtime v1). For `tool_skill`, `max_results` applies independently per subtype.
 
-**Returns:**
+**Returns (single type):**
 ```json
 [
   {"token_id": "WF_InteractiveFriendlyChat", "score": 0.87, "short_desc": "Friendly conversational flow for casual user queries"},
@@ -216,9 +233,20 @@ Searches the structured partition of the vector store against `query`, then expa
 ]
 ```
 
-Results are ordered by score descending. Ties broken by effective_priority. The AI receives token IDs and short descriptions only — full content requires a `token_to_detail()` call.
+**Returns (`resource_type = "tool_skill"`, runtime v1 actual shape):** a single flat array mixing both subtypes, not a `{"tool": [...], "skill": [...]}` dict — each element carries its own `type` field (`"tool"` for registry-sourced tool results, or whatever `SquireStore` reports for skill tokens) so the two subtypes remain distinguishable without a nested shape:
+```json
+[
+  {"token_id": "TOOL_Weather",         "type": "tool",  "score": 0.91, "short_desc": "..."},
+  {"token_id": "SKILL_LocationFinding","type": "skill", "score": 0.78, "short_desc": "..."}
+]
+```
+(An earlier draft of this contract, still reflected in `context_squire_system_prompt_v2.md`, described a nested `{"tool": [...], "skill": [...]}` return for `tool_skill`. Runtime v1 does not do this — the flat, type-tagged array above is actual behavior. See `decisions.md` for why the flat shape was accepted as the documented contract rather than treated as a bug to fix.)
 
-**Hit count:** Squire increments `accumulated_hits` for every token in the returned list that the AI subsequently acts on (calls `token_to_detail` or references in output).
+Results are ordered by score descending. Ties broken by effective_priority. **Implementation status (runtime v1): `effective_priority`/`accumulated_hits` do not exist at all — see the scoring note under §3.3. Ranking today is cosine-similarity-over-a-placeholder-embedding plus a substring-match boost (see `squire-storage/decisions.md`); ties are not broken by any priority field.** The AI receives token IDs and short descriptions only — full content requires a `token_to_detail()` call.
+
+**Hit count:** Squire increments `accumulated_hits` for every token in the returned list that the AI subsequently acts on (calls `token_to_detail` or references in output). **Implementation status (runtime v1): not implemented — see §3.3.**
+
+**Graph traversal implementation status (runtime v1):** `num_hops` is accepted by both `SquireStore` implementations (`InMemorySquireStore`, `LanceDbSquireStore`) but neither performs real triplet-store traversal — `explore_memory` does a flat type + similarity filter only, regardless of the `num_hops` value passed. The triplet store itself (relationships table) exists and is written to (`insert_relationship`), but nothing reads it back for expansion yet. This is a real gap against this spec, not an intentional simplification — flagged here rather than silently documented as if traversal works. See `decisions.md`.
 
 ### 6.2 `token_to_detail(token_id, detail_level)`
 
@@ -232,7 +260,7 @@ Retrieves the full or short description of a specific token.
 
 **Returns for `short`:** The `short_desc` field only.
 
-**Hit count:** `accumulated_hits` increments by 1 on each call.
+**Hit count:** `accumulated_hits` increments by 1 on each call. **Implementation status (runtime v1): not implemented — see §3.3.**
 
 ### 6.3 `invoke(token_id, params)`
 
@@ -244,7 +272,7 @@ Invokes a tool or skill through the Squire as gateway. The AI never calls extern
 
 **Behaviour:** Squire looks up the token's full description, extracts the MCP endpoint, proxies the call, and returns the result. From the AI's perspective the interface is identical to standard tool calling — the schema it received from `token_to_detail()` is the same format it would see from any MCP server. The gateway layer is transparent.
 
-**Note:** AskUser may be registered as a tool by a workflow or user configuration. If so, it is invoked via this path and the user's answer is returned synchronously as the tool result. If AskUser is not registered as a tool, the question mechanism is handled via the response field described in Section 8.2.
+**Note:** AskUser may be registered as a tool by a workflow or user configuration. If so, it is invoked via this path and the user's answer is returned synchronously as the tool result. If AskUser is not registered as a tool, the question mechanism is handled via the response field described in Section 8.2. **Implementation status (runtime v1):** the `invoke()`-as-tool path (Q2's "lightweight" AskUser option) works today through the ordinary tool-call loop — any tool named appropriately and registered in the tool registry is reachable this way, no Squire-specific plumbing needed. The response-field path (Section 8.2) is **not** implemented — see the note under §9.3.
 
 ---
 
@@ -252,9 +280,9 @@ Invokes a tool or skill through the Squire as gateway. The AI never calls extern
 
 ### 7.1 The Three-Layer Stack
 
-**Layer 1 — Vector search:** Entry point for all retrieval. Finds candidate tokens by semantic similarity. Low precision, broad net. This is pure RAG and its limitations are accepted. It is only the starting point.
+**Layer 1 — Vector search:** Entry point for all retrieval. Finds candidate tokens by semantic similarity. Low precision, broad net. This is pure RAG and its limitations are accepted. It is only the starting point. **Implementation status (runtime v1): implemented**, via a deterministic placeholder embedding (not a trained model — see `squire-storage/decisions.md`) rather than true semantic similarity; the vector-search *path* is real, the embedding quality is a documented, swappable placeholder.
 
-**Layer 2 — Concept tokens:** Pure graph topology nodes. No content. When a vector search lands on or near a concept token, the AI traverses its edges to find what is connected. `num_hops` in `explore()` drives this traversal. A well-connected concept token is a retrieval hub — everything semantically related to that idea is reachable from it.
+**Layer 2 — Concept tokens:** Pure graph topology nodes. No content. When a vector search lands on or near a concept token, the AI traverses its edges to find what is connected. `num_hops` in `explore()` drives this traversal. A well-connected concept token is a retrieval hub — everything semantically related to that idea is reachable from it. **Implementation status (runtime v1): not implemented — see the traversal note under §6.1/§4.2.** Concept tokens can be created and stored today, but nothing traverses their edges; `explore()` never returns tokens purely by virtue of a graph connection.
 
 **Layer 3 — Referential tokens:** The leaves of the graph. Every referential token points to an actual text chunk. `token_to_detail()` on a referential token returns the stored content. These are the only tokens that carry text payloads.
 
@@ -324,6 +352,10 @@ All communication between Squire and Main AI is JSON.
 }
 ```
 
+**Transport note (runtime v1, added by `protocol-doc-sync`):** this illustrative wire format is a conceptual/reference shape, not what is literally sent over the network in runtime v1. Because the runtime's LLM transport is provider-native tool-calling (a `ChatRequest` with a `messages` array and a `tools` array), the system prompt is carried as a `ChatMessage` with `role: System` — a first-class field the transport already supports — rather than duplicated as a `system_prompt` key inside a JSON blob passed as user content. The per-turn JSON body that *is* sent as the user-role message content contains exactly `user_request`, `prefetched_tokens`, and `preserved_tokens` — no `system_prompt` key. See `SQUIRE_SYSTEM_PROMPT`/`build_turn_input` in `squire.rs`, and the reconciliation note under §8.1's sibling doc, `context_squire_system_prompt_v2.md`, for the full rationale (this was an explicit, judged adaptation, not drift — see `decisions.md`).
+
+`prefetched_tokens`/`preserved_tokens` entries also carry a `type` field in runtime v1 (visible in `context_squire_system_prompt_v2.md`'s version of this example, omitted from this spec's example above) — kept here unedited as a minor illustrative omission rather than a behavioral divergence, since `TokenSummary`'s `token_type` field has been present since `squire-adapter` landed.
+
 **prefetched_tokens**: Squire's semantic match results against the current user request. Ordered by score. Short description only.
 
 **preserved_tokens**: Token IDs the AI explicitly requested to carry forward from the previous turn. These bypass semantic scoring and always appear. Short description only — AI calls `token_to_detail()` if it needs full content.
@@ -332,7 +364,7 @@ All communication between Squire and Main AI is JSON.
 
 ```json
 {
-  "ask_user": "Optional. If populated, generation ends here. Squire surfaces this question to the user, collects the answer, appends both to the user_request, and re-submits the turn. Cannot coexist with content.",
+  "ask_user": "Optional. If populated, generation ends here. Squire surfaces this question to the user, collects the answer, appends both to the user_request, and re-submits the turn. Cannot coexist with content. IMPLEMENTATION STATUS (runtime v1): the surface/collect/resubmit loop described here is NOT implemented - see the note under Section 9.3. Populating this field currently ends the turn as a hard error.",
 
   "content": "The AI's response to the user. May contain §!TokenID references and §^TokenID span§^ markers. Squire expands §! references before display and processes §^ spans at ingestion.",
 
@@ -390,7 +422,18 @@ All communication between Squire and Main AI is JSON.
 | `§^` opened but never closed | `"unclosed §^ span TokenID"` |
 | `invoke()` called with a token_id whose full_desc is not a valid MCP schema | `"non-invocable token TokenID"` |
 
-On rejection the Squire re-submits the same turn with the rejection payload appended to the conversation. On exhausting the configured retry limit, the Squire prints a generic error to the user and closes the turn without storing a response.
+On rejection the Squire re-submits the same turn with the rejection payload appended to the conversation. On exhausting the configured retry limit (**runtime v1**: implemented, see rejection-ux), the Squire does **not** discard the turn silently — it persists a visible chat message containing the rejection reason and the model's full failed response (so the user can inspect what was produced and adjust their next prompt), and separately records structured diagnostic metadata (rule id, free-text reason, retry count, timestamp) for debugging. Nothing about the turn is stored as a compliant Squire response (no tokens/relationships/preserve-list updates happen), but the failure itself — and the content that caused it — is not thrown away.
+
+**Additional rejection reasons beyond the table above (runtime v1):** two more conditions produce a rejection/retry cycle through the same mechanism, though they are not table-driven `validate_squire_response` checks:
+
+| Condition | Rejection reason |
+|---|---|
+| AI response is not parseable as the Squire response JSON shape at all | `"response is not valid Squire protocol JSON: {parse error}"` |
+| `ask_user` is populated (see note below — the response-field AskUser loop is not yet wired to a UI round-trip in runtime v1) | a fixed diagnostic string; **this currently ends the turn as a hard error, not a retry/compliance-failure cycle** — see the AskUser implementation-status note in §9.3 |
+
+**Implementation-status notes below (runtime v1), not part of the original spec's scope, added by `protocol-doc-sync`:**
+- §9.3's AskUser response-field loop is unimplemented — see the note under §9.3.
+- `num_hops` graph traversal, `accumulated_hits`/`effective_priority` scoring, user-input auto-chunking, and raw-partition audit storage are also unimplemented — see the notes under §3.3, §4.1, §4.2, §6.1, §7.1, §9.1, and §10.1 respectively.
 
 ---
 
@@ -399,10 +442,10 @@ On rejection the Squire re-submits the same turn with the rejection payload appe
 ### 9.1 Turn Open
 
 1. Squire receives user input.
-2. Squire auto-chunks the input by natural language structure. Creates USR_TN_NNN tokens for each chunk. No relationships are written.
-3. Squire runs vector search against the structured partition using the user input as query. Returns top-N candidates with scores and short descriptions.
-4. Squire loads the preserved token list from the previous turn's close. Looks up short descriptions.
-5. Squire assembles the request JSON: system prompt, user request (anchored), prefetched_tokens, preserved_tokens.
+2. Squire auto-chunks the input by natural language structure. Creates USR_TN_NNN tokens for each chunk. No relationships are written. **Implementation status (runtime v1): not implemented — see §4.3.** `build_turn_input` passes the latest user message's raw text straight through as `user_request`; no chunking or `USR_` token creation occurs.
+3. Squire runs vector search against the structured partition using the user input as query. Returns top-N candidates with scores and short descriptions. **Implementation status (runtime v1): implemented** (`explore_memory("all", user_text, 1, 10)`, called unconditionally at the start of `build_turn_input`).
+4. Squire loads the preserved token list from the previous turn's close. Looks up short descriptions. **Implementation status (runtime v1): implemented** (`preserved_tokens(session_id)`).
+5. Squire assembles the request JSON: system prompt, user request (anchored), prefetched_tokens, preserved_tokens. **Implementation status (runtime v1): the system prompt is sent as a separate `ChatMessage::System`-role message, not a `system_prompt` field inside this JSON** — see the transport note under §8.1. The JSON body itself contains exactly `user_request`/`prefetched_tokens`/`preserved_tokens`, matching this step for those three fields.
 6. Squire sends to Main AI.
 
 ### 9.2 During Turn — Tool Call Loop
@@ -427,26 +470,30 @@ AI sees prefetched tokens
 **If AskUser is registered as a tool:**  
 The AI calls `invoke("TOOL_AskUser", {"question": "..."})`. The Squire surfaces the question to the user, collects the answer, and returns it as the tool result. Generation continues. The loop is within the single turn.
 
+**Implementation status (runtime v1): implemented**, via the ordinary tool-call loop — no Squire-specific code is needed for this path since `invoke()` already proxies to the tool registry.
+
 **If AskUser is a response field:**  
 The AI emits `ask_user` in its response with no `content`. Squire surfaces the question to the user and waits. The user's answer is collected. Squire appends the question and answer as plain text to the accumulated `user_request`. The full turn is re-submitted with the extended user request and the same prefetched/preserved context. This repeats until the AI emits a response with `content` and no `ask_user`.
 
 The AI's question and the user's answer are indistinguishable from additional user input. No special namespace is required. The AI sees the full accumulated conversation in `user_request`.
 
+**Implementation status (runtime v1): NOT implemented. This is a known, tracked gap (`squire-adapter/todo.json` sa-5), not a silent omission.** `SquireContextAdapter::finalize_turn` detects a populated `ask_user` field and immediately returns `Err("Squire ask_user response field is not yet wired to a UI round-trip...")` — this is a hard orchestration error (ends the turn with `stream-error`, same as any other unexpected failure), not the retry/compliance-failure cycle described in §8.3, and definitely not the surface-question/collect-answer/resubmit loop described above. There is no IPC command to surface a mid-turn question to the frontend and no UI to collect an answer and route it back. Until sa-5 is implemented, only the tool-registered AskUser path above actually works for Squire-mode sessions.
+
 ### 9.4 Turn Close
 
 The turn closes when the AI emits a response with `content` populated and `ask_user` empty.
 
-Squire performs the following in order:
+Squire performs the following in order (**implementation status per step, runtime v1, added by `protocol-doc-sync`**):
 
-1. **Validate** inline token references in `content`. Reject if any `§!TokenID` is unresolvable.
-2. **Parse §^ spans** in `content`. For each span: extract token ID and text content, store chunk in LanceDB structured partition, create or update the referential token record.
-3. **Expand sigils** for display: replace `§!TokenID` with `short_desc`, remove `§^` markers. Output clean prose to user.
-4. **Store raw response** in LanceDB raw partition. Not tokenized. Audit log only.
-5. **Process `new_tokens`**: insert each token if not exists (set `creation_turn` to current turn), increment `accumulated_hits` by 1 regardless.
-6. **Process `relationships`**: insert each triplet into the triplet store.
-7. **Scan content for §! references**: increment `accumulated_hits` by 1 for each referenced token found.
-8. **Store `preserve` list** for next turn bootstrap.
-9. **Increment turn counter**.
+1. **Validate** inline token references in `content`. Reject if any `§!TokenID` is unresolvable. — *Implemented* (`validate_squire_response`), plus the malformed-JSON and unclosed-span checks documented in §8.3.
+2. **Parse §^ spans** in `content`. For each span: extract token ID and text content, store chunk in LanceDB structured partition, create or update the referential token record. — *Implemented* (`upsert_token` with span text as `full_desc`), without a distinct `chunk_ref`-style pointer — see the §5.2 note.
+3. **Expand sigils** for display: replace `§!TokenID` with `short_desc`, remove `§^` markers. Output clean prose to user. — *Implemented* (`expand_for_display`).
+4. **Store raw response** in LanceDB raw partition. Not tokenized. Audit log only. — *Not implemented* — see §4.1.
+5. **Process `new_tokens`**: insert each token if not exists (set `creation_turn` to current turn), increment `accumulated_hits` by 1 regardless. — *Partially implemented*: `creation_turn`/upsert is implemented; the `accumulated_hits` increment is not (see §3.3).
+6. **Process `relationships`**: insert each triplet into the triplet store. — *Implemented* (`insert_relationship`); nothing reads them back yet (see §4.2).
+7. **Scan content for §! references**: increment `accumulated_hits` by 1 for each referenced token found. — *Not implemented* — see §3.3.
+8. **Store `preserve` list** for next turn bootstrap. — *Implemented* (`set_preserve_list`, wholesale replace semantics — see Q7 and `squire-storage`/`rejection-ux` decisions.md for the full next-turn-only + restart-clear lifecycle).
+9. **Increment turn counter**. — *Implemented* (`increment_turn`).
 
 ---
 
@@ -456,13 +503,13 @@ The bootstrap is the initial context assembled at turn open before any AI tool c
 
 ### 10.1 Steps
 
-1. Run user input through vector search against structured partition. Retrieve top-N scored tokens.
-2. For each matched token, retrieve depth-1 connected tokens via the triplet store. Add to candidate set.
-3. Load preserved tokens from last turn. These bypass scoring and are always included.
-4. Score remaining candidates by `effective_priority` descending, edge count as tiebreaker.
-5. Trim candidates to the configured bootstrap token limit (character-based estimate ÷ 4).
-6. Assemble `prefetched_tokens` from trimmed candidates. Include `token_id`, `score`, and `short_desc` only.
-7. Increment `accumulated_hits` for all tokens in the prefetched list.
+1. Run user input through vector search against structured partition. Retrieve top-N scored tokens. — *Implemented* (`explore_memory("all", user_text, 1, 10)` in `build_turn_input`; top-N is hardcoded to 10 in runtime v1 rather than driven by the `bootstrap_top_n` config value in §15 — no config-file/settings plumbing for Squire tuning constants exists yet).
+2. For each matched token, retrieve depth-1 connected tokens via the triplet store. Add to candidate set. — *Not implemented* — see the traversal note under §4.2/§6.1.
+3. Load preserved tokens from last turn. These bypass scoring and are always included. — *Implemented*.
+4. Score remaining candidates by `effective_priority` descending, edge count as tiebreaker. — *Not implemented as specified* — see §3.3; runtime ranks by cosine-similarity-plus-substring-boost instead, with no edge-count tiebreak (there being no traversal to produce edge counts from).
+5. Trim candidates to the configured bootstrap token limit (character-based estimate ÷ 4). — *Not implemented*: runtime truncates by result *count* (`max_results`, default 10), not by a character-budget estimate of combined `short_desc` length.
+6. Assemble `prefetched_tokens` from trimmed candidates. Include `token_id`, `score`, and `short_desc` only. — *Implemented*, plus a `type` field on each entry (present in the system-prompt doc's version of this shape, not in this spec's §8.1 example — see the §8.1 note).
+7. Increment `accumulated_hits` for all tokens in the prefetched list. — *Not implemented* — see §3.3.
 
 ### 10.2 Token Limit
 
@@ -476,28 +523,30 @@ The AI calls `token_to_detail()` to load full content as needed. This is deliber
 
 The Squire is a dumb script. Its responsibilities are precisely bounded.
 
+**Implementation status summary (runtime v1, added by `protocol-doc-sync`):** items below marked with a trailing note are gaps against this design — see the section reference for detail. Everything else in this list is implemented as described.
+
 **Turn open:**
-- Auto-chunk user input → USR_ tokens, no relationships
+- Auto-chunk user input → USR_ tokens, no relationships — **not implemented, see §4.3/§9.1**
 - Vector search → prefetch candidate list
 - Load preserved tokens from last turn
 - Assemble and send request JSON
 
 **During turn:**
 - Execute built-in tool calls: `explore()`, `token_to_detail()`, `invoke()`
-- Handle AskUser response field loop if triggered
+- Handle AskUser response field loop if triggered — **not implemented, see §9.3**
 - Validate each response before acting on it
 - Return rejection payloads on invalid responses
 
 **Turn close:**
 - Parse §^ spans and create referential tokens
 - Expand §! references and §^ spans for user display
-- Store raw response in LanceDB raw partition
+- Store raw response in LanceDB raw partition — **not implemented, see §4.1**
 - Process new_tokens and relationships
-- Increment §! hit counts
+- Increment §! hit counts — **not implemented, see §3.3**
 - Store preserve list
 
 **Session end:**
-- Flush all in-memory state to disk
+- Flush all in-memory state to disk — **not applicable to runtime v1's storage model: `LanceDbSquireStore` writes are immediately durable (LanceDB is a persistent, disk-backed store, not an in-memory structure requiring an explicit flush-on-exit step); there is no separate session-end flush operation, nor does one need to exist. `InMemorySquireStore` (the pre-`squire-storage` test double) never persisted across restarts by design, so a flush step would not have helped it either.**
 
 **Never:**
 - Build relationships between tokens
@@ -551,6 +600,8 @@ This means the system is extensible without redesign. New AI-powered capabilitie
 
 ## 14. CLI
 
+**Implementation status (runtime v1, added by `protocol-doc-sync`):** the actual product is a Tauri desktop chat app, not a CLI read-evaluate-print loop — this section describes the original reference interface concept. The behavioral rules below (display expansion, rejection handling) still apply to the real UI's chat pane; only the literal "printed to a terminal" framing is aspirational/illustrative rather than what ships. `AskUser (response field path)` in particular describes a loop that is not implemented at all in runtime v1 — see §9.3's implementation-status note.
+
 The CLI is the user-facing interface — a standard read-evaluate-print loop.
 
 **Normal flow:**
@@ -570,7 +621,7 @@ The question is printed as a prompt. The user's answer is read as the next input
 Before printing to the user, Squire: expands `§!TokenID` to the token's short description, removes `§^` markers, and prints clean prose. No protocol artefacts are ever visible.
 
 **Rejection handling:**  
-Squire rejections are handled silently. The retry is not visible to the user. On retry exhaustion, the Squire prints a generic error and closes the turn.
+Squire rejections are handled silently. The retry is not visible to the user. On retry exhaustion (runtime v1: implemented), the Squire does not merely print a generic error and discard the turn — it surfaces a live error indicator to the user (the chat app's existing error-banner mechanism) *and* persists a durable, inspectable message containing the rejection reason and the model's full failed response, plus a structured diagnostic record. See §8.3 for the complete, current behavior.
 
 ---
 
@@ -604,23 +655,25 @@ The following are part of the broader design but explicitly out of scope for thi
 
 ## 17. Glossary
 
+**Implementation-status legend for this table (runtime v1, added by `protocol-doc-sync`):** `[not impl.]` marks terms whose defined mechanism does not exist in the runtime today — see the cross-referenced section for detail. Unmarked terms are implemented as defined.
+
 | Term | Definition |
 |---|---|
 | Token | The fundamental unit of memory. A handle to information stored in the system. |
 | Concept Token | A pure semantic node with no text body. Exists to connect things in the graph. |
 | Referential Token | A named pointer to a text chunk. Created by AI via §^ marking. |
-| System Referential Token | Auto-generated by Squire from user input chunks. Prefixed USR_. |
+| System Referential Token `[not impl., §4.3/§9.1]` | Auto-generated by Squire from user input chunks. Prefixed USR_. |
 | Resource Token | A workflow, tool, or skill stored as a token with a type-enforced full description. |
-| §! | Inline token reference in AI output. Expands to short_desc at display. Increments hit count on context load. |
+| §! | Inline token reference in AI output. Expands to short_desc at display. Increments hit count on context load `[hit-count part not impl., §3.3]`. |
 | §^ | Named span marker. Opens and closes a region of AI output to be stored as a referential token. |
-| explore() | Built-in tool. Vector search followed by graph traversal. Returns token list with scores and short descriptions. |
+| explore() | Built-in tool. Vector search followed by graph traversal `[traversal not impl., §4.2/§6.1]`. Returns token list with scores and short descriptions. |
 | token_to_detail() | Built-in tool. Returns short or full description of a token. |
 | invoke() | Built-in tool. Proxies a tool call through Squire as MCP gateway. |
-| Preserve list | Token IDs the AI carries forward to the next turn. Bypass semantic scoring. |
+| Preserve list | Token IDs the AI carries forward to the next turn. Bypass semantic scoring. Next-turn-only, cleared on app restart (Q7). |
 | Bootstrap | The initial prefetched token list assembled by Squire at turn open. |
-| Effective priority | `accumulated_hits - (current_turn - creation_turn)`. Computed lazily at sort time. |
+| Effective priority `[not impl., §3.3]` | `accumulated_hits - (current_turn - creation_turn)`. Computed lazily at sort time. |
 | Structured partition | LanceDB partition for tokenized content. Searchable and graph-connected. |
-| Raw partition | LanceDB partition for unmarked AI output. Vector search only. Audit log. |
+| Raw partition `[not impl., §4.1]` | LanceDB partition for unmarked AI output. Vector search only. Audit log. |
 | External world | Everything not indexed in memory: files, web, APIs. Discovered via tools. |
 | Ingestion | The act of bringing external content into structured memory via §^ marking and relationship writing. |
 | Display boundary | The point at which Squire expands sigils and strips markers before showing output to the user. |

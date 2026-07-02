@@ -1,0 +1,75 @@
+{
+  "nodePath": "root/Squire/session-creation-ux",
+  "items": [
+    {
+      "id": "scu-1",
+      "text": "Read context: session-mode/decisions.md + state.md (immutability, create_conversation contract), context_squire_spec_v2.md (confirm silent on UI/UX), ask-user-loop's e2e IPC-reach-in workaround",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "scu-2",
+      "text": "Read the actual frontend code: chat-store.ts (createNewConversation), conversation-sidebar.tsx (onCreate), chat-panel.tsx (wiring), types/ipc.ts + lib/ipc.ts (ContextMode/createConversation), and backend commands/conversations.rs + storage/conversation_store.rs (SessionSummary shape)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "scu-3",
+      "text": "Verify baseline: cargo build + cargo test --lib clean/171 passing; npx tsc --noEmit + npm test -- --run (77/79, confirm same 2 pre-existing failures)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "scu-4",
+      "text": "Design the UI in decisions.md before implementing: where the selector lives, default behavior, visual indicator approach, whether SessionSummary needs a backend context_mode addition for the badge",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "scu-5",
+      "text": "Implement backend addition: context_mode added to SessionSummary (struct + list_sessions SQL + IPC mapping) so the sidebar can render a per-row badge; 2 new sqlite_store unit tests",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "scu-6",
+      "text": "Implement frontend: Squire-mode Switch next to '+ New session' in ConversationSidebar, createNewConversation store action accepts a mode argument and passes it to createConversation, per-row Squire badge in the sidebar list",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "scu-7",
+      "text": "Add/update frontend unit tests: chat-store.test.ts (createNewConversation forwards mode / defaults to undefined), conversation-sidebar.test.tsx (toggle default legacy, toggle-on squire, badge only on squire rows)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "scu-8",
+      "text": "Full verification: cargo build + cargo build --bins + cargo test --lib (173/173); npx tsc --noEmit -p tsconfig.app.json (no new errors); npm test -- --run (82/84, same 2 pre-existing failures, all new tests passing)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "scu-9",
+      "text": "Manual e2e verification via WDIO+tauri-driver: new e2e/specs/session-creation-ux.test.ts (2 cases, each run twice, all passing) confirms a real user can pick Squire mode through the actual UI and the resulting session behaves as squire mode (real context_mode, real badge, sa-4 live-stream suppression, real turn close). Updated ask-user-loop.test.ts's comments (not behavior) to note the UI path now exists; kept its own direct-IPC creation since that spec's subject is the ask_user mechanism, not session creation. Re-ran ask-user-loop.test.ts once to confirm no regression (1/1 passing).",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "scu-10",
+      "text": "Update root/Squire/state.md Child Nodes list and root/Squire/handoff.md to reflect this session's work, current build/test status, and remaining backlog with the session-creation UX gap marked resolved",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    }
+  ]
+}

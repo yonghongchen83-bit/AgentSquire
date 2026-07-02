@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::state::config::McpServerConfig;
 
 pub mod context_adapter;
+pub mod squire;
 
 pub use crate::llm::provider::ToolCall;
 pub use crate::llm::provider::ToolDefinition;
@@ -648,6 +649,14 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
+    /// A registry with no tools registered — used to build the strict,
+    /// Squire-only tool surface (Q5) instead of the default built-in set.
+    pub fn empty() -> Self {
+        Self {
+            tools: HashMap::new(),
+        }
+    }
+
     pub fn new() -> Self {
         let mut reg = Self {
             tools: HashMap::new(),
@@ -709,6 +718,35 @@ impl PendingApprovals {
         Self {
             pending: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+}
+
+// ── Pending AskUser Questions State (sa-5: Squire response-field AskUser loop) ──
+//
+// Structurally identical to `PendingApprovals` above — see
+// `.AiControl/root/Squire/ask-user-loop/decisions.md` for why this is a
+// separate registry/event/command trio rather than reusing the tool-approval
+// one. `String` (the user's free-text answer) stands in for `bool` (the
+// approval decision) as the oneshot channel's payload.
+
+pub type AskUserAnswerSender = oneshot::Sender<String>;
+pub type AskUserAnswerReceiver = oneshot::Receiver<String>;
+
+pub struct PendingAskUserQuestions {
+    pub pending: Arc<Mutex<HashMap<String, AskUserAnswerSender>>>,
+}
+
+impl PendingAskUserQuestions {
+    pub fn new() -> Self {
+        Self {
+            pending: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+}
+
+impl Default for PendingAskUserQuestions {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

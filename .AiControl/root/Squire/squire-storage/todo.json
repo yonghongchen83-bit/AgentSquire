@@ -3,24 +3,66 @@
   "items": [
     {
       "id": "ss-1",
-      "text": "Design LanceDB schema for structured/raw partitions",
-      "done": false,
-      "status": "blocked",
+      "text": "Design LanceDB schema for structured/raw partitions (tokens table = structured partition incl. embedding vector; relationships table = triplet store; turns table = per-session counter)",
+      "done": true,
+      "status": "done",
       "updatedAt": "2026-07-02T00:00:00Z"
     },
     {
       "id": "ss-2",
-      "text": "Implement triplet store + vector search path",
-      "done": false,
-      "status": "blocked",
+      "text": "Implement triplet store + vector search path (LanceDbSquireStore: upsert_token/insert_relationship/explore_memory via cosine-similarity search using a deterministic embedding fn)",
+      "done": true,
+      "status": "done",
       "updatedAt": "2026-07-02T00:00:00Z"
     },
     {
       "id": "ss-3",
-      "text": "Abstract storage interface for test doubles",
-      "done": false,
-      "status": "blocked",
+      "text": "Abstract storage interface for test doubles (LanceDbSquireStore implements existing SquireStore trait unchanged; InMemorySquireStore remains the fast test double; no call-site changes needed beyond construction)",
+      "done": true,
+      "status": "done",
       "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ss-4",
+      "text": "Add lancedb + arrow-array + arrow-schema deps; confirm protoc requirement and document dev-machine setup step in env.md",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ss-5",
+      "text": "Wire AppState.squire_store to LanceDbSquireStore in setup_cmd.rs (LanceDB dir under app_config_dir), replacing InMemorySquireStore",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ss-6",
+      "text": "Redirect SquireInvokeTool's lookup to consult store.token_detail(token_id) per squire-adapter/decisions.md pointer, as a fallback after the existing tool_registry lookup (full cutover not implementable yet - no tool-token ingestion path exists; see decisions.md)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ss-7",
+      "text": "Unit tests for LanceDbSquireStore (roundtrip token/relationship/preserve-list, turn counter, explore_memory scoring/type filter/max_results, vector-similarity ranking sanity) mirroring InMemorySquireStore's existing test coverage",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ss-8",
+      "text": "Full build + cargo test --lib verification with PROTOC set; update handoff.md and root state.md on completion",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ss-9",
+      "text": "FOLLOW-UP (not in this node's scope, not claimed): real tool-token ingestion - a write path that turns MCP/local tool discovery into persisted, invocable SquireStore token rows (with an endpoint-carrying extension to TokenDetail), so SquireInvokeTool's store-fallback path can actually resolve and invoke something instead of only returning a diagnostic error. Needed before Q5's 'Squire as sole gateway' vision is fully realized for tools discovered via explore(resource_type='tool_skill') that aren't already local/MCP registry entries. RESOLVED by root/Squire/tool-token-ingestion (2026-07-03): agent::squire::ingest_tool_registry now upserts a tool-typed token per ToolRegistry entry, called once per turn from streaming_cmd.rs. Endpoint-carrying TokenDetail extension for invoke() dispatch remains a separate, still-unclaimed follow-up (tool-token-ingestion/env.md's non-goals) - tokens are now discoverable/describable, but invoke()'s dispatch shape is unchanged.",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
     }
   ]
 }

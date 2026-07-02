@@ -1,0 +1,68 @@
+{
+  "nodePath": "root/Squire/token-detail-endpoint",
+  "items": [
+    {
+      "id": "tde-1",
+      "text": "Read context: tool-token-ingestion/decisions.md + env.md in full",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tde-2",
+      "text": "Read squire-storage/decisions.md's SquireInvokeTool redirect section in full (original full-cutover framing)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tde-3",
+      "text": "Read the actual code in full: squire.rs (SquireInvokeTool, SquireStore trait, TokenDetail/NewTokenSpec/StoredToken, ingest_tool_registry/tool_token_id/tool_full_desc), streaming_cmd.rs's per-turn ToolRegistry construction, mcp/mod.rs (discover_tools/call_tool/McpServerConfig/StdioMcpClient)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tde-4",
+      "text": "Verify baseline: cargo build + cargo test --lib clean, 210/210 passing",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tde-5",
+      "text": "Make and document proportionality assessment in decisions.md before implementing: is full dispatch tractable/proportionate, or is a scoped-down diagnostic improvement the right call",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tde-6",
+      "text": "Implement the chosen scope: ToolEndpoint enum + TokenDetail/NewTokenSpec endpoint field, both backends, ingestion endpoints side-channel map, SquireInvokeTool real dispatch branch",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tde-7",
+      "text": "Add/update unit tests (both InMemorySquireStore and LanceDbSquireStore) — 7 new in squire.rs, 4 new in squire_lancedb.rs",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tde-8",
+      "text": "Full verification: cargo build + cargo build --bins + cargo build --examples + cargo test --lib (221/221); repo-wide frontend grep confirming no WDIO/GUI surface warranted",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "tde-9",
+      "text": "Update root/Squire/state.md Child Nodes list and root/Squire/handoff.md to reflect this session's work, current build/test status, and remaining backlog",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    }
+  ]
+}

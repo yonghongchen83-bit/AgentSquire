@@ -1,0 +1,68 @@
+{
+  "nodePath": "root/Squire/stream-sigil-fix",
+  "items": [
+    {
+      "id": "ssf-1",
+      "text": "Read context: squire-adapter/todo.json sa-4 exact wording, squire-adapter/decisions.md streaming/finalize_turn design, rejection-ux/decisions.md's sa-4 deferral note, context_squire_spec_v2.md sigil syntax (§5) and display-boundary guarantee (§14)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ssf-2",
+      "text": "Read the actual code: squire.rs (finalize_turn/expand_for_display in full), streaming_cmd.rs (StreamEvent::Chunk handling and context_mode branch points), frontend stream-listeners.ts (stream-chunk consumer)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ssf-3",
+      "text": "Verify baseline: cargo build + cargo test --lib clean, matches handoff.md's 149/149",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ssf-4",
+      "text": "Design and document the fix approach in decisions.md before implementing: chose full live-stream suppression in Squire mode (task's option 1 / sa-4's own prescribed fix), rejected incremental sigil-masking and incremental deterministic expansion as overengineering for a display-boundary bug",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ssf-5",
+      "text": "Implement: add should_stream_live_chunks(context_mode) pure helper in streaming_cmd.rs; gate the main StreamEvent::Chunk emission plus the two tool-loop-path stream-chunk emissions (tool-call separator, [Executing...] progress line) on it; Legacy mode behavior unchanged",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ssf-6",
+      "text": "Add unit tests for should_stream_live_chunks (Legacy -> true, Squire -> false) in streaming_cmd.rs's new test module",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ssf-7",
+      "text": "Full verification: cargo build + cargo build --bins clean/zero warnings; cargo test --lib all passing (149 baseline + 2 new = 151)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ssf-8",
+      "text": "Attempt manual verification in a running app instance (tauri dev, send a Squire-mode message, watch for raw sigils mid-stream); document outcome in state.md",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ssf-9",
+      "text": "Update root/Squire/state.md Child Nodes list and root/Squire/handoff.md to reflect this session's work, current build/test status, and remaining backlog with sa-4 marked resolved",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    }
+  ]
+}

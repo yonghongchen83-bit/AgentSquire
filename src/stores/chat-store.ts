@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { SessionSummary, Message, Block, ToolApprovalRequest, ProviderInfo } from '@/types/ipc'
+import type { SessionSummary, Message, Block, ToolApprovalRequest, ProviderInfo, AskUserQuestion, ContextMode } from '@/types/ipc'
 import {
   listConversations,
   getConversation,
@@ -11,6 +11,7 @@ import {
   listProviders,
   approveToolCall as approveIpc,
   rejectToolCall as rejectIpc,
+  answerAskUserQuestion as answerAskUserQuestionIpc,
   truncateMessagesFrom as truncateMessagesFromIpc,
 } from '@/lib/ipc'
 import {
@@ -39,11 +40,19 @@ interface ChatState {
   selectedThinkingLevel: 'none' | 'low' | 'mid' | 'high'
   pendingApprovals: ToolApprovalRequest[]
   autoApproveScope: 'none' | 'session' | 'workspace'
+  /** sa-5: at most one outstanding Squire ask_user question per session
+   *  (the protocol loop is strictly sequential — see ask-user-loop/decisions.md). */
+  pendingAskUserQuestion: AskUserQuestion | null
 
   loadConversations: () => Promise<void>
   loadProviders: () => Promise<void>
   selectConversation: (id: string) => Promise<void>
-  createNewConversation: () => Promise<string | null>
+  /** contextMode defaults to 'legacy' when omitted, matching NewSession's backend default
+   *  and the pre-existing implicit behavior before session-creation-ux added an explicit
+   *  UI choice — see session-creation-ux/decisions.md. Mode is immutable by construction
+   *  once a session exists (session-mode/decisions.md); this is the only place a mode is
+   *  ever chosen. */
+  createNewConversation: (contextMode?: ContextMode) => Promise<string | null>
   renameConversation: (id: string, title: string) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
   setSelectedProvider: (name: string) => void
@@ -54,6 +63,7 @@ interface ChatState {
   clearError: () => void
   approveToolCall: (callId: string) => Promise<void>
   rejectToolCall: (callId: string) => Promise<void>
+  answerAskUserQuestion: (questionId: string, answer: string) => Promise<void>
   approveAllPending: () => Promise<void>
   setAutoApproveScope: (scope: 'none' | 'session' | 'workspace') => void
   truncateMessagesFrom: (messageId: string) => Promise<void>
@@ -88,6 +98,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     selectedThinkingLevel: storedThinkingLevel,
     pendingApprovals: [],
     autoApproveScope: 'none',
+    pendingAskUserQuestion: null,
 
     loadConversations: async () => {
       try {
@@ -153,6 +164,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           isStreaming: false,
           streamingMessageId: null,
           pendingApprovals: [],
+          pendingAskUserQuestion: null,
           autoApproveScope: s.autoApproveScope === 'session' ? 'none' : s.autoApproveScope,
         }))
       } catch (e) {
@@ -160,10 +172,10 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
     },
 
-    createNewConversation: async () => {
+    createNewConversation: async (contextMode?: ContextMode) => {
       try {
-        const session = await createConversation('New Chat')
-        set({ activeConversationId: session.id, messages: [], pendingApprovals: [] })
+        const session = await createConversation('New Chat', contextMode)
+        set({ activeConversationId: session.id, messages: [], pendingApprovals: [], pendingAskUserQuestion: null })
         get().loadConversations()
         return session.id
       } catch (e) {
@@ -227,6 +239,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         streamingBlocks: [],
         error: null,
         pendingApprovals: [],
+        pendingAskUserQuestion: null,
       }))
 
       await setupStreamListeners(sessionId)
@@ -263,6 +276,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         streamingStatus: '',
         streamingBlocks: [],
         pendingApprovals: [],
+        pendingAskUserQuestion: null,
       })
     },
 
@@ -285,6 +299,19 @@ export const useChatStore = create<ChatState>((set, get) => {
         set((s) => ({
           pendingApprovals: s.pendingApprovals.filter((a) => a.call_id !== callId),
         }))
+      } catch (e) {
+        set({ error: String(e) })
+      }
+    },
+
+    answerAskUserQuestion: async (questionId: string, answer: string) => {
+      try {
+        await answerAskUserQuestionIpc(questionId, answer)
+        set((s) => (
+          s.pendingAskUserQuestion?.question_id === questionId
+            ? { pendingAskUserQuestion: null }
+            : {}
+        ))
       } catch (e) {
         set({ error: String(e) })
       }

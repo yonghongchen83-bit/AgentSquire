@@ -1,0 +1,82 @@
+{
+  "nodePath": "root/Squire/ask-user-loop",
+  "items": [
+    {
+      "id": "aul-1",
+      "text": "Read context: squire-adapter/todo.json sa-5 exact wording, squire-adapter/decisions.md Q5 tool boundary/invoke dispatch design, context_squire_spec_v2.md §8.2/§9.3 (ask_user semantics, reconciled by protocol-doc-sync)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "aul-2",
+      "text": "Read the actual code: squire.rs (SquireContextAdapter/TurnOutcome/finalize_turn's ask_user hard-error branch), streaming_cmd.rs (turn loop orchestration), the existing PendingApprovals/stream-tool-pending/approve_tool_call/reject_tool_call human-in-the-loop pattern (agent/mod.rs, commands/stream_control.rs), frontend chat-store + chat-panel.tsx's pendingApprovals inline-approval UI",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "aul-3",
+      "text": "Verify baseline: cargo build + cargo test --lib clean, 151/151 passing",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "aul-4",
+      "text": "Design the pause/resume mechanism in decisions.md before implementing",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "aul-5",
+      "text": "Implement backend: TurnOutcome::AskUser variant; SquireContextAdapter::finalize_turn returns it instead of Err; streaming_cmd.rs pauses the turn loop, emits stream-ask-user-pending, awaits the paired oneshot receiver, appends question+answer to the accumulated messages, loops back into provider.chat()",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "aul-6",
+      "text": "Implement abandonment handling for a never-answered question (reuse abort_stream/task-abort, app-close state loss, clean error on stale answer submission — no new timeout system)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "aul-7",
+      "text": "Add backend unit tests for the new dispatch/pause/resume logic (squire.rs finalize_turn ask_user branch tests, stream_control.rs PendingAskUserQuestions resolve tests)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "aul-8",
+      "text": "Implement frontend: IPC event listener + new command wrapper, chat-store pendingAskUserQuestion state/answerAskUserQuestion action, inline question/answer UI in chat-panel.tsx",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "aul-9",
+      "text": "Full verification: cargo build/build --bins/test --lib (158/158), npx tsc --noEmit -p tsconfig.app.json (no new errors), npm test -- --run (77/79, 2 pre-existing failures confirmed unrelated)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "aul-10",
+      "text": "Manual end-to-end verification: real-model harness (src-tauri/examples/ask_user_e2e.rs) plus real WDIO+tauri-driver e2e spec (e2e/specs/ask-user-loop.test.ts) against the actual built app, both confirming the pause/resume mechanism works with a real model and real IPC/UI",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "aul-11",
+      "text": "Update root/Squire/state.md Child Nodes list and root/Squire/handoff.md to reflect this session's work, current build/test status, and remaining backlog with sa-5 marked resolved",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    }
+  ]
+}

@@ -36,11 +36,14 @@ export interface SessionWithMessages {
   messages: Message[]
 }
 
+export type ContextMode = 'legacy' | 'squire'
+
 export interface Session {
   id: string
   title: string
   createdAt: string
   updatedAt: string
+  contextMode: ContextMode
 }
 
 export type Block =

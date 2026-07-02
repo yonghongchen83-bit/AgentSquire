@@ -4,7 +4,7 @@ use rusqlite::params;
 use uuid::Uuid;
 
 use super::conversation_store::{
-    ConversationStore, Message, MessageRole, NewMessage, NewSession, Session,
+    ContextMode, ConversationStore, Message, MessageRole, NewMessage, NewSession, Session,
     SessionId, SessionSummary, SessionWithMessages, StoreError,
 };
 use crate::state::db::Database;
@@ -14,10 +14,11 @@ impl ConversationStore for Database {
     async fn create_session(&self, new: NewSession) -> Result<Session, StoreError> {
         let id = Uuid::new_v4();
         let now = Utc::now().to_rfc3339();
+        let context_mode = new.context_mode.unwrap_or_default();
         let conn = self.connection();
         conn.execute(
-            "INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
-            params![id.to_string(), new.title, now, now],
+            "INSERT INTO sessions (id, title, created_at, updated_at, context_mode) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id.to_string(), new.title, now, now, context_mode.as_str()],
         )
         .map_err(|e| StoreError::Database(e.to_string()))?;
         Ok(Session {
@@ -25,6 +26,7 @@ impl ConversationStore for Database {
             title: new.title,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            context_mode,
         })
     }
 
@@ -57,15 +59,19 @@ impl ConversationStore for Database {
         let conn = self.connection();
         let session = conn
             .query_row(
-                "SELECT id, title, created_at, updated_at FROM sessions WHERE id = ?1",
+                "SELECT id, title, created_at, updated_at, context_mode FROM sessions WHERE id = ?1",
                 params![id.to_string()],
                 |row| {
                     let id_str: String = row.get(0)?;
+                    let context_mode_str: Option<String> = row.get(4)?;
                     Ok(Session {
                         id: Uuid::parse_str(&id_str).unwrap_or_default(),
                         title: row.get(1)?,
                         created_at: row.get::<_, String>(2)?.parse().unwrap_or_default(),
                         updated_at: row.get::<_, String>(3)?.parse().unwrap_or_default(),
+                        context_mode: context_mode_str
+                            .and_then(|s| ContextMode::from_str(&s))
+                            .unwrap_or_default(),
                     })
                 },
             )

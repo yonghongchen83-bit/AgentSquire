@@ -1,0 +1,48 @@
+{
+  "nodePath": "root/Squire/planning",
+  "items": [
+    {
+      "id": "plan-1",
+      "text": "Confirm canonical Squire API contract (spec vs system_prompt mismatch)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:05:00Z"
+    },
+    {
+      "id": "plan-2",
+      "text": "Finalize adapter interface and insertion seam in send_message orchestration",
+      "done": false,
+      "status": "cancelled",
+      "note": "Superseded by root/Squire/adapter-core (task ac-1) when planning was split into implementation subnodes.",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "plan-3",
+      "text": "Decide session mode lifecycle rules and migration behavior",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:15:00Z"
+    },
+    {
+      "id": "plan-4",
+      "text": "Choose v1 storage backend strategy for structured/raw partitions",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:20:00Z"
+    },
+    {
+      "id": "plan-5",
+      "text": "Lock rejection/retry behavior (AskUser and tool exposure policies resolved)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:30:00Z"
+    },
+    {
+      "id": "plan-6",
+      "text": "Lock preserve lifecycle across restarts",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:35:00Z"
+    }
+  ]
+}

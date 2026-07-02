@@ -125,8 +125,9 @@ pub async fn get_conversation(
 pub async fn create_conversation(
     state: State<'_, AppState>,
     title: String,
+    context_mode: Option<String>,
 ) -> Result<crate::storage::conversation_store::Session, String> {
-    conversations::create_conversation_impl(state, title).await
+    conversations::create_conversation_impl(state, title, context_mode).await
 }
 
 #[tauri::command]

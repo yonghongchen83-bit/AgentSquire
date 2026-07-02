@@ -1,6 +1,6 @@
 use super::AppState;
 use crate::storage::conversation_store::{
-    NewSession, Session, SessionId, SessionSummary, SessionWithMessages,
+    ContextMode, NewSession, Session, SessionId, SessionSummary, SessionWithMessages,
 };
 use tauri::State;
 use uuid::Uuid;
@@ -26,10 +26,17 @@ pub async fn get_conversation_impl(
 pub async fn create_conversation_impl(
     state: State<'_, AppState>,
     title: String,
+    context_mode: Option<String>,
 ) -> Result<Session, String> {
+    let context_mode = match context_mode {
+        Some(s) => Some(
+            ContextMode::from_str(&s).ok_or_else(|| format!("Invalid context mode: {}", s))?,
+        ),
+        None => None,
+    };
     state
         .store
-        .create_session(NewSession { title })
+        .create_session(NewSession { title, context_mode })
         .await
         .map_err(|e| e.to_string())
 }

@@ -1,0 +1,19 @@
+{
+  "nodePath": "root/Squire/adapter-core",
+  "items": [
+    {
+      "id": "ac-1",
+      "text": "Finalize adapter interface and insertion seam in send_message orchestration (carried over from planning plan-2)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ac-2",
+      "text": "Extract LegacyContextAdapter with behavior parity tests",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    }
+  ]
+}

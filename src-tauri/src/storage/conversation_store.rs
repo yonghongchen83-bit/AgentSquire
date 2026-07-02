@@ -11,11 +11,48 @@ pub struct Session {
     pub title: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub context_mode: ContextMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewSession {
     pub title: String,
+    #[serde(default)]
+    pub context_mode: Option<ContextMode>,
+}
+
+/// Per-session context construction strategy (see ContextManagerAdapter).
+/// Chosen at session creation and immutable afterward: there is no IPC
+/// command or store method to change a session's mode once created — the
+/// only way to use a different mode is to start a new session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContextMode {
+    Legacy,
+    Squire,
+}
+
+impl Default for ContextMode {
+    fn default() -> Self {
+        Self::Legacy
+    }
+}
+
+impl ContextMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Legacy => "legacy",
+            Self::Squire => "squire",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "legacy" => Some(Self::Legacy),
+            "squire" => Some(Self::Squire),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,8 +167,19 @@ mod tests {
     fn test_session_creation() {
         let new = NewSession {
             title: "Test Session".into(),
+            context_mode: None,
         };
         assert_eq!(new.title, "Test Session");
+    }
+
+    #[test]
+    fn test_context_mode_defaults_to_legacy_and_roundtrips() {
+        assert_eq!(ContextMode::default(), ContextMode::Legacy);
+        assert_eq!(ContextMode::Legacy.as_str(), "legacy");
+        assert_eq!(ContextMode::Squire.as_str(), "squire");
+        assert_eq!(ContextMode::from_str("legacy"), Some(ContextMode::Legacy));
+        assert_eq!(ContextMode::from_str("squire"), Some(ContextMode::Squire));
+        assert!(ContextMode::from_str("unknown").is_none());
     }
 
     #[test]

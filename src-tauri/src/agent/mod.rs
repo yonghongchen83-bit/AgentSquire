@@ -5,6 +5,8 @@ use std::sync::Arc;
 
 use crate::state::config::McpServerConfig;
 
+pub mod context_adapter;
+
 pub use crate::llm::provider::ToolCall;
 pub use crate::llm::provider::ToolDefinition;
 

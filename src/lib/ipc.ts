@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import type { FileEntry, AppConfig, SessionSummary, SessionWithMessages, Session, SearchMatch, ReplaceOptions, ProviderInfo, McpServerConfig, ToolApprovalRequest, ToolInfo } from '@/types/ipc'
+import type { FileEntry, AppConfig, SessionSummary, SessionWithMessages, Session, ContextMode, SearchMatch, ReplaceOptions, ProviderInfo, McpServerConfig, ToolApprovalRequest, ToolInfo } from '@/types/ipc'
 
 type RawSessionSummary = {
   id: string
@@ -24,6 +24,7 @@ type RawSession = {
   title: string
   created_at: string
   updated_at: string
+  context_mode: ContextMode
 }
 
 type RawSessionWithMessages = {
@@ -70,6 +71,7 @@ function mapSession(raw: RawSession): Session {
     title: raw.title,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
+    contextMode: raw.context_mode,
   }
 }
 
@@ -108,6 +110,7 @@ export async function loadConfig(): Promise<AppConfig> {
 export async function saveConfig(config: Partial<AppConfig>): Promise<void> {
   const current = await loadConfig()
   return invoke('save_config', { newConfig: { ...current, ...config } })
+}
 
 export async function listAvailableTools(): Promise<ToolInfo[]> {
   return invoke('list_available_tools')
@@ -119,7 +122,6 @@ export async function setProjectPath(path: string): Promise<void> {
 
 export async function getProjectPath(): Promise<string> {
   return invoke('get_project_path')
-}
 }
 
 export async function listConversations(): Promise<SessionSummary[]> {
@@ -135,8 +137,8 @@ export async function getConversation(id: string): Promise<SessionWithMessages> 
   }
 }
 
-export async function createConversation(title: string): Promise<Session> {
-  const raw = await invoke<RawSession>('create_conversation', { title })
+export async function createConversation(title: string, contextMode?: ContextMode): Promise<Session> {
+  const raw = await invoke<RawSession>('create_conversation', { title, contextMode: contextMode ?? null })
   return mapSession(raw)
 }
 

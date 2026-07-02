@@ -1,0 +1,12 @@
+{
+  "nodePath": "root/Squire/protocol-doc-sync",
+  "items": [
+    {
+      "id": "pds-1",
+      "text": "Update context_squire_spec_v2.md to document the system-prompt superset as the canonical v1 contract",
+      "done": false,
+      "status": "todo",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    }
+  ]
+}

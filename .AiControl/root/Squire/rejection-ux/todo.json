@@ -1,0 +1,26 @@
+{
+  "nodePath": "root/Squire/rejection-ux",
+  "items": [
+    {
+      "id": "ru-1",
+      "text": "Surface compliance-failure reason + final failed AI response to user after retry exhaustion",
+      "done": false,
+      "status": "blocked",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ru-2",
+      "text": "Persist structured failure metadata (rule, reason, retry count, timestamp)",
+      "done": false,
+      "status": "blocked",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ru-3",
+      "text": "Implement preserve-list strict next-turn-only lifecycle, cleared on restart",
+      "done": false,
+      "status": "blocked",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    }
+  ]
+}

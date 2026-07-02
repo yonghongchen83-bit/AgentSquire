@@ -1,0 +1,26 @@
+{
+  "nodePath": "root/Squire/squire-storage",
+  "items": [
+    {
+      "id": "ss-1",
+      "text": "Design LanceDB schema for structured/raw partitions",
+      "done": false,
+      "status": "blocked",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ss-2",
+      "text": "Implement triplet store + vector search path",
+      "done": false,
+      "status": "blocked",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "ss-3",
+      "text": "Abstract storage interface for test doubles",
+      "done": false,
+      "status": "blocked",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    }
+  ]
+}

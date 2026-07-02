@@ -1,9 +1,10 @@
 use super::utils::{derive_session_title_from_message, is_valid_tool_schema};
 use super::AppState;
+use crate::agent::context_adapter::{ContextManagerAdapter, LegacyContextAdapter};
 use crate::agent::{self, McpProxyTool, PendingApprovals, ToolDanger, ToolRegistry};
-use crate::llm::provider::{ChatMessage, ChatRequest, ChatRole, FinishReason, StreamEvent, ToolCall};
+use crate::llm::provider::{ChatMessage, ChatRequest, FinishReason, StreamEvent, ToolCall};
 use crate::state::config::McpServerConfig;
-use crate::storage::conversation_store::{NewMessage, SessionId};
+use crate::storage::conversation_store::{ContextMode, NewMessage, SessionId};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -251,30 +252,35 @@ pub async fn send_message_impl(
             let tool_registry = Arc::new(tool_registry);
             let tool_defs = tool_registry.definitions();
 
-            let mut messages: Vec<ChatMessage> = session
-                .messages
-                .iter()
-                .map(|m| ChatMessage {
-                    role: match m.role {
-                        crate::storage::conversation_store::MessageRole::User => ChatRole::User,
-                        crate::storage::conversation_store::MessageRole::Assistant => {
-                            ChatRole::Assistant
-                        }
-                        crate::storage::conversation_store::MessageRole::System => ChatRole::System,
-                    },
-                    content: m.content.clone(),
-                    tool_call_id: None,
-                    tool_calls: None,
-                    reasoning_content: m.thinking_content.clone(),
-                })
-                .collect();
+            let mut adapter: Box<dyn ContextManagerAdapter> = match session.session.context_mode {
+                ContextMode::Legacy => Box::new(LegacyContextAdapter),
+                ContextMode::Squire => {
+                    emit_stream_status(&app_clone, "Squire context mode is not yet available");
+                    let _ = app_clone.emit(
+                        "stream-error",
+                        "Squire context mode is not yet implemented",
+                    );
+                    return;
+                }
+            };
+
+            let turn_input = match adapter.build_turn_input(&session, &tool_defs).await {
+                Ok(ti) => ti,
+                Err(e) => {
+                    emit_stream_status(&app_clone, "Failed to build turn context");
+                    let _ = app_clone.emit("stream-error", e);
+                    return;
+                }
+            };
+            let mut messages: Vec<ChatMessage> = turn_input.messages;
+            let turn_tools = turn_input.tools;
 
             loop {
                 emit_stream_status(&app_clone, "Contacting model...");
                 let request = ChatRequest {
                     model: selected_model.clone(),
                     messages: messages.clone(),
-                    tools: tool_defs.clone(),
+                    tools: turn_tools.clone(),
                     thinking_level: thinking_level.clone(),
                     temperature: None,
                     max_tokens: None,
@@ -544,25 +550,14 @@ pub async fn send_message_impl(
                                 None
                             };
 
-                            messages.push(ChatMessage {
-                                role: ChatRole::Assistant,
-                                content: String::new(),
-                                tool_call_id: Some(tc.id.clone()),
-                                tool_calls: Some(vec![ToolCall {
-                                    id: tc.id.clone(),
-                                    name: tc.name.clone(),
-                                    arguments: tc.arguments.clone(),
-                                }]),
-                                reasoning_content: reasoning,
-                            });
-
-                            messages.push(ChatMessage {
-                                role: ChatRole::Tool,
-                                content: result.output.clone(),
-                                tool_call_id: Some(tc.id.clone()),
-                                tool_calls: None,
-                                reasoning_content: None,
-                            });
+                            if let Err(e) = adapter
+                                .handle_tool_loop_step(tc, &result, reasoning, &mut messages)
+                                .await
+                            {
+                                emit_stream_status(&app_clone, "Failed to update turn context");
+                                let _ = app_clone.emit("stream-error", e);
+                                return;
+                            }
                         }
 
                         continue;
@@ -580,21 +575,14 @@ pub async fn send_message_impl(
                                 }),
                             );
                         }
-                        if !content.is_empty() {
-                            let thinking = if !full_thinking.is_empty() {
-                                Some(std::mem::take(&mut full_thinking))
-                            } else {
-                                None
-                            };
-                            let _ = store
-                                .append_message(NewMessage {
-                                    session_id: sid,
-                                    role: crate::storage::conversation_store::MessageRole::Assistant,
-                                    content,
-                                    thinking_content: thinking,
-                                })
-                                .await;
-                        }
+                        let thinking = if !full_thinking.is_empty() {
+                            Some(std::mem::take(&mut full_thinking))
+                        } else {
+                            None
+                        };
+                        let _ = adapter
+                            .finalize_turn(sid, content, thinking, store.as_ref())
+                            .await;
                         let _ = app_clone.emit("stream-done", "");
                         return;
                     }

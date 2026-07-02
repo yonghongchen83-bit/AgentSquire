@@ -56,6 +56,11 @@ impl Database {
         let _ = conn.execute("ALTER TABLE messages ADD COLUMN blocks_json TEXT", []);
         // v2: add thinking_content for LLM context (reasoning_content passback)
         let _ = conn.execute("ALTER TABLE messages ADD COLUMN thinking_content TEXT", []);
+        // v3: add context_mode for per-session ContextManagerAdapter selection (legacy|squire)
+        let _ = conn.execute(
+            "ALTER TABLE sessions ADD COLUMN context_mode TEXT NOT NULL DEFAULT 'legacy'",
+            [],
+        );
         Ok(())
     }
 }

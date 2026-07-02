@@ -1,0 +1,33 @@
+{
+  "nodePath": "root/Squire/session-mode",
+  "items": [
+    {
+      "id": "sm-1",
+      "text": "DB migration: add sessions.context_mode (default legacy)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "sm-2",
+      "text": "Extend Session/NewSession/IPC types with context_mode",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "sm-3",
+      "text": "Enforce immutable-after-first-user-turn rule (Q3)",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "sm-4",
+      "text": "Route send_message by session context_mode",
+      "done": true,
+      "status": "done",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    }
+  ]
+}

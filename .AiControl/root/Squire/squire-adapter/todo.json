@@ -1,0 +1,26 @@
+{
+  "nodePath": "root/Squire/squire-adapter",
+  "items": [
+    {
+      "id": "sa-1",
+      "text": "Implement SquireContextAdapter skeleton (build_turn_input/handle_tool_loop_step/finalize_turn)",
+      "done": false,
+      "status": "todo",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "sa-2",
+      "text": "Enforce strict Squire-only tool surface per session mode (Q5)",
+      "done": false,
+      "status": "todo",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    },
+    {
+      "id": "sa-3",
+      "text": "Implement protocol validation gates driving retry/compliance-failure classification (Q6)",
+      "done": false,
+      "status": "todo",
+      "updatedAt": "2026-07-02T00:00:00Z"
+    }
+  ]
+}

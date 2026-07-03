@@ -24,20 +24,3 @@ pub fn get_output_impl(_source: String) -> Result<Vec<OutputEntry>, String> {
 pub fn get_errors_impl() -> Result<Vec<ErrorEntry>, String> {
     Ok(Vec::new())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn get_output_returns_empty_list_by_default() {
-        let out = get_output_impl("chat".to_string()).expect("get_output should succeed");
-        assert!(out.is_empty());
-    }
-
-    #[test]
-    fn get_errors_returns_empty_list_by_default() {
-        let out = get_errors_impl().expect("get_errors should succeed");
-        assert!(out.is_empty());
-    }
-}

@@ -14,21 +14,21 @@ use crate::state::config::{self, AppConfig, McpServerConfig};
 use crate::storage::conversation_store::{ConversationStore, SessionSummary, SessionWithMessages};
 use crate::terminal::manager::PtyManager;
 
-mod config_update;
-mod conversations;
-mod diagnostics;
-mod files;
-mod git;
-mod providers_cmd;
-mod search;
-mod setup_cmd;
-mod shell;
-mod stream_control;
-mod streaming_cmd;
-mod terminal_cmd;
-mod tools_cmd;
-mod utils;
-mod watcher_cmd;
+pub mod config_update;
+pub mod conversations;
+pub mod diagnostics;
+pub mod files;
+pub mod git;
+pub mod providers_cmd;
+pub mod search;
+pub mod setup_cmd;
+pub mod shell;
+pub mod stream_control;
+pub mod streaming_cmd;
+pub mod terminal_cmd;
+pub mod tools_cmd;
+pub mod utils;
+pub mod watcher_cmd;
 pub use diagnostics::{ErrorEntry, OutputEntry};
 
 pub struct AppState {

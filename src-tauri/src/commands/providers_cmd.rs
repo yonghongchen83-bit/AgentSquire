@@ -304,42 +304,5 @@ pub async fn test_mcp_connection_impl(server: McpServerConfig) -> Result<String,
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{anthropic_messages_url, derive_models_base_url, openai_chat_url};
-
-    #[test]
-    fn derive_models_base_url_strips_chat_and_message_paths() {
-        assert_eq!(
-            derive_models_base_url("https://api.openai.com/v1/chat/completions"),
-            "https://api.openai.com/v1/chat"
-        );
-        assert_eq!(
-            derive_models_base_url("https://api.anthropic.com/v1/messages/"),
-            "https://api.anthropic.com/v1"
-        );
-    }
-
-    #[test]
-    fn openai_chat_url_appends_path_when_missing() {
-        assert_eq!(
-            openai_chat_url("https://api.openai.com/v1".to_string()),
-            "https://api.openai.com/v1/chat/completions"
-        );
-        assert_eq!(
-            openai_chat_url("https://api.openai.com/v1/responses".to_string()),
-            "https://api.openai.com/v1/responses"
-        );
-    }
-
-    #[test]
-    fn anthropic_messages_url_appends_path_when_missing() {
-        assert_eq!(
-            anthropic_messages_url("https://api.anthropic.com/v1".to_string()),
-            "https://api.anthropic.com/v1/messages"
-        );
-        assert_eq!(
-            anthropic_messages_url("https://api.anthropic.com/v1/messages".to_string()),
-            "https://api.anthropic.com/v1/messages"
-        );
-    }
-}
+#[path = "providers_cmd_test.rs"]
+mod tests;

@@ -19,7 +19,7 @@
     {
       "label": "build-rust-debug",
       "type": "shell",
-      "command": "$env:TAURI_DEV='true'; cargo build --manifest-path src-tauri/Cargo.toml",
+      "command": "cargo build --manifest-path src-tauri/Cargo.toml",
       "group": "build",
       "presentation": { "reveal": "silent", "panel": "new" }
     },
@@ -27,6 +27,12 @@
       "label": "pre-tauri-debug",
       "dependsOrder": "parallel",
       "dependsOn": ["start-vite", "build-rust-debug"],
+      "problemMatcher": []
+    },
+    {
+      "label": "clear-provider-wire-log",
+      "type": "shell",
+      "command": "Remove-Item \"$env:APPDATA\\com.squirecli.app\\provider-wire.log\" -Force -ErrorAction SilentlyContinue; Write-Output 'provider-wire.log deleted'",
       "problemMatcher": []
     }
   ]

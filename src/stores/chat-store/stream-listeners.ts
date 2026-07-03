@@ -184,17 +184,41 @@ export async function setupStreamListeners({
   cleanupFns.push(
     await onStreamError((err) => {
       const activeId = get().activeConversationId
+      const currentBlocks = get().streamingBlocks
+      const currentText = get().streamingText
+      const currentThinking = get().streamingThinkingText
+      const currentStatus = get().streamingStatus
+      // Preserve streaming content instead of clearing it, so the user
+      // doesn't lose already-rendered text/blocks when an error occurs.
       set({
         isStreaming: false,
         streamingMessageId: null,
-        streamingText: '',
-        streamingThinkingText: '',
-        streamingStatus: '',
-        streamingBlocks: [],
         pendingApprovals: [],
         pendingAskUserQuestion: null,
         error: err,
       })
+      // If we had any streaming content, keep it visible as a synthetic
+      // assistant message so the user can see what was rendered before the error.
+      if ((currentBlocks && currentBlocks.length > 0) || currentText || currentThinking) {
+        const content = [
+          currentThinking ? `[Thinking]\n${currentThinking}\n\n` : '',
+          currentText,
+        ].filter(Boolean).join('')
+        set((state) => ({
+          messages: [
+            ...state.messages,
+            {
+              id: `stream-error-${Date.now()}`,
+              sessionId: activeId || '',
+              role: 'assistant' as const,
+              content: content || '(response interrupted by error)',
+              createdAt: new Date().toISOString(),
+              blocks: currentBlocks && currentBlocks.length > 0 ? currentBlocks : undefined,
+            },
+          ],
+        }))
+      }
+      // Also reload from DB in case any messages were persisted
       if (activeId) {
         getConversation(activeId)
           .then((session) => set({ messages: session.messages }))

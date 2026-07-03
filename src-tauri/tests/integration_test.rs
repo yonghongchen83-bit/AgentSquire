@@ -11,7 +11,6 @@ fn test_modules_accessible() {
     let _ = squirecli_lib::commands::git_status;
     let _ = squirecli_lib::commands::approve_tool_call;
     let _ = squirecli_lib::commands::reject_tool_call;
-    assert!(true);
 }
 
 #[test]
@@ -55,7 +54,6 @@ fn test_config_serde_roundtrip() {
 fn test_conversation_store_trait_is_object_safe() {
     fn _use_trait(_: &dyn ConversationStore) {}
     let _ = SessionId::new_v4();
-    assert!(true);
 }
 
 #[test]

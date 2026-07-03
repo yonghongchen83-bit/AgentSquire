@@ -5,7 +5,7 @@ use crate::agent::squire::{SquireContextAdapter, SquireExploreTool, SquireInvoke
 use crate::agent::{self, McpProxyTool, PendingApprovals, PendingAskUserQuestions, ToolDanger, ToolRegistry};
 use crate::llm::provider::{ChatMessage, ChatRole, ChatRequest, FinishReason, StreamEvent, ToolCall};
 use crate::state::config::McpServerConfig;
-use crate::storage::conversation_store::{ContextMode, NewMessage, SessionId};
+use crate::storage::conversation_store::{ContextMode, MessageRole, NewMessage, SessionId};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -562,6 +562,33 @@ pub async fn send_message_impl(
                             let _ = app_clone.emit("stream-chunk", "\n\n");
                         }
 
+                        // Persist the text+thinking assistant message before tool calls
+                        // so the conversation history includes reasoning_content for DeepSeek.
+                        let msg_content = std::mem::take(&mut full_response);
+                        let msg_thinking = if !full_thinking.is_empty() {
+                            Some(std::mem::take(&mut full_thinking))
+                        } else {
+                            None
+                        };
+                        if !msg_content.is_empty() || msg_thinking.is_some() {
+                            messages.push(ChatMessage {
+                                role: ChatRole::Assistant,
+                                content: msg_content.clone(),
+                                tool_call_id: None,
+                                tool_calls: None,
+                                reasoning_content: msg_thinking.clone(),
+                            });
+                            // Save to DB immediately so reasoning_content persists across turns
+                            let _ = store
+                                .append_message(NewMessage {
+                                    session_id: sid,
+                                    role: MessageRole::Assistant,
+                                    content: msg_content,
+                                    thinking_content: msg_thinking,
+                                })
+                                .await;
+                        }
+
                         for tc in &tool_calls {
                             emit_stream_status(&app_clone, &format!("Invoking tool {}", tc.name));
                             let tool = dispatch_registry.get(&tc.name);
@@ -849,16 +876,5 @@ pub async fn send_message_impl(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn should_stream_live_chunks_true_for_legacy_mode() {
-        assert!(should_stream_live_chunks(ContextMode::Legacy));
-    }
-
-    #[test]
-    fn should_stream_live_chunks_false_for_squire_mode() {
-        assert!(!should_stream_live_chunks(ContextMode::Squire));
-    }
-}
+#[path = "streaming_cmd_test.rs"]
+mod tests;

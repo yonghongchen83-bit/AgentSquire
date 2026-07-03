@@ -1,0 +1,5 @@
+[env]
+TAURI_DEV = "true"
+
+[target.x86_64-pc-windows-msvc]
+linker = "C:\\Program Files\\LLVM\\bin\\lld-link.exe"

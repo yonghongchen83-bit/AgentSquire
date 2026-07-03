@@ -23,9 +23,19 @@ complete, which is the failure mode that rule now exists to prevent).
   `LanceDbSquireStore::record_hit` builds its own `RecordBatch` independently of
   `upsert_token`'s and silently became a no-op for 7 tests when `token-detail-endpoint` added
   a column and missed updating it.
-- **Vector search uses a deterministic hash-based embedding**, not a real embedding model —
-  there is no embedding-model provider in this codebase. Documented as an explicit, swappable
-  placeholder (`squire-storage`), not a bug.
+- **Vector search now uses a real local embedding model.** CORRECTED 2026-07-03 (by
+  `squire-observability`) — this bullet previously said vector search used "a deterministic
+  hash-based embedding, not a real embedding model," which was accurate at the time it was
+  written but is now stale. `tool-token-registry` landed the keystone swap: `embed_text`
+  (`src-tauri/src/storage/embedding.rs`) now defaults to `fastembed`'s `BGESmallENV15` model
+  (384-dim, ONNX, CPU-only, encoder-only — no generative LLM), logging `"Squire embedding:
+  initialized fastembed BGESmallENV15 (384-dim) for semantic search"` on success. The original
+  toy bag-of-words hash still exists as a fallback for offline/model-init-failure, always
+  producing the same `EMBED_DIM`-wide vector so the LanceDB schema never varies by path — it is
+  no longer the default. Any node instrumenting or reasoning about retrieval quality must check
+  which path produced a given score (real-model vs. fallback), since a word-overlap hit looks
+  identical under both but only the real model can match on meaning with zero shared words
+  (see `tool-token-registry/decisions.md`'s "make html" worked example).
 - **The Q5 strict tool boundary**: Squire mode exposes exactly three built-in tools —
   `explore(resource_type, query, num_hops, max_results)`, `token_to_detail(token_id,
   detail_level)`, `invoke(token_id, params)`. All other capabilities are discovered via

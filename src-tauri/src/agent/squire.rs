@@ -1031,32 +1031,78 @@ impl Tool for SquireExploreTool {
         // this is the Squire-as-gateway discovery surface, not memory search.
         let results = if matches!(resource_type.as_str(), "tool" | "tool_skill") {
             let ql = query.to_lowercase();
-            let mut tool_results: Vec<TokenSummary> = self
-                .tool_registry
-                .definitions()
-                .into_iter()
-                .filter(|d| {
-                    ql.is_empty()
-                        || d.name.to_lowercase().contains(&ql)
-                        || d.description.to_lowercase().contains(&ql)
-                })
-                .take(max_results as usize)
-                .map(|d| TokenSummary {
-                    token_id: d.name.clone(),
-                    token_type: "tool".to_string(),
-                    score: 1.0,
-                    short_desc: d.description.clone(),
-                    accumulated_hits: 0,
-                    hop_distance: 0,
-                    via_token_id: None,
-                })
-                .collect();
+            // obs-3: capture near-misses (tools that did NOT match the naive
+            // substring filter) for the retrieval trace. Pure observation —
+            // does not change which tools are returned. Only computed when
+            // tracing is on so the release path stays allocation-free.
+            let tracing = crate::storage::squire_trace::trace_enabled();
+            let mut tool_near_misses: Vec<serde_json::Value> = Vec::new();
+            let mut tool_results: Vec<TokenSummary> = Vec::new();
+            for d in self.tool_registry.definitions().into_iter() {
+                let matched = ql.is_empty()
+                    || d.name.to_lowercase().contains(&ql)
+                    || d.description.to_lowercase().contains(&ql);
+                if matched && (tool_results.len() as u32) < max_results {
+                    tool_results.push(TokenSummary {
+                        token_id: d.name.clone(),
+                        token_type: "tool".to_string(),
+                        score: 1.0,
+                        short_desc: d.description.clone(),
+                        accumulated_hits: 0,
+                        hop_distance: 0,
+                        via_token_id: None,
+                    });
+                } else if tracing {
+                    // Either it didn't match the substring filter, or it
+                    // matched but was truncated past max_results — both are
+                    // near-misses from the caller's perspective.
+                    tool_near_misses.push(serde_json::json!({
+                        "token_id": d.name,
+                        "token_type": "tool",
+                        "score": if matched { 1.0 } else { 0.0 },
+                        "included": false,
+                    }));
+                }
+            }
             if resource_type == "tool_skill" {
                 let skills = self
                     .store
                     .explore_memory("skill", &query, num_hops, max_results, current_turn)
                     .await;
                 tool_results.extend(skills);
+            }
+            if tracing {
+                let results_json: Vec<serde_json::Value> = tool_results
+                    .iter()
+                    .map(|t| {
+                        serde_json::json!({
+                            "token_id": t.token_id,
+                            "token_type": t.token_type,
+                            "score": t.score,
+                            "included": true,
+                        })
+                    })
+                    .collect();
+                tool_near_misses.truncate(20);
+                let payload = serde_json::json!({
+                    "branch": "tool_registry_substring",
+                    "resource_type": resource_type,
+                    "query": query,
+                    "num_hops": num_hops,
+                    "max_results": max_results,
+                    // Tools are served from the live registry by a naive
+                    // substring filter, NOT semantic embedding — flag this so
+                    // trace consumers don't confuse it with the store branch.
+                    "embedding_backend": "none-substring-match",
+                    "scoring_note": "substring-not-semantic; score fixed at 1.0 for matches",
+                    "results": results_json,
+                    "near_misses": tool_near_misses,
+                });
+                crate::storage::squire_trace::trace_explore(
+                    current_turn,
+                    Some(call_id.to_string()),
+                    payload,
+                );
             }
             tool_results
         } else {
@@ -1494,21 +1540,8 @@ impl ContextManagerAdapter for SquireContextAdapter {
         &mut self,
         tool_call: &ToolCall,
         result: &ToolResult,
-        reasoning: Option<String>,
         messages: &mut Vec<ChatMessage>,
     ) -> Result<(), String> {
-        messages.push(ChatMessage {
-            role: ChatRole::Assistant,
-            content: String::new(),
-            tool_call_id: Some(tool_call.id.clone()),
-            tool_calls: Some(vec![ToolCall {
-                id: tool_call.id.clone(),
-                name: tool_call.name.clone(),
-                arguments: tool_call.arguments.clone(),
-            }]),
-            reasoning_content: reasoning,
-        });
-
         messages.push(ChatMessage {
             role: ChatRole::Tool,
             content: result.output.clone(),

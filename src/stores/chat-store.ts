@@ -262,7 +262,29 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     cancelStreaming: () => {
-      const { activeConversationId } = get()
+      const { activeConversationId, streamingBlocks, streamingText, streamingThinkingText, messages } = get()
+      // Preserve whatever content was already rendered before clearing streaming state,
+      // so the user doesn't lose the AI's response (e.g. a question it was asking).
+      const hasContent = streamingText || streamingThinkingText || (streamingBlocks && streamingBlocks.length > 0)
+      if (hasContent) {
+        const content = [
+          streamingThinkingText ? `[Thinking]\n${streamingThinkingText}\n\n` : '',
+          streamingText,
+        ].filter(Boolean).join('') || '(response interrupted)'
+        set({
+          messages: [
+            ...messages,
+            {
+              id: `stream-cancelled-${Date.now()}`,
+              sessionId: activeConversationId || '',
+              role: 'assistant' as const,
+              content,
+              createdAt: new Date().toISOString(),
+              blocks: streamingBlocks && streamingBlocks.length > 0 ? streamingBlocks : undefined,
+            },
+          ],
+        })
+      }
       if (activeConversationId) {
         void abortStream(activeConversationId)
       }

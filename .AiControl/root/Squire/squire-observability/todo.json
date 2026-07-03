@@ -1,0 +1,89 @@
+{
+  "nodePath": "root/Squire/squire-observability",
+  "items": [
+    {
+      "id": "obs-1",
+      "text": "Add a squire_trace module + JSONL appender writing squire-trace.log, gated by a dedicated debug flag; define the event enum/schema ({turn, tool_call_id?, event, payload, ts})",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "obs-2",
+      "text": "Instrument explore_memory (both InMemorySquireStore and LanceDbSquireStore) to capture per-candidate cosine/substr_boost/final score, near-misses filtered by the score<=0.0 cut, and an embedding-path tag (real bge-small vs fallback hash); surface these up to the explore tool",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "obs-3",
+      "text": "Emit the RETRIEVAL TRACE event from SquireExploreTool::execute (query + params + ranked results + near-misses + embedding path), correlated by turn+tool_call_id",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "obs-4",
+      "text": "Emit TOKEN LIFECYCLE events in finalize_turn / ingestion paths: tokens CREATED (auto USR_* chunks + model-emitted, with id/type/short_desc/creation_turn), tokens PRESERVED (which ids), RELATIONSHIPS written (subject/predicate/object)",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "obs-5",
+      "text": "Emit FUNNEL events for token_to_detail (token_id, detail_level, returned) and invoke (token_id, params, result, is_error), reconstructing the explore->detail->invoke decision chain per turn",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "obs-6",
+      "text": "Emit a PER-TURN STORE SNAPSHOT event: token counts by type, accumulated_hits distribution, total store size",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "obs-7",
+      "text": "Add TIMING fields/events: embed-inference latency per call, explore latency, model init/download duration",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "obs-8",
+      "text": "Implement the QUERY-PROBE dev command/entry point: run an arbitrary query against the current store and dump ranked scores + near-misses + embedding path, without driving the full agent loop (see decisions.md for Tauri-command vs. headless-harness sequencing)",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "obs-9",
+      "text": "Verification: run the two recorded real queries (\"web scraping fetch url html\" -- word overlap; \"make html\" -- NO overlap, the true semantic test) and confirm the trace shows the expected scores/embedding path",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "obs-10",
+      "text": "Document the trace format + how to enable it (update env.md / a README/doc); update root/Squire/state.md Child Nodes list and root/Squire/handoff.md to reflect this node's final status",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "obs-11",
+      "text": "Turn-digest projector: read the JSONL squire-trace.log, group events by turn, format the human-readable at-a-glance per-turn block (user request; explored search terms with semantic/substring tag + top results/near-misses; defined tokens; preserved tokens; relationships linked; tools invoked), write to squire-turn.log. This is a PROJECTION over the existing trace, not a new/extra emission point. Depends on obs-3 (retrieval-trace), obs-4 (token-lifecycle), and obs-5 (funnel) events existing first -- see decisions.md's RESOLVED 'Digest surface = BOTH, log first' entry.",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "obs-12",
+      "text": "In-app Squire debug panel (React/Tauri), follow-up after squire-turn.log: render the same per-turn digest live in the app UI, reading from the same underlying trace/digest data (not a third independent format). Depends on obs-11 (the log projector) existing and being trustworthy, plus the trace data being exposed to the frontend (e.g. a new Tauri command/event).",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    }
+  ]
+}

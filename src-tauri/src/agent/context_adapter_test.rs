@@ -76,30 +76,15 @@ async fn handle_tool_loop_step_pushes_assistant_and_tool_messages() {
     };
 
     adapter
-        .handle_tool_loop_step(
-            &tool_call,
-            &result,
-            Some("reasoning text".to_string()),
-            &mut messages,
-        )
+        .handle_tool_loop_step(&tool_call, &result, &mut messages)
         .await
         .unwrap();
 
-    assert_eq!(messages.len(), 2);
-    assert!(matches!(messages[0].role, ChatRole::Assistant));
+    assert_eq!(messages.len(), 1);
+    assert!(matches!(messages[0].role, ChatRole::Tool));
+    assert_eq!(messages[0].content, "file contents");
     assert_eq!(messages[0].tool_call_id.as_deref(), Some("call-1"));
-    assert_eq!(
-        messages[0].reasoning_content.as_deref(),
-        Some("reasoning text")
-    );
-    let pushed_call = messages[0].tool_calls.as_ref().unwrap();
-    assert_eq!(pushed_call[0].name, "read_file");
-    assert_eq!(pushed_call[0].arguments, serde_json::json!({"path": "a.txt"}));
-
-    assert!(matches!(messages[1].role, ChatRole::Tool));
-    assert_eq!(messages[1].content, "file contents");
-    assert_eq!(messages[1].tool_call_id.as_deref(), Some("call-1"));
-    assert!(messages[1].tool_calls.is_none());
+    assert!(messages[0].tool_calls.is_none());
 }
 
 #[tokio::test]
@@ -118,12 +103,11 @@ async fn handle_tool_loop_step_carries_error_output_as_content() {
     };
 
     adapter
-        .handle_tool_loop_step(&tool_call, &result, None, &mut messages)
+        .handle_tool_loop_step(&tool_call, &result, &mut messages)
         .await
         .unwrap();
 
-    assert_eq!(messages[1].content, "Tool call 'run_terminal' was rejected by user");
-    assert!(messages[0].reasoning_content.is_none());
+    assert_eq!(messages[0].content, "Tool call 'run_terminal' was rejected by user");
 }
 
 struct RecordingStore {

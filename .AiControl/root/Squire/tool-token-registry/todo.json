@@ -1,0 +1,145 @@
+{
+  "nodePath": "root/Squire/tool-token-registry",
+  "items": [
+    {
+      "id": "ttr-1",
+      "text": "Read context: prompt.md/env.md in full, ../env.md and ../decisions.md (parent settled architecture/testing conventions), ../tool-token-ingestion/decisions.md (existing ingest_tool_registry trigger-point/token-ID/content-shape/staleness precedent)",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-2",
+      "text": "Read the actual code in full: squire.rs (SquireExploreTool::execute tool/tool_skill branch ~1032-1053, SquireStore trait, ingest_tool_registry), squire_lancedb.rs (token schema, embed_text at 54-72, ingest call site ~464, query call site ~613, manual cosine at 673-690, explore_memory substring boost + zero-score filtering, squire_relationships table/traversal), agent/mod.rs (ToolRegistry, ToolDefinition, commented-out built-ins ~660-672), streaming_cmd.rs (ingestion call site ~342, MCP wrapped-description construction ~279-282)",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-3",
+      "text": "Verify baseline: cargo build + cargo test --lib clean; re-confirm current pass count against handoff.md's last recorded figure",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-4",
+      "text": "Confirm (or overturn) the two OPEN sub-decisions in decisions.md before implementing: which embedding model (bge-small-en-v1.5 vs all-MiniLM-L6-v2), distance computation (manual cosine vs LanceDB native vector index); the four originally-open decisions are already resolved (see decisions.md)",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-5",
+      "text": "Swap embed_text (squire_lancedb.rs:54-72) for the chosen local embedding encoder via fastembed-rs (ONNX); bump EMBED_DIM from 64 to 384; confirm both the ingest call site (~464) and query call site (~613) re-embed correctly through the single swapped function -- this is the keystone/load-bearing change",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-6",
+      "text": "Register built-ins as tokens at conversation/session start (idempotent); embed the FULL description via the new encoder; author a short_desc for display; no LLM",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-7",
+      "text": "Register MCP tools as tokens at connect: embed the FULL raw description via the new encoder; produce the display short_desc via deterministic truncation (e.g. first sentence / ~140 chars); no LLM, no summarization, no cache",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-8",
+      "text": "Introduce tool_package / tool_resource token types (or equivalent) in the store schema/type mapping",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-9",
+      "text": "Remove the live-registry substring shortcut in SquireExploreTool (squire.rs:1032-1053); route tool/tool_skill through the store's semantic vector path like every other token type",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-10",
+      "text": "Write package -> exposes -> resource relationship triplets during ingestion",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-11",
+      "text": "Keep invoke/dispatch resolving token_id -> endpoint for execution; verify still works after discovery moves to the store",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-12",
+      "text": "Add real unit tests for all of the above, two-backend parity (InMemorySquireStore + LanceDbSquireStore) matching sibling nodes' style",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-13",
+      "text": "Verify: the recorded real failing queries (\"web scraping fetch url html\", \"scrape website data\", \"fetch url web page http request\", \"make html\") now semantically retrieve the right tokens (web_fetch; a coding/HTML token for \"make html\") via embeddings",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-14",
+      "text": "Full verification: cargo build/build --bins/build --examples/test --lib; repo-wide frontend grep to confirm scope; headless integration harness in the style of tool_token_ingestion_e2e.rs if warranted",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-15",
+      "text": "(Follow-up / optional, not required to ship this node) Switch distance computation from manual cosine (squire_lancedb.rs:673-690) to LanceDB's native vector index / ANN search",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-16",
+      "text": "Update the Squire spec/system-prompt docs if the tool-discovery contract changes",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-17",
+      "text": "Update root/Squire/state.md Child Nodes list and root/Squire/handoff.md to reflect this node's work and final status",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-10-old",
+      "text": "DROPPED (design simplified 2026-07-03): MCP batched turn-0 pre-pass LLM summarization request (structured output short_desc + keywords per tool). No longer needed -- real embeddings on the full raw description make lexical summarization unnecessary. See decisions.md.",
+      "done": false,
+      "status": "dropped",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-11-old",
+      "text": "DROPPED (design simplified 2026-07-03): global persistent MCP summary cache keyed by hash(raw_desc), cache-first registration, async + truncation fallback. Moot once summarization itself is dropped -- embedding is a cheap local ONNX call, nothing worth caching across conversations. See decisions.md.",
+      "done": false,
+      "status": "dropped",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "ttr-5-old",
+      "text": "DROPPED (design simplified 2026-07-03): add keywords field to ToolDefinition / MCP keyword generation. No longer needed -- semantic vector matching on the full description replaces keyword-based lexical matching entirely. short_description/authored short_desc for built-ins is retained (see ttr-6); MCP keyword generation specifically is dropped. See decisions.md.",
+      "done": false,
+      "status": "dropped",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    }
+  ]
+}

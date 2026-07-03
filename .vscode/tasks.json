@@ -19,7 +19,7 @@
     {
       "label": "build-rust-debug",
       "type": "shell",
-      "command": "cargo build --manifest-path src-tauri/Cargo.toml",
+      "command": "cargo build --manifest-path src-tauri/Cargo.toml --no-default-features",
       "group": "build",
       "presentation": { "reveal": "silent", "panel": "new" }
     },

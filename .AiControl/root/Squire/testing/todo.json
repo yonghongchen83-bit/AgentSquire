@@ -1,0 +1,75 @@
+{
+  "nodePath": "root/Squire/testing",
+  "items": [
+    {
+      "id": "test-1",
+      "text": "Read root/Squire/state.md's Child Nodes list and root/Squire/handoff.md in full for the complete prior implementation/verification history",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "test-2",
+      "text": "Read root/Squire/env.md and root/Squire/decisions.md for settled architecture facts and testing-methodology conventions this phase must respect",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "test-3",
+      "text": "Establish baseline: cargo build/build --bins/build --examples/test --lib, npx tsc --noEmit, npm test -- --run; confirm current pass counts and that only the known pre-existing failures remain",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "test-4",
+      "text": "Review the uncommitted working-tree changes (context_adapter.rs, context_adapter_test.rs, squire.rs, streaming_cmd.rs, openai.rs, chat-store.ts) to understand whether they affect this phase's coverage inventory",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "test-5",
+      "text": "Inventory existing test coverage across adapter/storage/retrieval/streaming stages; identify concrete gaps (backend parity drift, missing negative-path coverage, happy-path-only e2e specs, untested frontend surfaces)",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "test-6",
+      "text": "Document proportionality decisions in decisions.md before writing test code -- what gaps are worth closing vs. deliberately declined",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "test-7",
+      "text": "Close identified real gaps with new/strengthened tests, following two-backend parity and existing tiering conventions",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "test-8",
+      "text": "Audit e2e/specs/*.test.ts for the non-polling-assertion flakiness pattern session-ux-polish found once; fix any further instances found",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "test-9",
+      "text": "Full re-verification after changes: cargo build/test --lib, npx tsc --noEmit, npm test -- --run, plus any relevant headless example/e2e reruns",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "test-10",
+      "text": "Update root/Squire/state.md Child Nodes list and root/Squire/handoff.md to reflect this phase's work, final build/test counts, and any newly-observed-but-declined follow-up gaps",
+      "done": false,
+      "status": "open",
+      "updatedAt": "2026-07-03T00:00:00Z"
+    }
+  ]
+}

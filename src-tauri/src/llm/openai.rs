@@ -189,15 +189,20 @@ impl LlmProvider for OpenAIProvider {
                     "role": role,
                     "content": m.content,
                 });
-                if let Some(ref id) = m.tool_call_id {
-                    msg["tool_call_id"] = json!(id);
-                }
-                // DeepSeek rejects reasoning_content on messages that also have
-                // tool_calls — only include it on plain content-bearing messages.
-                if let Some(ref rc) = m.reasoning_content {
-                    if m.tool_calls.is_none() {
-                        msg["reasoning_content"] = json!(rc);
+                // tool_call_id is only valid on `role: "tool"` messages per the
+                // OpenAI/DeepSeek spec. Assistant messages must not carry it, or
+                // strict providers reject the request with a 400.
+                if matches!(m.role, ChatRole::Tool) {
+                    if let Some(ref id) = m.tool_call_id {
+                        msg["tool_call_id"] = json!(id);
                     }
+                }
+                // DeepSeek requires reasoning_content to be passed back on
+                // the same assistant message that originally carried it.
+                // Now that we emit one unified message (content + reasoning
+                // + tool_calls together), always include reasoning_content.
+                if let Some(ref rc) = m.reasoning_content {
+                    msg["reasoning_content"] = json!(rc);
                 }
                 if let Some(ref calls) = m.tool_calls {
                     let arr: Vec<serde_json::Value> = calls
@@ -388,6 +393,11 @@ impl LlmProvider for OpenAIProvider {
             let mut sse_buffer = String::new();
             let mut response_tool_args: HashMap<String, (String, String)> = HashMap::new();
             let mut pending_tool_calls: HashMap<usize, PendingToolCall> = HashMap::new();
+            // Accumulate the streamed output so the wire log records the response
+            // as one continuous body instead of one line per token-sized SSE chunk.
+            let mut acc_content = String::new();
+            let mut acc_reasoning = String::new();
+            let mut acc_tool_calls: Vec<String> = Vec::new();
             let mut stream = resp.bytes_stream();
             while let Some(chunk_result) = stream.next().await {
                 if done {
@@ -412,12 +422,6 @@ impl LlmProvider for OpenAIProvider {
 
                     if line.is_empty() {
                         continue;
-                    }
-
-                    if verbose {
-                        let raw_line_log = format!("<<< SSE RAW LINE: {:?}", line);
-                        append_wire_log(&raw_line_log);
-                        tx.send(StreamEvent::Log(raw_line_log)).await.ok();
                     }
 
                     if line == "data: [DONE]" {
@@ -449,6 +453,7 @@ impl LlmProvider for OpenAIProvider {
                             match event_type {
                                 "response.output_text.delta" => {
                                     if let Some(text) = val["delta"].as_str() {
+                                        acc_content.push_str(text);
                                         tx.send(StreamEvent::Chunk(text.to_string())).await.ok();
                                     }
                                 }
@@ -456,6 +461,7 @@ impl LlmProvider for OpenAIProvider {
                                 | "response.reasoning_text.delta"
                                 | "response.reasoning_summary.delta" => {
                                     if let Some(text) = val["delta"].as_str() {
+                                        acc_reasoning.push_str(text);
                                         tx.send(StreamEvent::Thinking(text.to_string())).await.ok();
                                     }
                                 }
@@ -568,6 +574,10 @@ impl LlmProvider for OpenAIProvider {
                                                         name,
                                                         arguments: args_json,
                                                     };
+                                                    acc_tool_calls.push(format!(
+                                                        "{}({})",
+                                                        tool_call.name, tool_call.arguments
+                                                    ));
                                                     tx.send(StreamEvent::ToolCall(tool_call))
                                                         .await
                                                         .ok();
@@ -597,10 +607,12 @@ impl LlmProvider for OpenAIProvider {
                         let reasoning_text = delta["reasoning_content"].as_str().unwrap_or("");
 
                         if !content_text.is_empty() {
+                            acc_content.push_str(content_text);
                             tx.send(StreamEvent::Chunk(content_text.to_string()))
                                 .await
                                 .ok();
                         } else if !reasoning_text.is_empty() {
+                            acc_reasoning.push_str(reasoning_text);
                             tx.send(StreamEvent::Thinking(reasoning_text.to_string()))
                                 .await
                                 .ok();
@@ -622,6 +634,10 @@ impl LlmProvider for OpenAIProvider {
                             };
                             if matches!(reason, FinishReason::ToolCalls) {
                                 for tool_call in flush_pending_tool_calls(&mut pending_tool_calls) {
+                                    acc_tool_calls.push(format!(
+                                        "{}({})",
+                                        tool_call.name, tool_call.arguments
+                                    ));
                                     tx.send(StreamEvent::ToolCall(tool_call)).await.ok();
                                 }
                             }
@@ -668,6 +684,35 @@ impl LlmProvider for OpenAIProvider {
                         }
                     }
                 }
+            }
+
+            // Log the whole response as one continuous body, replacing the
+            // per-chunk SSE line spam above.
+            if verbose {
+                let mut body = String::new();
+                if !acc_reasoning.is_empty() {
+                    body.push_str("[reasoning]\n");
+                    body.push_str(acc_reasoning.trim_end());
+                    body.push('\n');
+                }
+                if !acc_content.is_empty() {
+                    body.push_str("[content]\n");
+                    body.push_str(acc_content.trim_end());
+                    body.push('\n');
+                }
+                if !acc_tool_calls.is_empty() {
+                    body.push_str("[tool_calls]\n");
+                    for tc in &acc_tool_calls {
+                        body.push_str("- ");
+                        body.push_str(tc);
+                        body.push('\n');
+                    }
+                }
+                let body = body.trim_end();
+                append_wire_log(&format!(
+                    "<<< RESPONSE BODY (collapsed)\n{}",
+                    if body.is_empty() { "(no content)" } else { body }
+                ));
             }
 
             if !emitted_done {

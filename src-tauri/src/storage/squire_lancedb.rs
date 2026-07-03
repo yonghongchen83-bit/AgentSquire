@@ -10,16 +10,15 @@
 //! allow (see `SquireStore`'s doc comment) — this module is the production
 //! implementation, not a replacement for the test double.
 //!
-//! Embedding scope note: no embedding-model provider is wired into this
-//! codebase yet (that's out of scope for this node — see `env.md`). Vector
-//! search here is powered by a deterministic, dependency-free hash-based
-//! bag-of-words embedding (`embed_text`) so `explore_memory` performs a
-//! real cosine-similarity ranking today rather than the flat substring
-//! filter `InMemorySquireStore` uses. Swapping in a real embedding model
-//! later only requires changing `embed_text`'s body — the `SquireStore`
-//! trait, callers, and table schema (fixed 64-dim float32 vector) are
-//! unaffected as long as the new embedding is also 64-dim, or the column
-//! is migrated.
+//! Embedding note: vector search here is powered by a real local text
+//! embedding model (fastembed `BGESmallENV15`, 384-dim) via
+//! `crate::storage::embedding::embed_text`, with a deterministic
+//! bag-of-words hash fallback if the model can't initialize (offline first
+//! run / download failure). The table schema is a fixed `EMBED_DIM`-dim
+//! float32 vector; if an on-disk tokens table was created with a different
+//! embedding width (e.g. the historical 64-dim toy embedding), `open()`
+//! drops and recreates it (data loss is acceptable — the store is
+//! per-conversation / dev-scoped).
 
 use std::sync::Arc;
 
@@ -38,38 +37,13 @@ use crate::agent::squire::{
     ToolEndpoint,
 };
 use crate::storage::conversation_store::SessionId;
-
-const EMBED_DIM: usize = 64;
+use crate::storage::embedding::{embed_text, EMBED_DIM};
 
 const TOKENS_TABLE: &str = "squire_tokens";
 const RELATIONSHIPS_TABLE: &str = "squire_relationships";
 const TURNS_TABLE: &str = "squire_turns";
 const COMPLIANCE_FAILURES_TABLE: &str = "squire_compliance_failures";
 const RAW_PARTITION_TABLE: &str = "squire_raw_partition";
-
-/// Deterministic hash-based bag-of-words embedding. Not semantically
-/// meaningful the way a real embedding model would be, but stable,
-/// dependency-free, and sufficient to exercise a genuine vector-search path
-/// end to end (see module doc for the swap-out plan).
-fn embed_text(text: &str) -> Vec<f32> {
-    let mut vec = vec![0f32; EMBED_DIM];
-    for token in text.to_lowercase().split_whitespace() {
-        let mut hash: u64 = 1469598103934665603; // FNV offset basis
-        for byte in token.bytes() {
-            hash ^= byte as u64;
-            hash = hash.wrapping_mul(1099511628211); // FNV prime
-        }
-        let idx = (hash as usize) % EMBED_DIM;
-        vec[idx] += 1.0;
-    }
-    let norm: f32 = vec.iter().map(|v| v * v).sum::<f32>().sqrt();
-    if norm > 0.0 {
-        for v in vec.iter_mut() {
-            *v /= norm;
-        }
-    }
-    vec
-}
 
 fn tokens_schema() -> Arc<ArrowSchema> {
     Arc::new(ArrowSchema::new(vec![
@@ -199,7 +173,28 @@ impl LanceDbSquireStore {
             .await
             .map_err(|e| e.to_string())?;
 
-        if !existing.iter().any(|n| n == TOKENS_TABLE) {
+        if existing.iter().any(|n| n == TOKENS_TABLE) {
+            // Dimension migration: a tokens table created under an older
+            // embedding width (e.g. the historical 64-dim toy embedding) is
+            // incompatible with the current `EMBED_DIM`-dim schema — writes
+            // and vector reads would fail. Detect a mismatch and drop+recreate
+            // the table (data loss accepted: this store is per-conversation /
+            // dev-scoped, and rows self-heal on the next ingestion).
+            if Self::tokens_embedding_dim(&conn).await != Some(EMBED_DIM) {
+                log::warn!(
+                    "Squire storage: existing '{TOKENS_TABLE}' table embedding dimension \
+                     does not match EMBED_DIM ({EMBED_DIM}); dropping and recreating it \
+                     (token rows will repopulate on next ingestion)"
+                );
+                conn.drop_table(TOKENS_TABLE)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                conn.create_empty_table(TOKENS_TABLE, tokens_schema())
+                    .execute()
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+        } else {
             conn.create_empty_table(TOKENS_TABLE, tokens_schema())
                 .execute()
                 .await
@@ -240,6 +235,19 @@ impl LanceDbSquireStore {
             conn,
             write_lock: Mutex::new(()),
         })
+    }
+
+    /// Reads the fixed-size-list width of the existing tokens table's
+    /// `embedding` column, or `None` if the table/column can't be read (in
+    /// which case `open()` treats it as a mismatch and recreates the table).
+    async fn tokens_embedding_dim(conn: &Connection) -> Option<usize> {
+        let table = conn.open_table(TOKENS_TABLE).execute().await.ok()?;
+        let schema = table.schema().await.ok()?;
+        let field = schema.field_with_name("embedding").ok()?;
+        match field.data_type() {
+            DataType::FixedSizeList(_, dim) => Some(*dim as usize),
+            _ => None,
+        }
     }
 
     async fn tokens(&self) -> Result<Table, String> {
@@ -620,6 +628,16 @@ impl SquireStore for LanceDbSquireStore {
         let mut all_rows: std::collections::HashMap<String, StoredTokenRow> =
             std::collections::HashMap::new();
         let mut scored: Vec<TokenSummary> = Vec::new();
+        // obs-2: capture the per-candidate scoring breakdown for tracing.
+        // `included_detail` holds cosine/substr_boost keyed by token_id for
+        // candidates that survived the score<=0 cut (direct matches only —
+        // traversal-discovered tokens have no cosine of their own).
+        // `near_misses` holds the candidates dropped by the score<=0 filter,
+        // which are invisible in the returned Vec. This is pure observation
+        // and does not alter scoring/filtering below.
+        let mut included_detail: std::collections::HashMap<String, (f32, f32)> =
+            std::collections::HashMap::new();
+        let mut near_misses: Vec<serde_json::Value> = Vec::new();
         for batch in &batches {
             let Some(ids_col) = batch.column_by_name("token_id") else {
                 continue;
@@ -670,15 +688,21 @@ impl SquireStore for LanceDbSquireStore {
                     continue;
                 }
 
+                // Score components captured separately for tracing (obs-2);
+                // `sim`/`substr_boost` are None for the empty-query path where
+                // score is fixed at 1.0 with no semantic/lexical component.
+                let mut sim_component: Option<f32> = None;
+                let mut boost_component: Option<f32> = None;
                 let score = match (&query_embedding, embeddings) {
                     (Some(qe), Some(embeds)) => {
                         let row_val = embeds.value(i);
                         let row_arr = row_val.as_any().downcast_ref::<Float32Array>().unwrap();
                         let row_vec: Vec<f32> = row_arr.values().to_vec();
                         let sim = cosine_similarity(qe, &row_vec);
-                        // Fall back to substring match boost so exact-name
-                        // hits still surface even if the toy embedding's
-                        // hash collisions dilute cosine score.
+                        // Substring match boost so exact-name hits still
+                        // surface even when semantic similarity alone ranks
+                        // them low (a query that lexically names a token but
+                        // isn't semantically close to its short_desc).
                         let substr_boost =
                             if token_id.to_lowercase().contains(&query.to_lowercase())
                                 || short_desc.to_lowercase().contains(&query.to_lowercase())
@@ -687,13 +711,29 @@ impl SquireStore for LanceDbSquireStore {
                             } else {
                                 0.0
                             };
+                        sim_component = Some(sim);
+                        boost_component = Some(substr_boost);
                         sim + substr_boost
                     }
                     _ => 1.0,
                 };
 
                 if query_embedding.is_some() && score <= 0.0 {
+                    // obs-2: record the dropped candidate (a near-miss). Capped
+                    // later at emit time to keep JSONL lines a sane size.
+                    near_misses.push(serde_json::json!({
+                        "token_id": token_id,
+                        "token_type": token_type,
+                        "cosine": sim_component,
+                        "substr_boost": boost_component,
+                        "score": score,
+                        "included": false,
+                    }));
                     continue;
+                }
+
+                if let (Some(s), Some(b)) = (sim_component, boost_component) {
+                    included_detail.insert(token_id.to_string(), (s, b));
                 }
 
                 scored.push(TokenSummary {
@@ -764,7 +804,71 @@ impl SquireStore for LanceDbSquireStore {
             })
             .collect();
         crate::agent::squire::sort_by_score_then_priority(&mut scored, &priorities);
-        scored.truncate(max_results.max(1) as usize);
+
+        let keep = max_results.max(1) as usize;
+        // obs-2: candidates that scored/traversed in but got cut by the top-N
+        // truncation are also near-misses. Record them (with their score
+        // breakdown when they were direct matches) before truncating.
+        if scored.len() > keep {
+            for t in &scored[keep..] {
+                let (cosine, boost) = included_detail
+                    .get(&t.token_id)
+                    .map(|(s, b)| (Some(*s), Some(*b)))
+                    .unwrap_or((None, None));
+                near_misses.push(serde_json::json!({
+                    "token_id": t.token_id,
+                    "token_type": t.token_type,
+                    "cosine": cosine,
+                    "substr_boost": boost,
+                    "score": t.score,
+                    "hop_distance": t.hop_distance,
+                    "via_token_id": t.via_token_id,
+                    "included": false,
+                }));
+            }
+        }
+
+        scored.truncate(keep);
+
+        // obs-2/obs-3: emit the RETRIEVAL trace for the store branch. This is
+        // pure observation — `scored` (the return value) is unchanged. The
+        // tool_call_id is not plumbed into the SquireStore trait (correlation
+        // is by `turn` at this level); the substring branch in
+        // SquireExploreTool traces its own call_id.
+        if crate::storage::squire_trace::trace_enabled() {
+            let results: Vec<serde_json::Value> = scored
+                .iter()
+                .map(|t| {
+                    let (cosine, boost) = included_detail
+                        .get(&t.token_id)
+                        .map(|(s, b)| (Some(*s), Some(*b)))
+                        .unwrap_or((None, None));
+                    serde_json::json!({
+                        "token_id": t.token_id,
+                        "token_type": t.token_type,
+                        "cosine": cosine,
+                        "substr_boost": boost,
+                        "score": t.score,
+                        "hop_distance": t.hop_distance,
+                        "via_token_id": t.via_token_id,
+                        "included": true,
+                    })
+                })
+                .collect();
+            near_misses.truncate(20);
+            let payload = serde_json::json!({
+                "branch": "store_semantic",
+                "resource_type": resource_type,
+                "query": query,
+                "num_hops": num_hops,
+                "max_results": max_results,
+                "embedding_backend": crate::storage::embedding::active_backend(),
+                "results": results,
+                "near_misses": near_misses,
+            });
+            crate::storage::squire_trace::trace_explore(current_turn, None, payload);
+        }
+
         scored
     }
 

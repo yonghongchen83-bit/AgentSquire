@@ -54,11 +54,14 @@ pub trait ContextManagerAdapter: Send + Sync {
 
     /// Called once per tool call after it has been executed (and approved,
     /// if destructive), before looping back into `provider.chat()`.
+    /// The tool_call assistant message itself is pushed by the
+    /// `FinishReason::ToolCalls` handler in streaming_cmd.rs (which includes
+    /// content + reasoning_content + all tool_calls in ONE message), so
+    /// this adapter method only needs to push the tool result(s).
     async fn handle_tool_loop_step(
         &mut self,
         tool_call: &ToolCall,
         result: &ToolResult,
-        reasoning: Option<String>,
         messages: &mut Vec<ChatMessage>,
     ) -> Result<(), String>;
 
@@ -116,21 +119,8 @@ impl ContextManagerAdapter for LegacyContextAdapter {
         &mut self,
         tool_call: &ToolCall,
         result: &ToolResult,
-        reasoning: Option<String>,
         messages: &mut Vec<ChatMessage>,
     ) -> Result<(), String> {
-        messages.push(ChatMessage {
-            role: ChatRole::Assistant,
-            content: String::new(),
-            tool_call_id: Some(tool_call.id.clone()),
-            tool_calls: Some(vec![ToolCall {
-                id: tool_call.id.clone(),
-                name: tool_call.name.clone(),
-                arguments: tool_call.arguments.clone(),
-            }]),
-            reasoning_content: reasoning,
-        });
-
         messages.push(ChatMessage {
             role: ChatRole::Tool,
             content: result.output.clone(),

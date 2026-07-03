@@ -5,3 +5,5 @@ build/
 e2e-results/
 *.tar.gz
 *.zip
+.fastembed_cache/
+.claude/

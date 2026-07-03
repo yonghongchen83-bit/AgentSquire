@@ -25,9 +25,12 @@ Squire epic (`root/Squire`) — building a swappable `ContextManagerAdapter` so 
 | `session-ux-polish` | Completed 2026-07-03 — closes both small UX follow-ups `session-creation-ux` surfaced: toggle persistence across remounts, and an active-conversation chat-header mode indicator. |
 | `hit-count-fidelity` | Completed 2026-07-03 — closes `retrieval-fidelity/todo.json` rf-13 (fuller hit-count-event fidelity). |
 | `token-detail-endpoint` | Completed 2026-07-03 — closes the endpoint-carrying `TokenDetail`/`invoke()` extension `tool-token-ingestion` deliberately left out of scope. |
-| `memory-alias-fix` | **Completed 2026-07-03** — closes the `"memory"`-alias/`system_referential` gap `user-input-chunking` flagged. See below for detail. |
+| `memory-alias-fix` | Completed 2026-07-03 — closes the `"memory"`-alias/`system_referential` gap `user-input-chunking` flagged. See below for detail. |
+| `testing` | **Not started, created 2026-07-03** — new dedicated testing/QA phase for the Squire context-mode pipeline as a whole (adapter, storage, retrieval, streaming). Not a gap closure; a consolidation/hardening pass over the cumulative test coverage the 17 completed nodes above built up incrementally. See below for detail. |
+| `tool-token-registry` | **Planned, created 2026-07-03** — new node to fix a verified tool-discovery break: `SquireExploreTool`'s live-registry contiguous-substring filter fails multi-word natural-language queries that `explore_memory`'s existing word-level matching would catch. Unifies built-in and MCP tool registration onto one `SquireStore` schema, register-before-explore. Design later simplified to pivot on a real local embedding model swap (`fastembed BGESmallENV15`, 384-dim) as the keystone change. See below for detail. |
+| `squire-observability` | **Planned, created 2026-07-03** — new node building debug/observability facilities for the Squire semantic loop: a structured `squire-trace.log` (JSONL) for retrieval scoring (cosine/substr_boost breakdown, near-misses, embedding-path tag), token lifecycle, the explore->detail->invoke funnel, per-turn store snapshots, and timing, plus a query-probe dev command. A DEPENDENCY of `testing` (provides the instrumentation tests will assert against); closely related to `tool-token-registry` (tags real-vs-fallback embedding path). See below for detail. |
 
-**Every node in the originally-planned Child Nodes list, plus eleven follow-up nodes (`retrieval-fidelity`, `stream-sigil-fix`, `ask-user-loop`, `tool-token-ingestion`, `session-creation-ux`, `user-input-chunking`, `raw-partition-storage`, `session-ux-polish`, `hit-count-fidelity`, `token-detail-endpoint`, `memory-alias-fix`), is now complete.** Every gap `protocol-doc-sync` ever flagged is resolved, both optional UX follow-ups `session-creation-ux` surfaced are resolved, `retrieval-fidelity`'s own flagged follow-up (rf-13) is resolved, the endpoint-carrying `TokenDetail` extension is resolved (full implementation), and the `"memory"`-alias gap is now resolved too. **The residual backlog is down to exactly one item, and it is intentionally staying open, not pending closure:** the nested-`§!`-citation residual `hit-count-fidelity` flagged. The user was asked directly and chose to leave it alone ("ignoring nesting feels more right to me") rather than have it fixed — this is a final product decision, not a deferral. **The epic is otherwise ready for closeout at the `root/Squire` level.**
+**Every node in the originally-planned Child Nodes list, plus eleven follow-up nodes (`retrieval-fidelity`, `stream-sigil-fix`, `ask-user-loop`, `tool-token-ingestion`, `session-creation-ux`, `user-input-chunking`, `raw-partition-storage`, `session-ux-polish`, `hit-count-fidelity`, `token-detail-endpoint`, `memory-alias-fix`), is complete.** Every gap `protocol-doc-sync` ever flagged is resolved, both optional UX follow-ups `session-creation-ux` surfaced are resolved, `retrieval-fidelity`'s own flagged follow-up (rf-13) is resolved, the endpoint-carrying `TokenDetail` extension is resolved (full implementation), and the `"memory"`-alias gap is resolved too. **The residual functional backlog is down to exactly one item, and it is intentionally staying open, not pending closure:** the nested-`§!`-citation residual `hit-count-fidelity` flagged. The user was asked directly and chose to leave it alone ("ignoring nesting feels more right to me") rather than have it fixed — this is a final product decision, not a deferral. **A new, separate `testing` phase node has now been created** to consolidate and harden test coverage across the whole pipeline before considering the epic fully closed out at this level — see its own `prompt.md`/`env.md`/`todo.json` for full scope.
 
 **`.AiControl/.current`** now points to `root/Squire/memory-alias-fix`. Whoever picks up next should repoint it to wherever they choose to work — there is no more unclaimed, intended-to-be-closed backlog left in this epic.
 
@@ -252,24 +255,140 @@ more right to me" once the gap was explained. This is treated as a final, delibe
 decision — not a deferral — documented in `memory-alias-fix/decisions.md` and left unchanged
 in `hit-count-fidelity/decisions.md`/`state.md`.
 
+## What `testing` is for (new node this session, not started)
+
+Functionally, the epic's implementation backlog is empty (see above). But no prior node's job
+was to step back and evaluate the *cumulative* test suite as a whole — each node only added
+tests for its own scoped change. `testing` (`root/Squire/testing`) is a new, dedicated
+phase node created to do exactly that: inventory existing coverage across the pipeline's four
+stages (adapter, storage, retrieval, streaming), identify concrete real gaps (two-backend
+`SquireStore` parity drift, missing negative-path coverage, happy-path-only e2e specs,
+untested frontend surfaces), close them following the epic's already-established testing
+conventions, and finish the `e2e/specs/*.test.ts` flakiness audit `session-ux-polish` started
+but explicitly left incomplete. It is a QA/hardening pass, not a new feature or gap-closure
+node — see `testing/prompt.md` for full scope and explicit out-of-scope boundaries (in
+particular: it must not reopen the nested-`§!`-citation residual `hit-count-fidelity`/
+`memory-alias-fix` deliberately left as a permanent simplification).
+
+## What `tool-token-registry` is for (new node this session, planned, not started; design
+## SIMPLIFIED 2026-07-03 after discussion — see below)
+
+A verified, pre-diagnosed root cause: `SquireExploreTool::execute` (`src-tauri/src/agent/
+squire.rs:1032-1053`) serves `resource_type="tool"|"tool_skill"` from the live `ToolRegistry`
+using a **contiguous-substring filter** over the *entire* lowercased query, not the word-level
+bag-of-words matching every other token type gets via `explore_memory`. In a real session the
+model issued multi-word descriptive queries ("web scraping fetch url html", "scrape website
+data", "fetch url web page http request") against `web_fetch`'s description ("Fetch a web page
+and return its HTML content. Useful for reading documentation, checking APIs, or scraping web
+content.", `agent/mod.rs:513-515`) — none matched as a contiguous substring even though every
+individual word (fetch/web/html/scraping) appears in the description. Routing tool discovery
+through the store's matching path (instead of the live-registry shortcut) would have fixed this
+exact failure. This root-cause diagnosis is unchanged and still the node's motivating problem.
+
+**The design was simplified after discussion.** The originally-planned MCP tool-description
+pipeline — a separate turn-0 LLM pre-pass batching descriptions into
+`[{tool, short_desc, keywords[]}]`, plus a global persistent summary cache keyed by
+`hash(raw_desc)` — is now DROPPED. The only reason to summarize/keyword-extract descriptions
+was to make them findable under a lexical/word-level matcher; once a real local embedding model
+(encoder) is bundled, LanceDB does true semantic vector matching directly on the FULL raw
+description, making summarization unnecessary. **The design now pivots around one keystone
+change: bundle a small local embedding model** (e.g. `bge-small-en-v1.5` or
+`all-MiniLM-L6-v2`, both 384-dim, via `fastembed-rs`/ONNX — encoder only, no generative LLM),
+replacing the toy 64-dim bag-of-words `embed_text` (`squire_lancedb.rs:54-72`, bumping
+`EMBED_DIM` to 384). `embed_text` is already the single function called at both ingest and
+query time, so this one swap covers both. This reverses the node's original scoping, which had
+explicitly kept real-embedding-model integration out of scope for a future node — that decision
+is now overturned, confirmed via a worked "make html" example (retrieving a relevant
+coding/HTML token with zero shared words with the query — something only real semantic
+embeddings, not any lexical/keyword scheme, can do).
+
+`tool-token-registry` (`root/Squire/tool-token-registry`) implements the full, simplified fix:
+built-in and MCP tools still converge on one `SquireStore` schema and are discovered through
+the same semantic-vector path as every other token (register-before-explore, unchanged
+principle) — closing the broken discovery itself, missing package/resource granularity (all
+tools are a flat `token_type="tool"`), and the built-in/MCP registration asymmetry. Built-ins
+register at conversation/session start (idempotent, authored `short_desc`, full description
+embedded, no LLM); MCP tools register at connect by embedding the FULL raw description directly
+(no LLM, no summarization, no cache), with the display `short_desc` produced by deterministic
+truncation. `SquireExploreTool`'s live-registry substring shortcut is removed for tool/
+tool_skill, rerouted through the store's semantic path; `invoke()`/dispatch's
+`token_id -> endpoint` resolution (from `token-detail-endpoint`) is explicitly kept unchanged —
+discovery moves to the store, execution stays wired to the registry. This node builds directly
+on `tool-token-ingestion`'s existing `ingest_tool_registry` free function and per-turn trigger
+point in `streaming_cmd.rs`, changing *when*/*how* registration happens for discovery purposes
+rather than replacing the underlying `upsert_token`-based write mechanism. See `tool-token-
+registry/prompt.md` for the full verified problem statement (with file:line citations) and the
+simplified architecture; `tool-token-registry/decisions.md` for the four originally-open design
+decisions now RESOLVED (MCP summarization mechanism -> dropped; generative LLM/turn-0 pre-pass
+-> dropped; cache location -> moot; embedding-model scope -> reversed, now in scope as the
+keystone, with the "make html" worked example) plus two new OPEN sub-decisions (which embedding
+model: `bge-small-en-v1.5` vs. `all-MiniLM-L6-v2`; distance computation: keep manual full-scan
+cosine vs. switch to LanceDB's native vector index) flagged for confirmation before
+implementation starts.
+
+## What `squire-observability` is for (new node this session, planned, not started)
+
+Debug/observability facilities for the Squire "semantic loop" itself, motivated directly by the
+`testing` node's own needs: that node's test suite is going to grow more complex and span other
+parts of the design spec, and correctness of semantic retrieval / token accretion cannot be
+verified by eyeballing `provider-wire.log` — that log already shows an `explore()` call's query
+args and the result handed back to the LLM, but nothing about the internal scoring, near-misses,
+or which embedding path produced a given score. **This node is a DEPENDENCY of `testing`** — it
+provides the instrumentation a growing test suite needs to assert against, not the tests
+themselves. It is also closely related to `tool-token-registry`, which just landed the real
+`fastembed BGESmallENV15` (384-dim) embedding model this node's own embedding-path tagging is
+built to distinguish from the toy bag-of-words fallback (critical because a word-overlap hit
+looks identical under both paths, but only the real model can retrieve a token with zero shared
+words with the query, per that node's "make html" worked example).
+
+**Design.** A dedicated structured trace, `squire-trace.log`, written as JSONL (one `{turn,
+tool_call_id?, event, payload, ts}` object per line, separate from `provider-wire.log`), gated
+behind a dedicated debug flag (recommended over reusing `verbose_logging`, so trace can be
+enabled without also turning on full wire-log verbosity). Six event categories, in priority
+order: (1) **retrieval trace** — per `explore()` call, every candidate's `cosine`/`substr_boost`
+score breakdown, hop distance/via-token provenance, and — critically — the NEAR-MISSES currently
+discarded silently at `LanceDbSquireStore::explore_memory`'s `score<=0.0` cut
+(`squire_lancedb.rs:704`), each tagged with which embedding path scored it; (2) **token
+lifecycle** — created/preserved/relationships-written per turn; (3) **funnel** —
+`token_to_detail`/`invoke` calls, reconstructing the explore->detail->invoke decision chain; (4)
+**per-turn store snapshot** — token counts by type, `accumulated_hits` distribution; (5)
+**timing** — embed-inference latency, explore latency, model init/download duration; (6) a
+**query-probe dev command** — run an arbitrary query against the current store and dump ranked
+scores + near-misses + embedding path without driving the whole agent, recommended as a Tauri
+command (usable from a future dev panel) with an acceptable fallback of a headless example
+harness first if new IPC plumbing would otherwise block higher-value instrumentation work.
+
+**While seeding this node, found and corrected a stale fact in this file's own `env.md`** — its
+"Vector search uses a deterministic hash-based embedding, not a real embedding model" bullet
+predated `tool-token-registry`'s completed real-embedding-model swap and was left unfixed; it now
+describes the real `fastembed BGESmallENV15` default path plus its bag-of-words fallback for
+offline/init-failure, per the write-back obligation (a durable, epic-wide fact belongs in the
+parent, not only in a leaf node's own files). See `squire-observability/prompt.md` for the full
+task specification and verified file:line code citations; `squire-observability/decisions.md`
+for the three open decisions (debug-flag mechanism, JSONL vs. text format, Tauri-command vs.
+headless-harness query-probe surface) with recommendations recorded for each; `squire-
+observability/todo.json` for the ten-item (`obs-1`..`obs-10`) implementation breakdown.
+
 ## Should the epic be closed out?
 
-**Yes — the epic is ready for closeout, and the one remaining backlog item is not pending
-work.** Every gap `protocol-doc-sync` ever flagged is resolved (sa-5/ask_user, graph
-traversal, hit-count scoring, user-input auto-chunking, raw-partition storage). Every gap
-flagged by `squire-adapter` (sa-4, sa-5) and `squire-storage` (ss-9, and the endpoint-carrying
-`TokenDetail` extension) is resolved. Both optional UX follow-ups `session-creation-ux`
-surfaced are resolved. `retrieval-fidelity`'s own flagged follow-up (rf-13) is resolved. The
-`"memory"`-alias gap is now resolved. The **only** item left in the backlog — the narrower
-nested-`§!`-citation residual `hit-count-fidelity` flagged (a `full_desc` body citing another
-token, only surfaced via `token_to_detail`) — has been explicitly reviewed by the user and
-kept as-is on purpose, not left open for lack of time or prioritization. There is nothing left
-in this epic that is both known and intended to be fixed.
+**The functional/implementation backlog is empty and ready for closeout**, but the epic is
+being kept open one more phase for `testing` (above) before final closeout at the
+`root/Squire` level. Every gap `protocol-doc-sync` ever flagged is resolved (sa-5/ask_user,
+graph traversal, hit-count scoring, user-input auto-chunking, raw-partition storage). Every
+gap flagged by `squire-adapter` (sa-4, sa-5) and `squire-storage` (ss-9, and the
+endpoint-carrying `TokenDetail` extension) is resolved. Both optional UX follow-ups
+`session-creation-ux` surfaced are resolved. `retrieval-fidelity`'s own flagged follow-up
+(rf-13) is resolved. The `"memory"`-alias gap is resolved. The **only** functional item left in
+the backlog — the narrower nested-`§!`-citation residual `hit-count-fidelity` flagged (a
+`full_desc` body citing another token, only surfaced via `token_to_detail`) — has been
+explicitly reviewed by the user and kept as-is on purpose, not left open for lack of time or
+prioritization; `testing` must not re-open it.
 
-**Recommendation:** mark the epic complete at the `root/Squire` level. The nested-citation
-residual should remain documented in `hit-count-fidelity`'s own files as a permanent,
-intentional simplification (not re-flagged as open backlog anywhere else), since re-opening it
-would contradict a direct, considered user decision.
+**Recommendation:** complete the new `testing` phase, then mark the epic complete at the
+`root/Squire` level. The nested-citation residual should remain documented in
+`hit-count-fidelity`'s own files as a permanent, intentional simplification (not re-flagged as
+open backlog anywhere else), since re-opening it would contradict a direct, considered user
+decision.
 
 ## Verification status as of this commit
 

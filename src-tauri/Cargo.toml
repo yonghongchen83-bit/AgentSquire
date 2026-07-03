@@ -45,6 +45,27 @@ async-trait = "0.1"
 lancedb = "0.14"
 arrow-array = "53.2"
 arrow-schema = "53.2"
+# Text embeddings for Squire semantic vector search. default-features off to
+# drop the heavy `image-models` feature (image codecs) we don't use; keep
+# `hf-hub` (model download) + `ort-download-binaries-native-tls` (auto-provision
+# the ONNX Runtime binary on this Windows x64 machine on first build).
+fastembed = { version = "5.17.2", default-features = false, features = [
+    "hf-hub",
+    "hf-hub-native-tls",
+    "ort-download-binaries-native-tls",
+] }
 
 [dev-dependencies]
 tempfile = "3"
+
+# --- Build profiles -------------------------------------------------------
+# Dev builds keep OUR crate at opt-level 0 for fast iterative rebuilds, but
+# compile third-party dependencies optimized. The heavy native deps here
+# (arrow, lancedb/lance/datafusion, git2, rusqlite) are rarely rebuilt, so
+# paying for their optimization once buys a much faster dev app at runtime
+# without slowing edit/rebuild cycles on our own code.
+[profile.dev]
+incremental = true
+
+[profile.dev.package."*"]
+opt-level = 2

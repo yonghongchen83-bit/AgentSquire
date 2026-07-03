@@ -564,18 +564,22 @@ pub async fn send_message_impl(
 
                         // Persist the text+thinking assistant message before tool calls
                         // so the conversation history includes reasoning_content for DeepSeek.
+                        // Per the OpenAI API spec, tool_calls belong ON the assistant message
+                        // itself — not a separate message. DeepSeek validates that
+                        // reasoning_content is passed back on the same message that carried it
+                        // originally, so merge everything into ONE assistant message.
                         let msg_content = std::mem::take(&mut full_response);
                         let msg_thinking = if !full_thinking.is_empty() {
                             Some(std::mem::take(&mut full_thinking))
                         } else {
                             None
                         };
-                        if !msg_content.is_empty() || msg_thinking.is_some() {
+                        if !msg_content.is_empty() || msg_thinking.is_some() || !tool_calls.is_empty() {
                             messages.push(ChatMessage {
                                 role: ChatRole::Assistant,
                                 content: msg_content.clone(),
                                 tool_call_id: None,
-                                tool_calls: None,
+                                tool_calls: Some(tool_calls.clone()),
                                 reasoning_content: msg_thinking.clone(),
                             });
                             // Save to DB immediately so reasoning_content persists across turns
@@ -694,15 +698,10 @@ pub async fn send_message_impl(
                                 emit_stream_status(&app_clone, &format!("Tool {} completed", tc.name));
                             }
 
-                            // reasoning_content only on the first assistant message in this turn
-                            let reasoning = if !full_thinking.is_empty() {
-                                Some(std::mem::take(&mut full_thinking))
-                            } else {
-                                None
-                            };
-
+                            // reasoning_content is already on the assistant message pushed
+                            // above — not needed on individual tool result messages.
                             if let Err(e) = adapter
-                                .handle_tool_loop_step(tc, &result, reasoning, &mut messages)
+                                .handle_tool_loop_step(tc, &result, &mut messages)
                                 .await
                             {
                                 emit_stream_status(&app_clone, "Failed to update turn context");

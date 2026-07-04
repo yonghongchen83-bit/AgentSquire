@@ -10,4 +10,3 @@ e2e-results/
 
 # Log files
 *.log
-!src-tauri/.squirecli/config.toml

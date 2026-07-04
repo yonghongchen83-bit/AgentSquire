@@ -1,3 +1,11 @@
+[workspace]
+members = [
+    "."
+,
+    "hakari"
+]
+resolver = "2"
+
 [package]
 name = "squirecli"
 version = "0.1.0"
@@ -54,6 +62,7 @@ fastembed = { version = "5.17.2", default-features = false, features = [
     "hf-hub-native-tls",
     "ort-download-binaries-native-tls",
 ] }
+hakari = { version = "0.1", path = "hakari" }
 
 [dev-dependencies]
 tempfile = "3"

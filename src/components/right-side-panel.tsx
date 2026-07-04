@@ -1,9 +1,13 @@
 import { ChatPanel } from '@/components/chat-panel'
+import { SubagentTabBar } from '@/components/subagent-tab-bar'
+import { SubagentChat } from '@/components/subagent-chat'
+import { useSubagentStore } from '@/stores/subagent-store'
 import { useLayoutStore } from '@/stores/ui-store'
 import { X } from 'lucide-react'
 
 export function RightSidePanel() {
   const toggleRightPanel = useLayoutStore((s) => s.toggleRightPanel)
+  const hasActiveSubagent = useSubagentStore((s) => s.activeTabId !== null && s.tabs.some((t) => t.sessionId === s.activeTabId))
 
   return (
     <div className="h-full bg-background border-l border-border flex flex-col">
@@ -16,8 +20,9 @@ export function RightSidePanel() {
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
+      <SubagentTabBar />
       <div className="flex-1 overflow-hidden">
-        <ChatPanel />
+        {hasActiveSubagent ? <SubagentChat /> : <ChatPanel />}
       </div>
     </div>
   )

@@ -30,6 +30,29 @@ pub async fn abort_stream_impl(
     }
 }
 
+pub async fn abort_subagent_impl(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let handle = {
+        let mut tasks = state.subagent_tasks.lock().await;
+        tasks.remove(&session_id)
+    };
+
+    match handle {
+        Some(handle) => {
+            handle.abort();
+            let _ = app.emit("subagent-error", serde_json::json!({
+                "session_id": session_id,
+                "error": "Subagent stopped by user",
+            }));
+            Ok(())
+        }
+        None => Err(format!("No active subagent for session '{}'", session_id)),
+    }
+}
+
 pub async fn resolve_tool_call_decision_impl(
     pending: &Arc<Mutex<HashMap<String, ApprovalSender>>>,
     call_id: String,

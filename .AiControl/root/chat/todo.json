@@ -1,13 +1,47 @@
 {
-  "nodePath": "chat",
+  "nodePath": "root/chat",
   "items": [
-    { "id": "p3-1", "text": "Chat IPC wiring — send_message streaming", "done": false },
-    { "id": "p3-2", "text": "shadcn-chatbot-kit scaffold — copy & adapt", "done": false },
-    { "id": "p3-3", "text": "Block-based stream render (text/thinking/tool_call/code)", "done": false },
-    { "id": "p3-4", "text": "ThinkingBlock component (collapsible, animated)", "done": false },
-    { "id": "p3-5", "text": "ToolCallBlock component (expandable card)", "done": false },
-    { "id": "p3-6", "text": "CodeBlock component (Monaco read-only + actions)", "done": false },
-    { "id": "p3-7", "text": "Conversation sidebar — list/load/create/delete", "done": false },
-    { "id": "p3-8", "text": "Message persistence — auto-save via IPC", "done": false }
+    {
+      "id": "p3-1",
+      "text": "Chat IPC wiring — send_message streaming",
+      "done": false,
+      "status": "done",
+      "updatedAt": "2026-07-03T12:26:09.708Z"
+    },
+    {
+      "id": "p3-2",
+      "text": "shadcn-chatbot-kit scaffold — copy & adapt",
+      "done": false
+    },
+    {
+      "id": "p3-3",
+      "text": "Block-based stream render (text/thinking/tool_call/code)",
+      "done": false
+    },
+    {
+      "id": "p3-4",
+      "text": "ThinkingBlock component (collapsible, animated)",
+      "done": false
+    },
+    {
+      "id": "p3-5",
+      "text": "ToolCallBlock component (expandable card)",
+      "done": false
+    },
+    {
+      "id": "p3-6",
+      "text": "CodeBlock component (Monaco read-only + actions)",
+      "done": false
+    },
+    {
+      "id": "p3-7",
+      "text": "Conversation sidebar — list/load/create/delete",
+      "done": false
+    },
+    {
+      "id": "p3-8",
+      "text": "Message persistence — auto-save via IPC",
+      "done": false
+    }
   ]
 }

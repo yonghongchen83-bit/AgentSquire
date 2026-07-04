@@ -1,8 +1,8 @@
 {
   "aicontrol.mcpEndpoint": "http://127.0.0.1:8181/mcp",
   "rust-analyzer.linkedProjects": ["${workspaceFolder}/src-tauri/Cargo.toml"],
-  "rust-analyzer.cargo.features": "all",
-  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.cargo.noDefaultFeatures": true,
+  "rust-analyzer.check.command": "check",
   "[rust]": {
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "rust-lang.rust-analyzer"

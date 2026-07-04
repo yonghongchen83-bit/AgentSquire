@@ -1,4 +1,4 @@
-import type { Block } from '@/types/ipc'
+import type { Block, Message } from '@/types/ipc'
 import {
   getConversation,
   onStreamChunk,
@@ -160,15 +160,36 @@ export async function setupStreamListeners({
       if (activeId) {
         getConversation(activeId)
           .then((session) => {
-            if (toolCallBlocks.length > 0 && session.messages.length > 0) {
+            if (toolCallBlocks.length > 0 && session.messages.length >= 2) {
+              // Tool calls were made in this turn. The backend persists two
+              // assistant messages: one with the pre-tool-call text (from
+              // FinishReason::ToolCalls handler) and one with the final
+              // response text (from finalize_turn). Merge them into a single
+              // assistant message, nesting the tool_call blocks between the
+              // two text parts so tool calls are not rendered as a separate
+              // assistant response.
+              const secondLast = session.messages[session.messages.length - 2]
               const lastMsg = session.messages[session.messages.length - 1]
-              if (lastMsg.role === 'assistant') {
-                // Persist to DB (fire-and-forget)
-                void setMessageBlocks(lastMsg.id, toolCallBlocks)
-                // Inject into in-memory messages immediately
-                const messages = session.messages.map((m, i, arr) =>
-                  i === arr.length - 1 ? { ...m, blocks: toolCallBlocks } : m
-                )
+              if (secondLast.role === 'assistant' && lastMsg.role === 'assistant') {
+                // Merge the pre-tool-call text into blocks (before the
+                // tool_call blocks) so the render order is:
+                //   [pre-tool-call text] → [tool_call blocks] → [final response text]
+                const preToolText: Block = secondLast.content
+                  ? { type: 'text' as const, content: secondLast.content }
+                  : null
+                const mergedBlocks: Block[] = preToolText
+                  ? [preToolText, ...toolCallBlocks]
+                  : toolCallBlocks
+
+                // Persist blocks onto the final merged message
+                void setMessageBlocks(lastMsg.id, mergedBlocks)
+
+                const messages = session.messages.slice(0, -2).concat([
+                  {
+                    ...lastMsg,
+                    blocks: mergedBlocks,
+                  } as Message,
+                ])
                 set({ messages })
                 return
               }

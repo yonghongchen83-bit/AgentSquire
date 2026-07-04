@@ -11,35 +11,57 @@
 | tauri-driver | 2.0.6 | `cargo install tauri-driver` → `~/.cargo/bin/tauri-driver.exe` |
 | VS Code | latest | extensions: rust-analyzer, Tailwind CSS, ESLint |
 
-## Build & Run Commands
+## 🚫 CRITICAL RULE: Scripts Only — No Manual Cargo Commands
 
-Run from the project root (`D:\work\MyAgent\`). Package manager: `npm` (pnpm preferred where available). Rust commands target `src-tauri/Cargo.toml`.
+**Do NOT run `cargo build`, `cargo test`, `cargo run`, `cargo clean`, or `npm run tauri dev` directly in the terminal.** Every Rust compilation action MUST go through the fixed scripts in `scripts/`. These scripts share one build cache (the `--no-default-features` feature set, matching what `tauri dev` uses) and prevent accidental full rebuilds.
 
-| Purpose | Command | Notes |
-|---------|---------|-------|
-| Install JS deps | `npm install` | Run after cloning / lockfile changes |
-| Frontend dev server | `npm run dev` | Vite on `http://localhost:5173/` |
-| Full app (dev) | `npm run tauri dev` | Launches Tauri shell + Vite; primary dev loop |
-| Frontend build | `npm run build` | `tsc -b && vite build` — typechecks then bundles |
-| Full app build | `npm run tauri build` | Produces packaged desktop binary |
-| Lint | `npm run lint` | `oxlint` |
-| Preview built frontend | `npm run preview` | Serves `dist/` |
+Each script is a fixed-purpose wrapper that accepts NO arbitrary CLI arguments. They must be invoked as-is.
 
-**Dev build profile:** `src-tauri/Cargo.toml` sets `[profile.dev.package."*"] opt-level = 2`, so third-party deps compile optimized. The **first** `tauri dev` / `cargo build` after a clean (or after any profile/`.cargo` change) recompiles the full dep tree at opt-2 and is slow (heavy crates: arrow, lancedb/lance/datafusion, git2, rusqlite). Subsequent rebuilds only recompile our own crate (`opt-level 0`) and are fast; the optimized deps are cached. Note also that `tauri dev` runs `cargo run --no-default-features` (injected by the Tauri v2 CLI), which uses a separate build cache from a plain `cargo check`/`cargo build` — expect a one-time recompile when switching between them.
+| Script | Purpose | Notes |
+|--------|---------|-------|
+| `scripts/build.ps1` | Build Rust backend (debug) | Uses existing cache — fast incremental |
+| `scripts/run.ps1` | Launch full app (tauri dev) | Builds Rust + starts Vite |
+| `scripts/test.ps1` | Run Rust unit tests (`--lib`) | Fast — no integration tests |
+| `scripts/test-all.ps1` | Run ALL Rust tests | Slower — includes integration tests |
+| `scripts/frontend-test.ps1` | Run frontend Vitest tests | No Rust compilation needed |
+| `scripts/clean.ps1` | **Full clean + rebuild (~30 min)** | **REQUIRES user confirmation** — never run automatically |
 
-**VS Code debugging:** the `Tauri: Debug All` launch config (`.vscode/launch.json`, `lldb`) starts Vite + builds the debug exe via the `build-rust-debug` task. That task uses `cargo build --no-default-features` so it shares the same build cache as `tauri dev` (matching feature set) — no redundant full rebuild when switching between F5-debug and `tauri dev`.
+### How to invoke scripts
 
-## Test Commands
+```powershell
+# From the project root:
+.\scripts\build.ps1
+.\scripts\test.ps1
+.\scripts\test-all.ps1
+.\scripts\run.ps1
+.\scripts\frontend-test.ps1
+```
 
-| Purpose | Command | Notes |
-|---------|---------|-------|
-| Frontend unit tests | `npm test` | `vitest run` (one-shot) |
-| Frontend unit (watch) | `npm run test:watch` | `vitest` |
-| Rust tests | `npm run test:rust` | `cargo test --manifest-path src-tauri/Cargo.toml` |
-| E2E (WDIO) | `npm run test:e2e` | `wdio run ./e2e/wdio.conf.ts` — requires app + tauri-driver running |
-| E2E (dev, auto driver) | `npm run test:e2e:dev` | Starts `tauri-driver` then runs WDIO |
+Or via npm scripts:
+```bash
+npm run build:rust
+npm run test:rust
+npm run clean:rust
+```
 
-Rust tests can also be run directly: `cargo test --manifest-path src-tauri/Cargo.toml <filter>`.
+Or via VS Code tasks (F5 / Run Task):
+- `build-rust-debug` → runs `scripts/build.ps1`
+- `test-rust` → runs `scripts/test.ps1`
+- `test-rust-all` → runs `scripts/test-all.ps1`
+- `test-frontend` → runs `scripts/frontend-test.ps1`
+- `run-app` → runs `scripts/run.ps1`
+
+### ⚠️ Clean/Rebuild Protocol
+
+A full clean rebuild takes **~30 minutes** (arrow, lancedb/lance/datafusion, git2, rusqlite all recompile at opt-level 2). **Before running `scripts/clean.ps1`, the AI MUST ask the user for explicit permission.** The script itself also requires the user to type "yes" to proceed. Never call it autonomously.
+
+### Dev build profile
+
+`src-tauri/Cargo.toml` sets `[profile.dev.package."*"] opt-level = 2`, so third-party deps compile optimized once and are cached. Our own crate compiles at `opt-level 0` for fast iterative rebuilds. `tauri dev` runs `cargo run --no-default-features` under the hood; the build scripts use the identical feature set, so there's no cache split.
+
+### VS Code debugging (F5)
+
+The `Tauri: Debug All` launch config (`.vscode/launch.json`, `lldb`) chains through the `build-rust-debug` task, which now runs `scripts/build.ps1` — same cache, same feature set, no redundant rebuild.
 
 **E2E prerequisite (Windows):** the Vite dev server must be launched decoupled from the shell tool's process tree, or it is killed on timeout. Use `cmd.exe /c` and verify `http://localhost:5173/` returns 200 before running WDIO. See [lessons-learned/001-vite-server-survival.md](../lessons-learned/001-vite-server-survival.md).
 

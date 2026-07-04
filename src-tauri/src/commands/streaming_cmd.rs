@@ -238,6 +238,18 @@ pub async fn send_message_impl(
         let run = async {
             emit_stream_status(&app_clone, "Preparing tools...");
             let mut tool_registry = ToolRegistry::new();
+            // Register the SubagentTool — available as a first-class tool in
+            // Legacy mode, and discoverable through Squire's `invoke` tool.
+            tool_registry.register(Box::new(agent::SubagentTool {
+                app_handle: app_clone.clone(),
+                store: store.clone(),
+                enabled_mcp_servers: enabled_mcp_servers.clone(),
+                provider: provider_arc.clone(),
+                model: selected_model.clone(),
+                provider_name: selected_provider_name.clone(),
+                verbose_logging,
+                project_path: project_path.clone(),
+            }));
             let mut used_names: HashSet<String> = tool_registry
                 .definitions()
                 .into_iter()

@@ -52,6 +52,7 @@ export type Block =
   | ThinkingBlock
   | ToolCallBlock
   | CodeBlock
+  | SubagentBlock
 
 export interface TextBlock {
   type: 'text'
@@ -113,6 +114,23 @@ export interface CodeBlock {
   type: 'code'
   language: string
   content: string
+}
+
+export interface SubagentBlock {
+  type: 'subagent'
+  sessionId: string
+  task: string
+  status: 'running' | 'completed' | 'error'
+  result?: string
+}
+
+export interface SubagentInfo {
+  sessionId: string
+  parentCallId: string
+  task: string
+  status: 'running' | 'completed' | 'error'
+  providerName?: string
+  model?: string
 }
 
 // ─── Files ──────────────────────────────────────────────

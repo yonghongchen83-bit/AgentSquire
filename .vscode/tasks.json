@@ -19,7 +19,7 @@
     {
       "label": "build-rust-debug",
       "type": "shell",
-      "command": "cargo build --manifest-path src-tauri/Cargo.toml --no-default-features",
+      "command": "powershell -File \"${workspaceFolder}/scripts/build.ps1\"",
       "group": "build",
       "presentation": { "reveal": "silent", "panel": "new" }
     },
@@ -34,6 +34,34 @@
       "type": "shell",
       "command": "Remove-Item \"$env:APPDATA\\com.squirecli.app\\provider-wire.log\" -Force -ErrorAction SilentlyContinue; Write-Output 'provider-wire.log deleted'",
       "problemMatcher": []
+    },
+    {
+      "label": "run-app",
+      "type": "shell",
+      "command": "powershell -File \"${workspaceFolder}/scripts/run.ps1\"",
+      "group": "none",
+      "presentation": { "reveal": "silent", "panel": "new" }
+    },
+    {
+      "label": "test-rust",
+      "type": "shell",
+      "command": "powershell -File \"${workspaceFolder}/scripts/test.ps1\"",
+      "group": "test",
+      "presentation": { "reveal": "silent", "panel": "new" }
+    },
+    {
+      "label": "test-rust-all",
+      "type": "shell",
+      "command": "powershell -File \"${workspaceFolder}/scripts/test-all.ps1\"",
+      "group": "test",
+      "presentation": { "reveal": "silent", "panel": "new" }
+    },
+    {
+      "label": "test-frontend",
+      "type": "shell",
+      "command": "powershell -File \"${workspaceFolder}/scripts/frontend-test.ps1\"",
+      "group": "test",
+      "presentation": { "reveal": "silent", "panel": "new" }
     }
   ]
 }

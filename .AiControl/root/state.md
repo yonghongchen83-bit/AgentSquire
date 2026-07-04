@@ -47,13 +47,23 @@ All design documents live in `ArchitecturePlanning/`:
 
 Current: `root/UiAutoTestFramework` (UI Auto Test Framework — recently set up)
 
+## 🔨 Build System Change (2026-07-04)
+
+**Problem:** Every `cargo build` / `tauri dev` invocation sometimes triggered a full recompilation of all external dependencies, taking ~30 minutes. The root cause was inconsistent feature sets/cache splits between different invocation paths (`cargo build` vs `cargo run` vs `tauri dev` wrappers), plus occasional corrupted incremental caches.
+
+**Solution:** All Rust build/run/test/clean actions now go through fixed PowerShell scripts in `scripts/`:
+- `scripts/build.ps1` — build debug (no CLI args)
+- `scripts/run.ps1` — launch full app (no CLI args)
+- `scripts/test.ps1` — unit tests (no CLI args)
+- `scripts/test-all.ps1` — all tests (no CLI args)
+- `scripts/frontend-test.ps1` — Vitest (no CLI args)
+- `scripts/clean.ps1` — **requires user "yes" confirmation** (~30 min rebuild)
+
+VS Code tasks, launch config (F5), and npm scripts all route through these scripts. Manual `cargo build` / `cargo test` / `npm run tauri dev` in the terminal is **banned** — the AI must use the scripts only. Clean/rebuild requires asking the user for explicit permission before invocation.
+
+See root `env.md` for the full spec and reasoning.
+
 ## Skills
-
-Available reusable workflows:
-- [UI_Business_Test](../UI_Business_Test/skill.md) — AI-driven WDIO test generation and execution
-- [Lessons Learner](../lessons-learner/skill.md) — Post-session lesson documentation and indexing
-
-## Lessons Learned
 
 Key engineering lessons from development sessions — quick reference for recurring issues:
 - [Lessons Learned Index](../lessons-learned/lessons.md)

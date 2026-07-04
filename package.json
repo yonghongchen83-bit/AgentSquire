@@ -13,7 +13,9 @@
     "test:watch": "vitest",
     "test:e2e": "wdio run ./e2e/wdio.conf.ts",
     "test:e2e:dev": "tauri-driver & wdio run ./e2e/wdio.conf.ts",
-    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml"
+    "test:rust": "powershell -File ./scripts/test.ps1",
+    "build:rust": "powershell -File ./scripts/build.ps1",
+    "clean:rust": "powershell -File ./scripts/clean.ps1"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

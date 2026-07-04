@@ -172,6 +172,10 @@ export async function abortStream(sessionId: string): Promise<void> {
   return invoke('abort_stream', { sessionId })
 }
 
+export async function abortSubagent(sessionId: string): Promise<void> {
+  return invoke('abort_subagent', { sessionId })
+}
+
 export async function truncateMessagesFrom(sessionId: string, messageId: string): Promise<void> {
   return invoke('truncate_messages_from', { sessionId, messageId })
 }
@@ -370,6 +374,61 @@ export async function answerAskUserQuestion(questionId: string, answer: string):
 
 export function onStreamAskUserPending(cb: (question: AskUserQuestion) => void) {
   return listen<string>('stream-ask-user-pending', (event) => {
+    try {
+      const parsed = JSON.parse(event.payload)
+      cb(parsed)
+    } catch { /* ignore parse errors */ }
+  })
+}
+
+// ─── Subagent Events ────────────────────────────────────
+
+export interface SubagentCreatedPayload {
+  session_id: string
+  parent_call_id: string
+  task: string
+}
+
+export interface SubagentChunkPayload {
+  session_id: string
+  text: string
+}
+
+export interface SubagentDonePayload {
+  session_id: string
+  result: string
+  is_error: boolean
+}
+
+export function onSubagentCreated(cb: (payload: SubagentCreatedPayload) => void) {
+  return listen<string>('subagent-created', (event) => {
+    try {
+      const parsed = JSON.parse(event.payload)
+      cb(parsed)
+    } catch { /* ignore parse errors */ }
+  })
+}
+
+export function onSubagentChunk(cb: (payload: SubagentChunkPayload) => void) {
+  return listen<string>('subagent-chunk', (event) => {
+    try {
+      const parsed = JSON.parse(event.payload)
+      cb(parsed)
+    } catch { /* ignore parse errors */ }
+  })
+}
+
+export function onSubagentDone(cb: (payload: SubagentDonePayload) => void) {
+  return listen<string>('subagent-done', (event) => {
+    try {
+      const parsed = JSON.parse(event.payload)
+      cb(parsed)
+    } catch { /* ignore parse errors */ }
+  })
+}
+
+export function onSubagentError(cb: (payload: { session_id: string; error: string }) => void) {
+  return listen<string>('subagent-error', (event) => {
     try {
       const parsed = JSON.parse(event.payload)
       cb(parsed)

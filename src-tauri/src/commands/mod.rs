@@ -36,6 +36,7 @@ pub struct AppState {
     pub store: Arc<dyn ConversationStore>,
     pub registry: RwLock<ProviderRegistry>,
     pub stream_tasks: Arc<TokioMutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
+    pub subagent_tasks: Arc<TokioMutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
     pub project_path: RwLock<String>,
     /// Squire context-mode memory store. Real LanceDB-backed implementation
     /// (`storage::squire_lancedb::LanceDbSquireStore`, Q4), constructed once
@@ -206,6 +207,15 @@ pub async fn abort_stream(
     session_id: String,
 ) -> Result<(), String> {
     stream_control::abort_stream_impl(app, state, session_id).await
+}
+
+#[tauri::command]
+pub async fn abort_subagent(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    stream_control::abort_subagent_impl(app, state, session_id).await
 }
 
 #[tauri::command]

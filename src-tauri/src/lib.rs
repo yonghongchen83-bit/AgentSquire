@@ -32,6 +32,7 @@ pub fn run() {
             commands::delete_conversation,
             commands::send_message,
             commands::abort_stream,
+            commands::abort_subagent,
             commands::list_providers,
             commands::read_file,
             commands::write_file,

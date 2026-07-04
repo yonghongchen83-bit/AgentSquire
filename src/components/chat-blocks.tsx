@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react'
 import type { Block } from '@/types/ipc'
-import { ChevronDown, ChevronRight, Wrench, Check, X, AlertCircle, Copy, FileDown, Diff } from 'lucide-react'
+import { ChevronDown, ChevronRight, Wrench, Check, X, AlertCircle, Copy, FileDown, Diff, Bot, ExternalLink, Loader2 } from 'lucide-react'
 import { useChatStore } from '@/stores/chat-store'
+import { useSubagentStore } from '@/stores/subagent-store'
 
 function TextBlock({ content }: { content: string }) {
   return <p className="whitespace-pre-wrap text-sm leading-relaxed">{content}</p>
@@ -146,6 +147,46 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
   )
 }
 
+function SubagentBlockRenderer({ block }: { block: Extract<Block, { type: 'subagent' }> }) {
+  const setActiveTab = useSubagentStore((s) => s.setActiveTab)
+  const isRunning = block.status === 'running'
+
+  const handleOpen = () => {
+    setActiveTab(block.sessionId)
+  }
+
+  return (
+    <div className={`border rounded-md overflow-hidden my-1 ${
+      isRunning ? 'border-[#4A90D9]' : block.status === 'error' ? 'border-red-300' : 'border-border'
+    }`}>
+      <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium bg-muted">
+        {isRunning ? (
+          <Loader2 className="h-3.5 w-3.5 text-[#4A90D9] animate-spin flex-shrink-0" />
+        ) : (
+          <Bot className="h-3.5 w-3.5 text-[#6B7B8D] flex-shrink-0" />
+        )}
+        <span className="flex-1 truncate">
+          {isRunning ? 'Subagent working...' : `Subagent${block.status === 'error' ? ' (error)' : ''}`}
+        </span>
+        <span className="text-[10px] text-[#6B7B8D] truncate max-w-[200px]">{block.task}</span>
+        <button
+          onClick={handleOpen}
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[#D0DCE8] text-[#4A90D9] transition-colors flex-shrink-0"
+          title="Open subagent chat"
+        >
+          <ExternalLink className="h-3 w-3" />
+          <span>Open</span>
+        </button>
+      </div>
+      {!isRunning && block.result && (
+        <div className="px-3 py-2 text-sm text-[#6B7B8D] whitespace-pre-wrap bg-[#F8F9FB] max-h-32 overflow-auto border-t border-border">
+          {block.result.length > 300 ? block.result.slice(0, 300) + '...' : block.result}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CodeBlock({ block }: { block: Extract<Block, { type: 'code' }> }) {
   const [copied, setCopied] = useState(false)
 
@@ -206,6 +247,8 @@ export function ChatBlocks({ blocks }: { blocks: Block[] }) {
             return <ToolCallBlock key={i} block={block} />
           case 'code':
             return <CodeBlock key={i} block={block} />
+          case 'subagent':
+            return <SubagentBlockRenderer key={i} block={block} />
         }
       })}
     </div>

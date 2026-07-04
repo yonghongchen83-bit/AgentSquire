@@ -7,3 +7,7 @@ e2e-results/
 *.zip
 .fastembed_cache/
 .claude/
+
+# Log files
+*.log
+src-tauri/.squirecli/

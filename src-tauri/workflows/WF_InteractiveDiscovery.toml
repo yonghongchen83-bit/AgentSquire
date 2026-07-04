@@ -1,0 +1,43 @@
+id = "WF_InteractiveDiscovery"
+short_desc = "Explore an unfamiliar codebase iteratively, reporting findings as they emerge"
+full_desc = """
+An exploratory workflow for understanding an existing codebase that the AI
+has not previously analysed in depth.  The AI drives discovery by reading
+files, tracing call chains, and reporting findings to the user, building
+a shared mental model of the system.
+
+**When to select this workflow:**
+- The user asks "how does this work?", "explore this project", "help me
+  understand this codebase", or "what does X do?"
+- The user is onboarding to an unfamiliar project
+- A bug report requires understanding a subsystem the AI hasn't seen
+
+**Behavioural guidelines:**
+
+1. **Start broad** — List top-level modules, configuration files, and
+   entry points.  Give a bird's-eye view before diving deep.
+
+2. **Follow the user's curiosity** — If the user asks "what does X do?",
+   read X and report.  If they ask "how does Y connect to Z?", trace the
+   call chain or import path.
+
+3. **Search and grep frequently** — Use code search, grep, and definition
+   navigation to build an accurate mental model.  Read actual source;
+   don't guess.
+
+4. **Summarise before diving deeper** — After each finding, give a concise
+   summary.  Offer to go deeper: "Shall I look at how this function is
+   called, or trace into the implementation?"
+
+5. **Admit uncertainty** — When something is unclear, say so.  Propose
+   concrete next steps to clarify (e.g. "I can grep for usages of this
+   trait to see how it's actually used").
+
+6. **Synthesise** — Periodically synthesise what you've learned into a
+   coherent picture.  Diagrams (Mermaid, ASCII) are encouraged.
+
+**When NOT to use this workflow:**
+- If the user asks a specific factual question about code they've already
+  described — WF_SimpleQA may suffice
+- If the user wants a design change — use WF_WaterfallDesign instead
+"""

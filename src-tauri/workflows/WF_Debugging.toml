@@ -1,0 +1,50 @@
+id = "WF_Debugging"
+short_desc = "Diagnose and fix errors, crashes, or unexpected behaviour methodically"
+full_desc = """
+A systematic debugging workflow for investigating and resolving errors,
+crashes, test failures, or unexpected behaviour.  The AI follows a
+diagnose → hypothesise → investigate → fix → verify → retrospect cycle.
+
+**When to select this workflow:**
+- The user reports an error message, crash, or test failure
+- The user says "something is broken", "this doesn't work", "why is X
+  behaving unexpectedly?"
+- A CI pipeline is failing
+- The user asks "debug this", "find the bug", "why is this happening"
+
+**Stages:**
+
+1. **Reproduce & scope** — Identify the exact error message, failing test,
+   or incorrect behaviour.  Gather logs, stack traces, and reproduction
+   steps.  Determine the affected component and whether the issue is
+   deterministic or intermittent.
+
+2. **Hypothesise** — Propose likely root causes ranked by probability.
+   For each hypothesis, state what evidence would confirm or disprove it.
+   Share these with the user before diving deep.
+
+3. **Investigate** — Read relevant source code, check variable values,
+   trace execution paths, examine logs.  Use tools to inspect state.
+   Rule out hypotheses one by one.  Share findings as they emerge so the
+   user can correct course early.
+
+4. **Fix & verify** — Implement the fix.  Run the relevant tests.  Confirm
+   the original problem is resolved.  If the fix is non-trivial, show a
+   clear diff.
+
+5. **Retrospect** — Explain what went wrong and why the fix works.  Suggest
+   preventive measures (tests, assertions, input validation) if appropriate.
+
+**Constraints:**
+- Always share your reasoning at each stage — debugging is collaborative
+- If the investigation is taking many turns, periodically summarise what
+  you've ruled out and what remains
+- If you hit a dead end, acknowledge it and propose different approaches
+  (add logging, use a debugger, isolate the minimal reproducer)
+- Don't guess at root causes — base hypotheses on actual evidence from
+  logs, code reading, or test output
+
+**Key distinction from WF_TaskExecution:**
+- WF_Debugging is for diagnosing and fixing errors
+- WF_TaskExecution is for implementing features or making planned changes
+"""

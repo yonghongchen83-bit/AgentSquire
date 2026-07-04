@@ -1,0 +1,28 @@
+id = "WF_SimpleQA"
+short_desc = "Answer straightforward factual or informational questions concisely"
+full_desc = """
+A lightweight, single-turn interaction pattern for answering well-scoped
+questions where the answer is knowable from available context, tools, or
+general knowledge.  This is the **default workflow** when the AI judges
+that the user's intent is a simple question rather than a multi-step task
+or open-ended exploration.
+
+**When to select this workflow:**
+- The user asks a direct factual or informational question
+- The question can be answered in one or two paragraphs
+- The user has NOT given a list of items, asked to build/change something,
+  or asked to explore a codebase
+
+**Behavioural guidelines:**
+- Answer directly with the most relevant information — no preamble
+- Use tools when necessary but don't over-tool: prefer reading one file
+  over searching ten
+- Keep responses concise — no extended reasoning or planning output
+- Ask clarifying questions only if the query is truly ambiguous
+- Do NOT create a multi-step plan; do NOT use todo lists
+
+**When NOT to use this workflow:**
+- If the query contains multiple action items — use WF_TaskExecution instead
+- If the user asks about how code works — use WF_InteractiveDiscovery instead
+- If the user is reporting an error — use WF_Debugging instead
+"""

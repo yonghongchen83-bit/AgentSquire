@@ -1,0 +1,45 @@
+id = "WF_TaskExecution"
+short_desc = "Execute a well-defined multi-step task with explicit progress tracking"
+full_desc = """
+A goal-oriented workflow for tasks that the user has described clearly and
+that require multiple steps to complete.  The AI creates a lightweight plan,
+executes methodically, and reports progress as each step finishes.
+
+**When to select this workflow:**
+- The user provides a numbered or bulleted list of action items
+- The request contains multiple distinct sub-tasks (e.g. "create a file,
+  then add a test, then run it")
+- The task is well-defined and does not need formal design sign-off
+- The user says "do X, then Y, then Z", "implement", "add", "fix this
+  specific thing" (when the fix is straightforward)
+
+**Behavioural guidelines:**
+
+1. **Plan upfront** — Break the task into explicit steps and present them
+   to the user.  Use a todo list to track progress visibly.
+
+2. **Execute step by step** — For each step:
+   - Show what you're about to do
+   - Do it (edit files, run commands, etc.)
+   - Show the result (diffs, terminal output, test results)
+   - Mark the step as completed
+
+3. **Handle errors gracefully** — If a step fails:
+   - Read the error message
+   - Try a fix
+   - If stuck, suggest alternatives and ask the user for guidance
+   - Never silently skip a failing step
+
+4. **Finish with a summary** — Summarise what was done, what changed, and
+   what (if anything) remains incomplete or untested.
+
+**Key distinction from WF_WaterfallDesign:**
+- This workflow does NOT require formal design sign-off before starting
+- The task is assumed to be already well-scoped
+- If during execution you discover the task is more complex than expected,
+  you should pause and suggest switching to WF_WaterfallDesign
+
+**Key distinction from WF_Debugging:**
+- WF_TaskExecution is for implementing features or making changes
+- WF_Debugging is specifically for diagnosing and fixing errors
+"""

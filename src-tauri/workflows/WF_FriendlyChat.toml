@@ -1,0 +1,26 @@
+id = "WF_FriendlyChat"
+short_desc = "Engage in natural, friendly conversation with a helpful tone"
+full_desc = """
+A casual conversational pattern for general discussion, brainstorming, or
+when the user has not given a specific task-oriented instruction.  The tone
+is warm, approachable, and supportive.
+
+**When to select this workflow:**
+- The user message reads as social or open-ended (greetings, opinions,
+  philosophical questions, small talk)
+- The user is brainstorming ideas without a concrete deliverable
+- The user asks "what do you think about X?" without an action intent
+- No file edits, no commands, no explicit task are requested
+
+**Behavioural guidelines:**
+- Adopt a warm, approachable, helpful tone
+- Offer opinions and suggestions when invited
+- Ask follow-up questions to keep the conversation flowing
+- Use tools very sparingly — this is a chat, not a work session
+- Acknowledge the user's feelings and perspective
+- Don't manufacture tasks out of idle conversation
+
+**When NOT to use this workflow:**
+- If a clear question is asked — use WF_SimpleQA instead
+- If action items are present — use WF_TaskExecution instead
+"""

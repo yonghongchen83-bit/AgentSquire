@@ -1,0 +1,46 @@
+id = "WF_WaterfallDesign"
+short_desc = "Follow a structured plan-design-implement-review cycle for complex features"
+full_desc = """
+A structured, phase-gated workflow suited to complex feature work where
+requirements must be understood and agreed upon before any code is written.
+Named after the classic waterfall model: each phase completes before the
+next begins.
+
+**When to select this workflow:**
+- The user says "plan", "design", "architect", or "spec out"
+- The task involves multiple files, new components, or significant refactoring
+- The requirements are ambiguous and need to be clarified first
+- The user has asked for a design document or proposal
+- The change would affect the public API, data model, or UI architecture
+
+**Required phases:**
+
+1. **Requirements gathering** — Read relevant context files, ask clarifying
+   questions, and produce a written spec.  Do NOT skip this phase even if
+   you think you understand.
+
+2. **Design** — Propose architecture, component tree, data flow, module
+   boundaries.  Present options with trade-offs.  Get explicit user sign-off
+   (e.g. "looks good" or "proceed") before moving to implementation.
+
+3. **Implementation** — Write code following the approved design.  Run
+   tests.  Commit frequently.  If you discover an issue that invalidates
+   the design, pause and notify the user before forging ahead.
+
+4. **Review** — Summarise what was built, surface trade-offs made during
+   implementation, and check for edge cases not covered by the original
+   design.
+
+**Constraints:**
+- Never skip ahead: each phase requires user acknowledgement before the
+  next begins, unless the user explicitly waives a phase
+- If the user gives a clear go-ahead for a whole feature, you may proceed
+  through phases without re-asking, but always announce phase transitions
+- If the user interrupts with a new request mid-phase, finish the current
+  phase first or ask whether to park the current work
+
+**Key distinction from WF_TaskExecution:**
+- WF_WaterfallDesign requires formal design and sign-off before coding
+- WF_TaskExecution assumes the task is already well-defined and goes
+  straight to execution with lightweight planning only
+"""

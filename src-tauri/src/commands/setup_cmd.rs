@@ -43,6 +43,24 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
     // run before any session can read it back as if it were still valid.
     tauri::async_runtime::block_on(squire_store.clear_all_preserve_lists());
 
+    // ── Seed workflows from built-in, user, and project sources ──
+    let initial_project_path = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let project_path_for_wf = if initial_project_path.is_empty()
+        || initial_project_path == "."
+    {
+        None
+    } else {
+        Some(std::path::Path::new(&initial_project_path))
+    };
+    crate::agent::squire_workflows::seed_all_workflows(
+        squire_store.clone(),
+        &config_dir,
+        project_path_for_wf,
+    );
+    // ─────────────────────────────────────────────────────────────
+
     let registry = ProviderRegistry::from_config(&config);
 
     let (file_watcher, mut watcher_rx) = FileWatcher::new();
@@ -53,15 +71,26 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
         }
     });
 
-    let initial_project_path = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default();
+    // Start background file watcher for workflow directory re-ingest.
+    let project_path_for_watcher = if initial_project_path.is_empty()
+        || initial_project_path == "."
+    {
+        None
+    } else {
+        Some(std::path::Path::new(&initial_project_path))
+    };
+    crate::agent::squire_workflows::start_workflow_watcher(
+        squire_store.clone(),
+        &config_dir,
+        project_path_for_watcher,
+    );
 
     app.manage(AppState {
         config: RwLock::new(config),
         store: Arc::new(db),
         registry: RwLock::new(registry),
         stream_tasks: Arc::new(TokioMutex::new(HashMap::new())),
+        subagent_tasks: Arc::new(TokioMutex::new(HashMap::new())),
         project_path: RwLock::new(initial_project_path),
         squire_store,
     });

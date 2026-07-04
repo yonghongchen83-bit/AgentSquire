@@ -1,0 +1,88 @@
+id = "SK_CreateWorkflow"
+short_desc = "How to create a new workflow definition for the Squire workflow system"
+full_desc = """
+A workflow is a high-level working pattern that tells the AI how to
+approach a category of user request.  Workflows replace the concept of
+"agent mode" in other frameworks — the AI discovers which workflow
+matches the user's intent at runtime.
+
+Workflows are stored as TOML files loaded from three sources and
+ingested into the Squire store as `workflow`-typed tokens,
+discoverable via `explore(resource_type="workflow", ...)`.
+
+## Where to place workflow files
+
+Workflows are loaded from three directories in priority order (later
+sources override same-named workflows):
+
+1. **Built-in** — `src-tauri/workflows/*.toml` (embedded in the binary)
+2. **User** — `{app_config_dir}/workflows/` (e.g.
+   `%APPDATA%/com.squirecli.app/workflows/` on Windows)
+3. **Project** — `{project_path}/.squire/workflows/`
+
+## Workflow file format (TOML)
+
+A workflow file is a valid TOML file with three required fields:
+
+TOML example:
+```
+id = "WF_WorkflowName"
+short_desc = "One-line summary"
+full_desc = \"\"\"Multi-line body.\"\"\"
+```
+
+### id convention
+
+- Prefix with `WF_` followed by PascalCase
+- Must be unique across all workflows (user/project overrides use the
+  id as the merge key)
+- Examples: `WF_SimpleQA`, `WF_TaskExecution`, `WF_Debugging`
+
+### short_desc convention
+
+- One sentence, max ~80 characters
+- Describes when the AI should select this workflow
+- Used in explore() summary results alongside similarity scoring
+
+### full_desc (the workflow body)
+
+- Markdown prose (the AI reads this directly to decide which workflow
+  to activate)
+- Should include all of these sections:
+  - **When to select** - clear triggers and conditions
+  - **Behavioural guidelines** - what the AI should do step by step
+  - **When NOT to select** - boundaries and exclusions
+  - **Key distinctions** - how this differs from similar workflows
+
+## Loading mechanism
+
+At startup, `squire_workflows::seed_all_workflows()` is called from
+`setup_cmd.rs`.  It:
+
+1. Loads built-in workflows from `include_str!` of files in
+   `src-tauri/workflows/`
+2. Scans `{config_dir}/workflows/` for user workflows
+3. Scans `{project_path}/.squire/workflows/` for project workflows
+4. Merges all sources by id (later wins)
+5. Upserts each as `token_type: "workflow"` into the Squire store
+
+A `notify`-based file watcher also watches the user and project
+workflow directories and re-ingests on any `.toml` change.
+
+## When to create a workflow
+
+Create a workflow when:
+- You want to define a new interaction pattern (e.g. "code review mode",
+  "incident response mode")
+- The existing workflows don't cover a common user intent
+- You want to add team-specific or project-specific working patterns
+
+## Best practices
+
+- Keep short_desc specific enough for the AI to distinguish between
+  similar workflows during similarity search
+- Include concrete "when to select" triggers (exact phrases, patterns)
+- Include "when NOT to select" to avoid false matches
+- Reference related workflows in the distinctions section so the AI
+  can choose correctly between them
+"""

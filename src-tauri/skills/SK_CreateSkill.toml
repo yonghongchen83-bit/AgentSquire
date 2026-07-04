@@ -1,0 +1,81 @@
+id = "SK_CreateSkill"
+short_desc = "How to create a new skill definition for the Squire skill system"
+full_desc = """
+A skill is a reusable capability definition that teaches the AI how to
+perform a specific task or operate within a domain.  Skills are stored
+as TOML files loaded from three sources and ingested into the Squire
+store as `skill`-typed tokens, discoverable via
+`explore(resource_type="tool_skill", ...)`.
+
+## Where to place skill files
+
+Skills are loaded from three directories in priority order (later
+sources override same-named skills):
+
+1. **Built-in** — `src-tauri/skills/*.toml` (embedded in the binary)
+2. **User** — `{app_config_dir}/skills/` (e.g.
+   `%APPDATA%/com.squirecli.app/skills/` on Windows)
+3. **Project** — `{project_path}/.squire/skills/`
+
+## Skill file format (TOML)
+
+A skill file is a valid TOML file with three required fields:
+
+TOML example:
+```
+id = "SK_SkillName"
+short_desc = "One-line summary"
+full_desc = \"\"\"
+Longer description body.
+\"\"\"
+```
+
+### id convention
+
+- Prefix with `SK_` followed by PascalCase
+- Must be unique across all skills (user/project overrides use the id
+  as the merge key)
+- Examples: `SK_DebugRust`, `SK_WriteUnitTest`, `SK_ReviewPR`
+
+### short_desc convention
+
+- One sentence, max ~80 characters
+- Describes what the skill enables the AI to do
+- Used in explore() summary results alongside similarity scoring
+
+### full_desc (the skill body)
+
+- Markdown prose (the AI reads this directly)
+- Should include: purpose, when to use, step-by-step instructions,
+  conventions, examples, and any constraints
+- There is no strict length limit, but keep it focused — each matched
+  skill is loaded into context, so overly long skills increase token
+  usage
+
+## Loading mechanism
+
+At startup, `squire_skills::seed_all_skills()` is called from
+`setup_cmd.rs`.  It:
+
+1. Loads built-in skills from `include_str!` of files in
+   `src-tauri/skills/`
+2. Scans `{config_dir}/skills/` for user skills
+3. Scans `{project_path}/.squire/skills/` for project skills
+4. Merges all sources by id (later wins)
+5. Upserts each as `token_type: "skill"` into the Squire store
+
+A `notify`-based file watcher also watches the user and project skill
+directories and re-ingests on any `.toml` change.
+
+## When to create a skill
+
+Create a skill when:
+- You want the AI to follow a specific process or convention
+- The project has domain-specific knowledge the AI needs
+- There is a repeatable task pattern (e.g. "how to run tests", "how to
+  deploy", "code review checklist")
+- You want to encode team standards or architectural guidelines
+
+Skills are especially useful for encoding conventions that the AI
+would not know from general training data.
+"""

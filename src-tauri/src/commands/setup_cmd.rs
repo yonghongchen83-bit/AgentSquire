@@ -61,6 +61,14 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
     );
     // ─────────────────────────────────────────────────────────────
 
+    // ── Seed skills from built-in, user, and project sources ──
+    crate::agent::squire_skills::seed_all_skills(
+        squire_store.clone(),
+        &config_dir,
+        project_path_for_wf,
+    );
+    // ─────────────────────────────────────────────────────────────
+
     let registry = ProviderRegistry::from_config(&config);
 
     let (file_watcher, mut watcher_rx) = FileWatcher::new();
@@ -80,6 +88,13 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
         Some(std::path::Path::new(&initial_project_path))
     };
     crate::agent::squire_workflows::start_workflow_watcher(
+        squire_store.clone(),
+        &config_dir,
+        project_path_for_watcher,
+    );
+
+    // Start background file watcher for skill directory re-ingest.
+    crate::agent::squire_skills::start_skill_watcher(
         squire_store.clone(),
         &config_dir,
         project_path_for_watcher,

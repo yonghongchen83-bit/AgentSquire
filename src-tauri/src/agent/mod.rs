@@ -9,6 +9,7 @@ use crate::state::config::McpServerConfig;
 
 pub mod context_adapter;
 pub mod squire;
+pub mod squire_skills;
 pub mod squire_workflows;
 
 pub use crate::llm::provider::ToolCall;

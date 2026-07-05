@@ -250,6 +250,13 @@ pub async fn send_message_impl(
                 verbose_logging,
                 project_path: project_path.clone(),
             }));
+            // Scope this conversation's todo tree to its own session file under
+            // the app config dir (overrides the placeholder from
+            // ToolRegistry::new). Keeps per-session todo state out of the
+            // user's project root / CWD.
+            tool_registry.register(Box::new(agent::TodoTreeTool::for_session(
+                &session.session.id.to_string(),
+            )));
             let mut used_names: HashSet<String> = tool_registry
                 .definitions()
                 .into_iter()

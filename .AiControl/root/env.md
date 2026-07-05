@@ -83,4 +83,15 @@ The `Tauri: Debug All` launch config (`.vscode/launch.json`, `lldb`) chains thro
 | `D:\work\MyAgent\src\` | Frontend source |
 | `D:\work\MyAgent\src-tauri\` | Rust backend source |
 | `D:\work\MyAgent\e2e\` | E2E test specs & WDIO config |
-| `D:\work\MyAgent\src-tauri\tests\` | Rust integration tests |
+| `D:\work\MyAgent\src-tauri\src\llm\openai.rs` | OpenAI provider with verbose wire logging |
+| `D:\work\MyAgent\src-tauri\src\state\config.rs` | Config directory resolution |
+
+## Verbose Wire Log
+
+When verbose mode is enabled (Settings → `verboseLogging`), the OpenAI provider dumps all requests, responses, and stream events to:
+
+```
+C:\Users\cheny\AppData\Roaming\com.squirecli.app\config\provider-wire.log
+```
+
+This is controlled by `AppConfig.verbose_logging` → `OpenAIProvider.verbose` → `append_wire_log()` in `src-tauri\src\llm\openai.rs:35-48`.

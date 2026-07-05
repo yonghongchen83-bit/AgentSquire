@@ -59,8 +59,15 @@ export async function setupStreamListeners({
     }),
   )
 
+  function isTreeToolCall(name: string, args: Record<string, unknown>): boolean {
+    if (name !== 'todo_tree') return true
+    const op = args.operation
+    return op === 'list' || op === 'get'
+  }
+
   cleanupFns.push(
     await onStreamToolCall((tc) => {
+      if (!isTreeToolCall(tc.name, tc.arguments)) return
       set((s: { streamingBlocks: Block[] }) => ({
         streamingBlocks: [
           ...s.streamingBlocks,

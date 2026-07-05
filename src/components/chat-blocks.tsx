@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import type { Block } from '@/types/ipc'
-import { ChevronDown, ChevronRight, Wrench, Check, X, AlertCircle, Copy, FileDown, Diff, Bot, ExternalLink, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Wrench, Check, X, AlertCircle, Copy, FileDown, Diff, Bot, ExternalLink, Loader2, Circle, Clock, CircleCheck } from 'lucide-react'
 import { useChatStore } from '@/stores/chat-store'
 import { useSubagentStore } from '@/stores/subagent-store'
 
@@ -28,19 +28,122 @@ function ThinkingBlock({ content }: { content: string }) {
   )
 }
 
+// ── Todo Tree Viewer ──
+
+interface TodoTreeItem {
+  id: string
+  title: string
+  status: 'todo' | 'in_progress' | 'done'
+  children: TodoTreeItem[]
+}
+
+function isTodoTreePayload(result: string): { items: TodoTreeItem[] } | null {
+  try {
+    const parsed = JSON.parse(result)
+    if (parsed._type === 'todo_tree' && Array.isArray(parsed.items)) {
+      return { items: parsed.items }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function parseTodoOperation(args: string): string | null {
+  try {
+    const parsed = JSON.parse(args)
+    if (typeof parsed.operation === 'string') return parsed.operation
+    return null
+  } catch {
+    return null
+  }
+}
+
+function isTreeProducingOperation(operation: string | null): boolean {
+  return operation === 'list' || operation === 'get'
+}
+
+function TodoTreeItemRow({ item, depth }: { item: TodoTreeItem; depth: number }) {
+  const [expanded, setExpanded] = useState(true)
+  const children = item.children ?? []
+  const hasChildren = children.length > 0
+
+  const statusIcon = item.status === 'done'
+    ? <CircleCheck className="h-4 w-4 text-green-500 flex-shrink-0" />
+    : item.status === 'in_progress'
+      ? <Clock className="h-4 w-4 text-amber-500 flex-shrink-0" />
+      : <Circle className="h-4 w-4 text-gray-400 flex-shrink-0" />
+
+  return (
+    <div>
+      <div
+        className="flex items-center gap-1.5 py-1 text-sm cursor-pointer hover:bg-gray-50 rounded px-1"
+        style={{ paddingLeft: `${depth * 20 + 4}px` }}
+        onClick={() => hasChildren && setExpanded(!expanded)}
+      >
+        {hasChildren ? (
+          expanded
+            ? <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+            : <ChevronRight className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+        ) : (
+          <span className="w-3.5 flex-shrink-0" />
+        )}
+        {statusIcon}
+        <span className={item.status === 'done' ? 'line-through text-gray-500' : 'text-gray-800'}>
+          {item.title}
+        </span>
+        <span className="text-[10px] text-gray-400 ml-1">
+          {item.status === 'todo' ? 'todo' : item.status === 'in_progress' ? 'wip' : 'done'}
+        </span>
+      </div>
+      {expanded && hasChildren && (
+        <div>
+          {children.map(child => (
+            <TodoTreeItemRow key={child.id} item={child} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TodoTreeViewer({ items }: { items: TodoTreeItem[] }) {
+  if (items.length === 0) {
+    return <p className="text-sm text-gray-500 py-2">No todo items found.</p>
+  }
+  return (
+    <div className="py-1">
+      {items.map(item => (
+        <TodoTreeItemRow key={item.id} item={item} depth={0} />
+      ))}
+    </div>
+  )
+}
+
 function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }> }) {
-  const [expanded, setExpanded] = useState(false)
   const approveToolCall = useChatStore((s) => s.approveToolCall)
   const rejectToolCall = useChatStore((s) => s.rejectToolCall)
 
   // For run_terminal: build a nice display label
   const isTerminalTool = block.toolName === 'run_terminal'
+  const isTodoTree = block.toolName === 'todo_tree'
   const cmdAnalysis = block.commandAnalysis
   const displayLabel = isTerminalTool && cmdAnalysis
     ? `${cmdAnalysis.command} ${cmdAnalysis.args.join(' ')}`
     : null
 
   const hasOutsidePaths = cmdAnalysis?.paths?.some(p => p.isOutsideWorkspace)
+
+  // Parse todo tree payload if applicable
+  const treeData = isTodoTree && block.result ? isTodoTreePayload(block.result) : null
+  const todoOperation = isTodoTree ? parseTodoOperation(block.args) : null
+  const isTreeOperation = isTreeProducingOperation(todoOperation)
+
+  // Only render todo_tree blocks that produce a tree (list/get).
+  // Create/update/delete are administrative — don't show them in chat.
+  if (isTodoTree && !isTreeOperation) return null
+
+  const [expanded, setExpanded] = useState(isTreeOperation)
 
   return (
     <div className="border border-border rounded-md overflow-hidden my-1">
@@ -50,7 +153,9 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
       >
         <Wrench className="h-3 w-3 flex-shrink-0" />
         <span className="flex-1 min-w-0 text-left">
-          {displayLabel ? (
+          {isTodoTree ? (
+            <>Todo Tree</>
+          ) : displayLabel ? (
             <>
               <span className="font-mono text-[11px]">{displayLabel}</span>
               {hasOutsidePaths && (
@@ -78,7 +183,7 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
         {expanded ? <ChevronDown className="h-3 w-3 ml-auto flex-shrink-0" /> : <ChevronRight className="h-3 w-3 ml-auto flex-shrink-0" />}
       </button>
       {expanded && (
-        <div className="px-3 py-2 text-sm font-mono whitespace-pre-wrap bg-[#F8F9FB] max-h-48 overflow-auto">
+        <div className={treeData ? 'px-3 py-1 bg-[#F8F9FB]' : 'px-3 py-2 text-sm font-mono whitespace-pre-wrap bg-[#F8F9FB] max-h-48 overflow-auto'}>
           {/* Command info summary for terminal tools */}
           {cmdAnalysis && cmdAnalysis.paths.length > 0 && (
             <div className="mb-2 pb-2 border-b border-border text-xs">
@@ -94,14 +199,20 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
               ))}
             </div>
           )}
-          {block.args}
-          {block.result && (
-            <div className={`mt-2 pt-2 border-t ${block.isError ? 'border-red-200' : 'border-border'}`}>
-              <div className={`text-xs font-semibold mb-1 ${block.isError ? 'text-red-600' : 'text-[#6B7B8D]'}`}>
-                {block.isError ? 'Error:' : 'Result:'}
-              </div>
-              <pre className={`text-xs ${block.isError ? 'text-red-600' : ''}`}>{block.result}</pre>
-            </div>
+          {treeData ? (
+            <TodoTreeViewer items={treeData.items} />
+          ) : (
+            <>
+              {block.args}
+              {block.result && (
+                <div className={`mt-2 pt-2 border-t ${block.isError ? 'border-red-200' : 'border-border'}`}>
+                  <div className={`text-xs font-semibold mb-1 ${block.isError ? 'text-red-600' : 'text-[#6B7B8D]'}`}>
+                    {block.isError ? 'Error:' : 'Result:'}
+                  </div>
+                  <pre className={`text-xs ${block.isError ? 'text-red-600' : ''}`}>{block.result}</pre>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

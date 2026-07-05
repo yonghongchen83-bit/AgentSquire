@@ -10,3 +10,5 @@ e2e-results/
 
 # Log files
 *.log
+# Legacy/explicit-path todo tree store (normally kept per-session under app config dir)
+.todo-tree.json

@@ -1,6 +1,6 @@
 import type { Message, Block } from '@/types/ipc'
 import { ChatBlocks } from '@/components/chat-blocks'
-import { User, Bot, Copy, Check, RotateCcw, Trash2 } from 'lucide-react'
+import { User, Bot, Copy, Check, RotateCcw, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 
 function parseBlocks(content: string): Block[] {
@@ -63,10 +63,34 @@ interface ChatMessageProps {
   onDelete?: () => void
 }
 
+function ThinkingBlock({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(true)
+  return (
+    <div className="border border-border rounded-md overflow-hidden my-1">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 w-full px-3 py-2 text-xs font-medium text-[#6B7B8D] bg-muted hover:bg-[#E8EDF2] transition-colors"
+      >
+        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        <span>Thinking</span>
+      </button>
+      {expanded && (
+        <div className="px-3 py-2 text-sm text-[#6B7B8D] italic whitespace-pre-wrap bg-[#F8F9FB]">
+          {content}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ChatMessage({ message, streamingBlocks, isStreaming, isLastMessage, augmentBlocks, onRetry, onDelete }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const blocks = parseBlocks(message.content)
+  const hasContent = message.thinkingContent || (augmentBlocks && augmentBlocks.length > 0) || blocks.length > 0
   const [copied, setCopied] = useState(false)
+
+  // Skip rendering assistant messages with no content — avoids blank rows.
+  if (!isUser && !isStreaming && !hasContent) return null
 
   const handleCopy = () => {
     void navigator.clipboard.writeText(message.content).then(() => {
@@ -86,6 +110,9 @@ export function ChatMessage({ message, streamingBlocks, isStreaming, isLastMessa
         <div className="text-xs font-semibold text-[#6B7B8D]">
           {isUser ? 'You' : 'Assistant'}
         </div>
+        {message.thinkingContent && (
+          <ThinkingBlock content={message.thinkingContent} />
+        )}
         {augmentBlocks && augmentBlocks.length > 0 && (
           <ChatBlocks blocks={augmentBlocks} />
         )}

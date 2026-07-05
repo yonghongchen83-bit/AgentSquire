@@ -18,6 +18,7 @@ type RawMessage = {
   content: string
   created_at: string
   blocks_json: string | null
+  thinking_content: string | null
 }
 
 type RawSession = {
@@ -64,6 +65,7 @@ function mapMessage(raw: RawMessage) {
     content: raw.content,
     createdAt: raw.created_at,
     blocks,
+    thinkingContent: raw.thinking_content ?? undefined,
   }
 }
 

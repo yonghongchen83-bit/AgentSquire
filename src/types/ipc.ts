@@ -30,6 +30,7 @@ export interface Message {
   content: string
   createdAt: string
   blocks?: Block[]
+  thinkingContent?: string
 }
 
 export interface SessionWithMessages {

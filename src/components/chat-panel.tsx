@@ -196,12 +196,13 @@ export function ChatPanel() {
                 <span className="text-xs text-muted-foreground shrink-0 ml-3">Thinking:</span>
                 <Select
                   value={selectedThinkingLevel}
-                  onValueChange={(v) => setSelectedThinkingLevel(v as 'none' | 'low' | 'mid' | 'high')}
+                  onValueChange={(v) => setSelectedThinkingLevel(v as 'default' | 'none' | 'low' | 'mid' | 'high')}
                 >
                   <SelectTrigger className="h-7 text-xs w-[110px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="default">Default</SelectItem>
                     <SelectItem value="none">None</SelectItem>
                     <SelectItem value="low">Low</SelectItem>
                     <SelectItem value="mid">Mid</SelectItem>

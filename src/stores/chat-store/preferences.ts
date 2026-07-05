@@ -28,20 +28,20 @@ export function saveStoredSelection(provider: string, model: string) {
   }
 }
 
-export function loadStoredThinkingLevel(): 'none' | 'low' | 'mid' | 'high' {
-  if (typeof window === 'undefined') return 'mid'
+export function loadStoredThinkingLevel(): 'default' | 'none' | 'low' | 'mid' | 'high' {
+  if (typeof window === 'undefined') return 'default'
   try {
     const raw = window.localStorage.getItem(CHAT_THINKING_PREF_KEY)
-    if (raw === 'none' || raw === 'low' || raw === 'mid' || raw === 'high') {
+    if (raw === 'default' || raw === 'none' || raw === 'low' || raw === 'mid' || raw === 'high') {
       return raw
     }
   } catch {
     // ignore
   }
-  return 'mid'
+  return 'default'
 }
 
-export function saveStoredThinkingLevel(level: 'none' | 'low' | 'mid' | 'high') {
+export function saveStoredThinkingLevel(level: 'default' | 'none' | 'low' | 'mid' | 'high') {
   if (typeof window === 'undefined') return
   try {
     window.localStorage.setItem(CHAT_THINKING_PREF_KEY, level)

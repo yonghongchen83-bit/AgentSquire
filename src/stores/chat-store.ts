@@ -37,7 +37,7 @@ interface ChatState {
   providers: ProviderInfo[]
   selectedProvider: string
   selectedModel: string
-  selectedThinkingLevel: 'none' | 'low' | 'mid' | 'high'
+  selectedThinkingLevel: 'default' | 'none' | 'low' | 'mid' | 'high'
   pendingApprovals: ToolApprovalRequest[]
   autoApproveScope: 'none' | 'session' | 'workspace'
   /** sa-5: at most one outstanding Squire ask_user question per session
@@ -57,7 +57,7 @@ interface ChatState {
   deleteConversation: (id: string) => Promise<void>
   setSelectedProvider: (name: string) => void
   setSelectedModel: (model: string) => void
-  setSelectedThinkingLevel: (level: 'none' | 'low' | 'mid' | 'high') => void
+  setSelectedThinkingLevel: (level: 'default' | 'none' | 'low' | 'mid' | 'high') => void
   sendMessage: (content: string) => Promise<void>
   cancelStreaming: () => void
   clearError: () => void
@@ -145,7 +145,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       return { selectedModel: model }
     }),
 
-    setSelectedThinkingLevel: (level: 'none' | 'low' | 'mid' | 'high') => set(() => {
+    setSelectedThinkingLevel: (level: 'default' | 'none' | 'low' | 'mid' | 'high') => set(() => {
       saveStoredThinkingLevel(level)
       return { selectedThinkingLevel: level }
     }),

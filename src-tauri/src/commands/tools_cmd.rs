@@ -53,6 +53,16 @@ pub async fn list_available_tools(state: State<'_, AppState>) -> Result<Vec<Tool
         })
         .collect();
 
+    tools.push(ToolInfo {
+        name: "subagent".to_string(),
+        description:
+            "Spawn a sub-agent to work on a task independently. The sub-agent gets full tool access and reports back when done.".to_string(),
+        category: "system".to_string(),
+        server_name: None,
+        danger: "safe".to_string(),
+        enabled: !disabled_tools.contains(&"subagent".to_string()),
+    });
+
     // MCP tools — discover from enabled servers with a short timeout
     for server in &enabled_servers {
         match tokio::time::timeout(

@@ -23,7 +23,8 @@ rust-version = "1.77.2"
 
 [lib]
 name = "squirecli_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+#crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
@@ -85,6 +86,9 @@ tempfile = "3"
 # without slowing edit/rebuild cycles on our own code.
 [profile.dev]
 incremental = true
+codegen-units = 256            # 压榨多核并行代码生成
+lto = false                    # 严禁在开发阶段开启 LTO
+split-debuginfo = "unpacked"   # 极其重要：在 Windows 上阻止巨大的 PDB 符号合并
 
 [profile.dev.package."*"]
 opt-level = 2

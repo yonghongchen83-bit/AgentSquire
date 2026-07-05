@@ -159,7 +159,7 @@ export async function sendMessage(
   content: string,
   providerName?: string,
   model?: string,
-  thinkingLevel?: 'none' | 'low' | 'mid' | 'high',
+  thinkingLevel?: 'default' | 'none' | 'low' | 'mid' | 'high',
 ): Promise<void> {
   return invoke('send_message', {
     sessionId,

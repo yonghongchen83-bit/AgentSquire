@@ -47,7 +47,7 @@ fn append_wire_log(path: Option<&PathBuf>, entry: &str) {
 fn normalize_level(level: Option<String>) -> String {
     let raw = level.unwrap_or_else(|| "mid".to_string()).to_lowercase();
     match raw.as_str() {
-        "none" | "low" | "mid" | "high" => raw,
+        "default" | "none" | "low" | "mid" | "high" => raw,
         _ => "mid".to_string(),
     }
 }
@@ -242,6 +242,7 @@ impl LlmProvider for OpenAIProvider {
         let thinking_level = normalize_level(request.thinking_level.clone());
         if is_deepseek_family(&model) {
             match thinking_level.as_str() {
+                "default" => {}
                 "none" => {
                     body["thinking"] = json!({ "type": "disabled" });
                 }

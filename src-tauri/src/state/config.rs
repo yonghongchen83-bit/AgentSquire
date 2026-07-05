@@ -41,6 +41,28 @@ pub struct AppConfig {
     pub bottom_panel_height: Option<f64>,
     #[serde(default)]
     pub disabled_tools: Vec<String>,
+    #[serde(default)]
+    pub squire_prefetch: SquirePrefetchConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquirePrefetchConfig {
+    pub memory_top_k: u32,
+    pub workflow_top_k: u32,
+    pub tool_top_k: u32,
+    pub skill_top_k: u32,
+}
+
+impl Default for SquirePrefetchConfig {
+    fn default() -> Self {
+        Self {
+            memory_top_k: 10,
+            workflow_top_k: 3,
+            tool_top_k: 3,
+            skill_top_k: 3,
+        }
+    }
 }
 
 impl Default for AppConfig {
@@ -65,6 +87,7 @@ impl Default for AppConfig {
             right_panel_width: None,
             bottom_panel_height: None,
             disabled_tools: Vec::new(),
+            squire_prefetch: SquirePrefetchConfig::default(),
         }
     }
 }

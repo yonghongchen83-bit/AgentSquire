@@ -4,7 +4,7 @@ use crate::agent::context_adapter::{ContextManagerAdapter, LegacyContextAdapter,
 use crate::agent::squire::{SquireContextAdapter, SquireExploreTool, SquireInvokeTool, SquireTokenToDetailTool};
 use crate::agent::{self, McpProxyTool, PendingApprovals, PendingAskUserQuestions, ToolDanger, ToolRegistry};
 use crate::llm::provider::{ChatMessage, ChatRole, ChatRequest, FinishReason, StreamEvent, ToolCall};
-use crate::state::config::McpServerConfig;
+use crate::state::config::{McpServerConfig, SquirePrefetchConfig};
 use crate::storage::conversation_store::{ContextMode, MessageRole, NewMessage, SessionId};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -206,11 +206,16 @@ pub async fn send_message_impl(
         (entry.provider.clone(), sm, name)
     };
 
-    let (enabled_mcp_servers, verbose_logging): (Vec<McpServerConfig>, bool) = {
+    let (enabled_mcp_servers, verbose_logging, squire_prefetch): (
+        Vec<McpServerConfig>,
+        bool,
+        SquirePrefetchConfig,
+    ) = {
         let cfg = state.config.read().map_err(|e| e.to_string())?;
         (
             cfg.mcp_servers.iter().filter(|s| s.enabled).cloned().collect(),
             cfg.verbose_logging,
+            cfg.squire_prefetch.clone(),
         )
     };
 
@@ -238,25 +243,6 @@ pub async fn send_message_impl(
         let run = async {
             emit_stream_status(&app_clone, "Preparing tools...");
             let mut tool_registry = ToolRegistry::new();
-            // Register the SubagentTool — available as a first-class tool in
-            // Legacy mode, and discoverable through Squire's `invoke` tool.
-            tool_registry.register(Box::new(agent::SubagentTool {
-                app_handle: app_clone.clone(),
-                store: store.clone(),
-                enabled_mcp_servers: enabled_mcp_servers.clone(),
-                provider: provider_arc.clone(),
-                model: selected_model.clone(),
-                provider_name: selected_provider_name.clone(),
-                verbose_logging,
-                project_path: project_path.clone(),
-            }));
-            // Scope this conversation's todo tree to its own session file under
-            // the app config dir (overrides the placeholder from
-            // ToolRegistry::new). Keeps per-session todo state out of the
-            // user's project root / CWD.
-            tool_registry.register(Box::new(agent::TodoTreeTool::for_session(
-                &session.session.id.to_string(),
-            )));
             let mut used_names: HashSet<String> = tool_registry
                 .definitions()
                 .into_iter()
@@ -365,7 +351,10 @@ pub async fn send_message_impl(
 
             let mut adapter: Box<dyn ContextManagerAdapter> = match session.session.context_mode {
                 ContextMode::Legacy => Box::new(LegacyContextAdapter),
-                ContextMode::Squire => Box::new(SquireContextAdapter::new(squire_store.clone())),
+                ContextMode::Squire => Box::new(SquireContextAdapter::new_with_prefetch(
+                    squire_store.clone(),
+                    squire_prefetch.clone(),
+                )),
             };
 
             // sa-4: gate the live `stream-chunk` UI channel by context mode —

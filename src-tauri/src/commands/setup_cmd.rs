@@ -1,7 +1,6 @@
 use super::{AppState, TerminalState, WatcherState};
 use crate::agent::{PendingApprovals, PendingAskUserQuestions};
 use crate::fs::watcher::FileWatcher;
-use crate::llm::registry::ProviderRegistry;
 use crate::state::config::{self, AppConfig};
 use crate::terminal::manager::PtyManager;
 use std::collections::HashMap;
@@ -69,7 +68,7 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
     );
     // ─────────────────────────────────────────────────────────────
 
-    let registry = ProviderRegistry::from_config(&config);
+    let registry = crate::llm::registry::from_app_config(&config);
 
     let (file_watcher, mut watcher_rx) = FileWatcher::new();
 

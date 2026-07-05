@@ -69,11 +69,8 @@ pub fn get_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
 pub fn save_config(new_config: AppConfig, state: State<'_, AppState>) -> Result<(), String> {
     config::save_config(&new_config).map_err(|e| e.to_string())?;
     *state.config.write().map_err(|e| e.to_string())? = new_config.clone();
-    state
-        .registry
-        .write()
-        .map_err(|e| e.to_string())?
-        .rebuild_from_config(&new_config);
+    *state.registry.write().map_err(|e| e.to_string())? =
+        crate::llm::registry::from_app_config(&new_config);
     Ok(())
 }
 

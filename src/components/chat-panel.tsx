@@ -5,15 +5,16 @@ import { loadConfig } from '@/lib/ipc'
 import { ChatMessage } from '@/components/chat-message'
 import { ChatInput } from '@/components/chat-input'
 import { ConversationSidebar } from '@/components/conversation-sidebar'
-import { MessagesSquare, MessageSquareText, PlugZap, AlertCircle, Check, X } from 'lucide-react'
+import { MessagesSquare, MessageSquareText, PlugZap, SlidersHorizontal, AlertCircle, Check, X } from 'lucide-react'
 import {
   Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { McpPanel } from '@/components/mcp-panel'
+import { SquireSettingsPanel } from '@/components/squire-settings-panel'
 
 export function ChatPanel() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'conversations' | 'mcp'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'conversations' | 'mcp' | 'squire'>('chat')
   const [activeMcpCount, setActiveMcpCount] = useState(0)
   const [takingLong, setTakingLong] = useState(false)
   const [askUserAnswerDraft, setAskUserAnswerDraft] = useState('')
@@ -141,7 +142,7 @@ export function ChatPanel() {
 
   return (
     <div className="flex h-full bg-background">
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'chat' | 'conversations' | 'mcp')} className="flex h-full w-full">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'chat' | 'conversations' | 'mcp' | 'squire')} className="flex h-full w-full">
         <div className="flex-1 min-w-0 flex flex-col">
           {error && (
             <div className="flex items-center gap-2 px-4 py-2 bg-destructive/10 text-destructive text-sm border-b border-border">
@@ -408,6 +409,10 @@ export function ChatPanel() {
           <TabsContent value="mcp" className="mt-0 flex-1 min-h-0 overflow-hidden">
             <McpPanel />
           </TabsContent>
+
+          <TabsContent value="squire" className="mt-0 flex-1 min-h-0 overflow-hidden">
+            <SquireSettingsPanel />
+          </TabsContent>
         </div>
 
         <div className="w-16 border-l border-border bg-[#E8EDF2]">
@@ -430,6 +435,12 @@ export function ChatPanel() {
                 <PlugZap className="h-4 w-4" />
                 <span>MCP</span>
                 <span className="text-[10px] text-[#6B7B8D]">{activeMcpCount}</span>
+              </span>
+            </TabsTrigger>
+            <TabsTrigger value="squire" className="h-14 w-full p-1 text-[11px] leading-tight">
+              <span className="flex flex-col items-center gap-1">
+                <SlidersHorizontal className="h-4 w-4" />
+                <span>Squire</span>
               </span>
             </TabsTrigger>
           </TabsList>

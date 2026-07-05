@@ -240,6 +240,14 @@ export interface AppConfig {
   leftPanelWidth?: number
   rightPanelWidth?: number
   bottomPanelHeight?: number
+  squirePrefetch?: SquirePrefetchConfig
+}
+
+export interface SquirePrefetchConfig {
+  memoryTopK: number
+  workflowTopK: number
+  toolTopK: number
+  skillTopK: number
 }
 
 export interface LlmProviderConfig {

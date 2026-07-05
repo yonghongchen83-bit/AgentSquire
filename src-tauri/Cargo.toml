@@ -2,7 +2,12 @@
 members = [
     "."
 ,
-    "hakari"
+    "hakari",
+    "crates/provider-core",
+    "crates/provider-openai",
+    "crates/provider-anthropic",
+    "crates/provider-registry",
+    "crates/mcp-sdk"
 ]
 resolver = "2"
 
@@ -24,6 +29,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
+provider-core = { path = "crates/provider-core" }
+provider-openai = { path = "crates/provider-openai" }
+provider-anthropic = { path = "crates/provider-anthropic" }
+provider-registry = { path = "crates/provider-registry" }
+mcp-sdk = { path = "crates/mcp-sdk" }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"

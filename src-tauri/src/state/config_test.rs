@@ -8,6 +8,10 @@ fn test_config_defaults() {
     assert_eq!(config.tab_size, 4);
     assert!(!config.word_wrap);
     assert!(config.llm_providers.is_empty());
+    assert_eq!(config.squire_prefetch.memory_top_k, 10);
+    assert_eq!(config.squire_prefetch.workflow_top_k, 3);
+    assert_eq!(config.squire_prefetch.tool_top_k, 3);
+    assert_eq!(config.squire_prefetch.skill_top_k, 3);
 }
 
 #[test]
@@ -19,6 +23,7 @@ fn test_toml_round_trip() {
     assert_eq!(parsed.tab_size, config.tab_size);
     assert_eq!(parsed.search_exclude.len(), 4);
     assert_eq!(parsed.terminal_font_size, 13);
+    assert_eq!(parsed.squire_prefetch.memory_top_k, 10);
 }
 
 #[test]

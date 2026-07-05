@@ -151,9 +151,11 @@ After meaningful progress, agent must update active node files:
 
 3. Execute
 - Keep updates small and frequent in state.md and todo.md.
+- Bulk todo operations are allowed in the current node (create/update multiple todos in one pass) when work stays in scope.
 
 4. Branch
-- If subproblem diverges, create child node under current node nodes folder.
+- If subproblem diverges, child node creation is optional and should be used only when isolation is needed.
+- Do not create a child node for every single todo item by default.
 
 5. Complete
 - Ensure todos are DONE or CANCELLED.

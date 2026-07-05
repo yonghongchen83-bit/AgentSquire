@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::config::SquirePrefetchConfig;
 use crate::storage::conversation_store::{ContextMode, Message, Session, StoreError};
 use std::sync::Mutex as StdMutex;
 use uuid::Uuid;
@@ -724,6 +725,125 @@ async fn build_turn_input_ignores_base_tools_and_exposes_only_built_ins() {
     assert_eq!(request["user_request"], "hello squire");
     assert!(request["prefetched_tokens"].is_array());
     assert!(request["preserved_tokens"].is_array());
+    assert!(request["bootstrap_tokens"].is_array());
+}
+
+#[tokio::test]
+async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individual_limits() {
+    let store = Arc::new(InMemorySquireStore::new());
+    store
+        .upsert_token(
+            NewTokenSpec {
+                id: "CONCEPT_A".to_string(),
+                token_type: "concept".to_string(),
+                short_desc: "alpha memory".to_string(),
+                full_desc: None,
+                endpoint: None,
+            },
+            0,
+        )
+        .await;
+    store
+        .upsert_token(
+            NewTokenSpec {
+                id: "WF_A".to_string(),
+                token_type: "workflow".to_string(),
+                short_desc: "alpha workflow".to_string(),
+                full_desc: None,
+                endpoint: None,
+            },
+            0,
+        )
+        .await;
+    store
+        .upsert_token(
+            NewTokenSpec {
+                id: "TOOL_A".to_string(),
+                token_type: "tool".to_string(),
+                short_desc: "alpha tool".to_string(),
+                full_desc: None,
+                endpoint: None,
+            },
+            0,
+        )
+        .await;
+    store
+        .upsert_token(
+            NewTokenSpec {
+                id: "SKILL_A".to_string(),
+                token_type: "skill".to_string(),
+                short_desc: "alpha skill".to_string(),
+                full_desc: None,
+                endpoint: None,
+            },
+            0,
+        )
+        .await;
+
+    let mut adapter = SquireContextAdapter::new_with_prefetch(
+        store,
+        SquirePrefetchConfig {
+            memory_top_k: 1,
+            workflow_top_k: 1,
+            tool_top_k: 1,
+            skill_top_k: 1,
+        },
+    );
+    let session = fixture_session("alpha");
+    let turn_input = adapter.build_turn_input(&session, &[]).await.unwrap();
+    let request: Value = serde_json::from_str(&turn_input.messages[1].content).unwrap();
+    let ids: Vec<String> = request["prefetched_tokens"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.get("token_id").and_then(|id| id.as_str()).map(str::to_string))
+        .collect();
+
+    assert!(ids.contains(&"CONCEPT_A".to_string()));
+    assert!(ids.contains(&"WF_A".to_string()));
+    assert!(ids.contains(&"TOOL_A".to_string()));
+    assert!(ids.contains(&"SKILL_A".to_string()));
+}
+
+#[tokio::test]
+async fn build_turn_input_merges_preserved_first_then_prefetch_without_duplicates() {
+    let store = Arc::new(InMemorySquireStore::new());
+    store
+        .upsert_token(
+            NewTokenSpec {
+                id: "CONCEPT_Keep".to_string(),
+                token_type: "concept".to_string(),
+                short_desc: "topic".to_string(),
+                full_desc: None,
+                endpoint: None,
+            },
+            0,
+        )
+        .await;
+
+    let session = fixture_session("topic");
+    let sid = session.session.id;
+    store
+        .set_preserve_list(sid, vec!["CONCEPT_Keep".to_string()])
+        .await;
+
+    let mut adapter = SquireContextAdapter::new(store);
+    let turn_input = adapter.build_turn_input(&session, &[]).await.unwrap();
+    let request: Value = serde_json::from_str(&turn_input.messages[1].content).unwrap();
+    let bootstrap = request["bootstrap_tokens"].as_array().unwrap();
+    let bootstrap_ids: Vec<String> = bootstrap
+        .iter()
+        .filter_map(|v| v.get("token_id").and_then(|id| id.as_str()).map(str::to_string))
+        .collect();
+
+    assert_eq!(bootstrap_ids.first().map(String::as_str), Some("CONCEPT_Keep"));
+    assert_eq!(
+        bootstrap_ids
+            .iter()
+            .filter(|id| id.as_str() == "CONCEPT_Keep")
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]

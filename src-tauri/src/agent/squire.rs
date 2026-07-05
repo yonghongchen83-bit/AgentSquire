@@ -17,6 +17,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::llm::provider::{ChatMessage, ChatRole, ToolCall, ToolDefinition};
+use crate::state::config::SquirePrefetchConfig;
 use crate::storage::conversation_store::{
     ConversationStore, MessageRole, NewMessage, SessionId, SessionWithMessages,
 };
@@ -1334,14 +1335,20 @@ The Squire validates your response and rejects it with a reason if: ask_user and
 
 pub struct SquireContextAdapter {
     store: Arc<dyn SquireStore>,
+    prefetch: SquirePrefetchConfig,
     max_retries: u32,
     retry_count: u32,
 }
 
 impl SquireContextAdapter {
     pub fn new(store: Arc<dyn SquireStore>) -> Self {
+        Self::new_with_prefetch(store, SquirePrefetchConfig::default())
+    }
+
+    pub fn new_with_prefetch(store: Arc<dyn SquireStore>, prefetch: SquirePrefetchConfig) -> Self {
         Self {
             store,
+            prefetch,
             max_retries: 3,
             retry_count: 0,
         }
@@ -1501,16 +1508,116 @@ impl ContextManagerAdapter for SquireContextAdapter {
         // discoverable in the same turn it arrived (see decisions.md).
         ingest_user_input_chunks(&user_text, current_turn, self.store.as_ref()).await;
 
-        let prefetched = self
-            .store
-            .explore_memory("all", &user_text, 1, 10, current_turn)
-            .await;
         let preserved = self.store.preserved_tokens(session.session.id).await;
+
+        // User-request semantic bootstrap prefetch (global configurable):
+        // search each resource class independently so high-density categories
+        // like memory do not crowd out workflow/tool/skill candidates.
+        let memory_prefetched = self
+            .store
+            .explore_memory(
+                "memory",
+                &user_text,
+                1,
+                self.prefetch.memory_top_k,
+                current_turn,
+            )
+            .await;
+        let workflow_prefetched = self
+            .store
+            .explore_memory(
+                "workflow",
+                &user_text,
+                1,
+                self.prefetch.workflow_top_k,
+                current_turn,
+            )
+            .await;
+        let tool_prefetched = self
+            .store
+            .explore_memory(
+                "tool",
+                &user_text,
+                1,
+                self.prefetch.tool_top_k,
+                current_turn,
+            )
+            .await;
+        let skill_prefetched = self
+            .store
+            .explore_memory(
+                "skill",
+                &user_text,
+                1,
+                self.prefetch.skill_top_k,
+                current_turn,
+            )
+            .await;
+
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut prefetched_tokens: Vec<TokenSummary> = Vec::new();
+        let mut bootstrap_tokens: Vec<TokenSummary> = Vec::new();
+
+        // Preserved-first merge order per product requirement.
+        for token in &preserved {
+            if seen.insert(token.token_id.clone()) {
+                bootstrap_tokens.push(token.clone());
+            }
+        }
+
+        for token in memory_prefetched
+            .into_iter()
+            .chain(workflow_prefetched.into_iter())
+            .chain(tool_prefetched.into_iter())
+            .chain(skill_prefetched.into_iter())
+        {
+            if seen.insert(token.token_id.clone()) {
+                prefetched_tokens.push(token.clone());
+                bootstrap_tokens.push(token);
+            }
+        }
+
+        let mut prefetched_payload: Vec<serde_json::Value> = Vec::new();
+        for token in &prefetched_tokens {
+            let detail = self.store.token_detail(&token.token_id).await;
+            let description = detail
+                .and_then(|d| d.full_desc)
+                .unwrap_or_else(|| token.short_desc.clone());
+            prefetched_payload.push(serde_json::json!({
+                "token_id": token.token_id,
+                "full_description": description,
+            }));
+        }
+
+        let mut preserved_payload: Vec<serde_json::Value> = Vec::new();
+        for token in &preserved {
+            let detail = self.store.token_detail(&token.token_id).await;
+            let description = detail
+                .and_then(|d| d.full_desc)
+                .unwrap_or_else(|| token.short_desc.clone());
+            preserved_payload.push(serde_json::json!({
+                "token_id": token.token_id,
+                "full_description": description,
+            }));
+        }
+
+        let mut bootstrap_payload: Vec<serde_json::Value> = Vec::new();
+        for token in &bootstrap_tokens {
+            let detail = self.store.token_detail(&token.token_id).await;
+            let description = detail
+                .and_then(|d| d.full_desc)
+                .unwrap_or_else(|| token.short_desc.clone());
+            bootstrap_payload.push(serde_json::json!({
+                "token_id": token.token_id,
+                "full_description": description,
+            }));
+        }
 
         let request = serde_json::json!({
             "user_request": user_text,
-            "prefetched_tokens": prefetched,
-            "preserved_tokens": preserved,
+            "prefetched_tokens": prefetched_payload,
+            "preserved_tokens": preserved_payload,
+            "bootstrap_tokens": bootstrap_payload,
         });
 
         let messages = vec![

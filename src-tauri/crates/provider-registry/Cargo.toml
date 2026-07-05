@@ -1,0 +1,11 @@
+[package]
+name = "provider-registry"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+provider-core = { path = "../provider-core" }
+provider-openai = { path = "../provider-openai" }
+provider-anthropic = { path = "../provider-anthropic" }
+serde = { version = "1.0", features = ["derive"] }
+tracing = "0.1"

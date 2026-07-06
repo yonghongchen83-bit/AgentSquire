@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::state::config::McpServerConfig;
 
 pub mod context_adapter;
+mod decision_tree;
 mod file_tools;
 mod search_tools;
 mod git_tools;
@@ -13,6 +14,7 @@ mod terminal_tool;
 mod web_tools;
 mod todo_tree;
 mod subagent;
+pub use decision_tree::DecisionTreeTool;
 pub use file_tools::{FileReadTool, FileWriteTool};
 pub use search_tools::CodeSearchTool;
 pub use git_tools::GitTool;

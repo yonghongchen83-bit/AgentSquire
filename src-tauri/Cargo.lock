@@ -3323,29 +3323,48 @@ name = "hakari"
 version = "0.1.0"
 dependencies = [
  "aho-corasick",
+ "bytes",
+ "chrono",
  "deranged",
  "either",
  "fastrand 2.4.1",
  "foldhash 0.2.0",
  "form_urlencoded",
+ "futures-channel",
+ "futures-core",
+ "futures-io",
+ "futures-sink",
+ "futures-util",
+ "libc",
  "log",
+ "memchr",
  "miniz_oxide",
+ "num-traits",
  "percent-encoding",
  "phf_shared 0.13.1",
  "proc-macro2",
  "prost",
  "prost-types",
+ "regex",
  "regex-automata",
+ "regex-syntax",
+ "reqwest 0.12.28",
  "schemars 0.8.22",
+ "semver",
  "serde",
  "serde_core",
  "serde_json",
  "simd-adler32",
+ "slab",
  "smallvec",
+ "stable_deref_trait",
  "syn 2.0.118",
  "tauri-utils",
  "time",
+ "tokio",
+ "tracing-core",
  "typenum",
+ "url",
  "uuid",
 ]
 
@@ -7834,7 +7853,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "squirecli"
+name = "squire-store"
 version = "0.1.0"
 dependencies = [
  "arrow-array",
@@ -7843,10 +7862,25 @@ dependencies = [
  "chrono",
  "fastembed",
  "futures",
+ "lancedb",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "squirecli"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "futures",
  "git2",
  "hakari",
  "ignore",
- "lancedb",
  "log",
  "mcp-sdk",
  "notify",
@@ -7860,6 +7894,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "squire-store",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

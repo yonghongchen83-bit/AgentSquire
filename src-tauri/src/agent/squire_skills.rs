@@ -47,6 +47,14 @@ macro_rules! builtin_skills {
                 "SK_CreateWorkflow",
                 include_str!("../../skills/SK_CreateWorkflow.toml"),
             ),
+            (
+                "SK_DecisionTree",
+                include_str!("../../skills/SK_DecisionTree.toml"),
+            ),
+            (
+                "SK_SubagentDispatch",
+                include_str!("../../skills/SK_SubagentDispatch.toml"),
+            ),
         ]
     };
 }
@@ -135,6 +143,7 @@ pub async fn ingest_one_skill(store: &dyn SquireStore, sk: &SkillDef) {
                 short_desc: sk.short_desc.clone(),
                 full_desc: Some(sk.full_desc.clone()),
                 endpoint: None,
+                ranges: vec![],
             },
             0,
         )

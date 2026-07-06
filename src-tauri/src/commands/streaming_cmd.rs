@@ -1,7 +1,7 @@
 use super::utils::{derive_session_title_from_message, is_valid_tool_schema};
 use super::AppState;
 use crate::agent::context_adapter::{ContextManagerAdapter, LegacyContextAdapter, TurnOutcome};
-use crate::agent::squire::{SquireContextAdapter, SquireExploreTool, SquireInvokeTool, SquireTokenToDetailTool};
+use crate::agent::squire::{SquireContextAdapter, SquireExploreTool, SquireTokenToDetailTool};
 use crate::agent::{self, McpProxyTool, PendingApprovals, PendingAskUserQuestions, ToolDanger, ToolRegistry};
 use crate::llm::provider::{ChatMessage, ChatRole, ChatRequest, FinishReason, StreamEvent, ToolCall};
 use crate::state::config::{McpServerConfig, SquirePrefetchConfig};
@@ -318,7 +318,7 @@ pub async fn send_message_impl(
                             tool_endpoints.insert(
                                 local_name.clone(),
                                 agent::squire::ToolEndpoint::Mcp {
-                                    server: server.clone(),
+                                    server: server.clone().into(),
                                     remote_name: remote_tool_name.clone(),
                                 },
                             );
@@ -351,17 +351,42 @@ pub async fn send_message_impl(
             // ss-9: ingest the full, just-assembled tool registry (local
             // built-ins + MCP-discovered tools) into the Squire store as
             // `tool`-typed tokens, so `explore(resource_type="tool_skill")`
-            // and `SquireInvokeTool`'s store-fallback path have real rows to
-            // find. Runs every turn, both context modes — see
-            // `tool-token-ingestion/decisions.md` for why this is the one
-            // real trigger point and why it isn't gated to Squire mode only.
-            // `tool_endpoints` (token-detail-endpoint) carries enough MCP
-            // connection metadata for SquireInvokeTool's store-fallback path
-            // to actually dispatch a call, not just describe the tool.
+            // has real rows to find. Runs every turn, both context modes.
             agent::squire::ingest_tool_registry(&tool_registry, squire_store.as_ref(), &tool_endpoints).await;
 
+            // Capture tool_defs for build_turn_input BEFORE registering Squire
+            // tools — build_turn_input already prepends built_in_tool_definitions()
+            // (explore, token_to_detail), so including them in base_tools would
+            // create duplicates.
+            let base_tool_defs = tool_registry.definitions();
+
+            // Squire mode (Q5): register Squire-specific tools into the main
+            // registry alongside real tools. The model discovers tools via
+            // explore() and calls them directly by name — no invoke proxy.
+            if session.session.context_mode == ContextMode::Squire {
+                tool_registry.register(Box::new(SquireExploreTool {
+                    store: squire_store.clone(),
+                    tool_defs: base_tool_defs.clone(),
+                    session_id: session.session.id,
+                }));
+                tool_registry.register(Box::new(SquireTokenToDetailTool {
+                    store: squire_store.clone(),
+                }));
+                // Replace the default JSON-file-backed TodoTreeTool with a
+                // Squire-store-backed token-driven version.
+                tool_registry.register(Box::new(agent::TodoTreeTool::for_store(
+                    squire_store.clone(),
+                    session.session.id,
+                )));
+                // Register the decision tree tool (Squire store only).
+                tool_registry.register(Box::new(agent::DecisionTreeTool::new(
+                    squire_store.clone(),
+                    session.session.id,
+                )));
+            }
+
             let tool_registry = Arc::new(tool_registry);
-            let tool_defs = tool_registry.definitions();
+            let tool_defs = base_tool_defs;
 
             let mut adapter: Box<dyn ContextManagerAdapter> = match session.session.context_mode {
                 ContextMode::Legacy => Box::new(LegacyContextAdapter),
@@ -375,31 +400,9 @@ pub async fn send_message_impl(
             // see `should_stream_live_chunks` for the full rationale.
             let stream_live_chunks = should_stream_live_chunks(session.session.context_mode);
 
-            // Squire mode (Q5): the model must never see schemas for tools
-            // outside the 3 built-ins. `invoke` mediates access to the full
-            // registry internally, so it alone holds a reference to it; the
-            // dispatch registry the tool-call loop executes against contains
-            // only the 3 built-ins.
-            let dispatch_registry: Arc<ToolRegistry> = match session.session.context_mode {
-                ContextMode::Legacy => tool_registry.clone(),
-                ContextMode::Squire => {
-                    let mut squire_registry = ToolRegistry::empty();
-                    squire_registry.register(Box::new(SquireExploreTool {
-                        store: squire_store.clone(),
-                        tool_registry: tool_registry.clone(),
-                        session_id: session.session.id,
-                    }));
-                    squire_registry.register(Box::new(SquireTokenToDetailTool {
-                        store: squire_store.clone(),
-                        tool_registry: tool_registry.clone(),
-                    }));
-                    squire_registry.register(Box::new(SquireInvokeTool {
-                        tool_registry: tool_registry.clone(),
-                        store: squire_store.clone(),
-                    }));
-                    Arc::new(squire_registry)
-                }
-            };
+            // Single dispatch registry for both modes. In Squire mode the
+            // registry includes explore + token_to_detail alongside real tools.
+            let dispatch_registry: Arc<ToolRegistry> = tool_registry.clone();
 
             let turn_input = match adapter.build_turn_input(&session, &tool_defs).await {
                 Ok(ti) => ti,

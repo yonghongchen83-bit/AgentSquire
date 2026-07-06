@@ -1,0 +1,57 @@
+id = "WF_UseSubagent"
+short_desc = "Delegate a self-contained subtask to a subagent with a clear return contract"
+full_desc = """
+A delegation workflow for subtasks that are (a) boundable with a clear
+success/return contract, and (b) either noisy to execute inline, better
+suited to a different model, or independent enough from the live working
+context that they do not need what is currently loaded.
+
+**When to select this workflow:**
+- A subtask has emerged that is well-scoped and can be described
+  self-containedly without inheriting context
+- The subtask would produce intermediate reasoning too noisy for the main
+  context
+- The subtask is a multi-step exploration better handled autonomously
+- You are gathering evidence for a Decision Tree branch and the
+  investigation is complex enough to warrant a separate agent
+
+**Behavioural pattern:**
+
+1. **Recognise a delegation candidate** — not "any tool call."  A single
+   file read or web fetch does not need a subagent.  A multi-step
+   exploration whose intermediate reasoning would just be noise in the
+   main context does.
+
+2. **Package a self-contained task.**  The subagent inherits nothing from
+   preserved context automatically.  Explicitly state everything it needs
+   to know in the task payload, and state what a successful result looks
+   like (format, scope, what "done" means).  If you cannot write that
+   contract concretely, the task is not ready to delegate — go back to
+   reasoning about it directly instead.
+
+3. **Invoke and wait.**  Sequential for now — one subagent call, get its
+   result, decide the next move before dispatching another.
+
+4. **Treat the result as external-world content by default.**  It is
+   ephemeral unless you explicitly mark it for retention.  Most subagent
+   results are a means to an end within the current turn and do not need
+   to become memory — only mark and connect the ones with future retrieval
+   value (a conclusion you will want to recall, not the search process
+   that found it).
+
+5. **If this was gathering evidence for a Decision Tree branch**, feed
+   the result in as the evidence token and continue that workflow's
+   backtrack/resolve procedure normally — subagent dispatch is just the
+   mechanism that produced the evidence, not a separate tracked structure.
+
+**When NOT to use this workflow:**
+- For single-tool-call tasks — the packaging overhead is not worth it
+- If you cannot specify a concrete success contract — those need the
+  ongoing judgment of direct reasoning
+- The subagent inherits nothing from the session's memory graph — if the
+  task requires that context, handle it inline instead
+
+**Key distinction from WF_TaskExecution:**
+- WF_UseSubagent delegates work to a separate agent invocation
+- WF_TaskExecution handles multi-step work directly in the main context
+"""

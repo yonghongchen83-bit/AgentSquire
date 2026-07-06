@@ -166,18 +166,56 @@ pub fn chunk_user_input(text: &str) -> Vec<String> { ... }
 /// worked-example field comment ("first sentence of the chunk").
 fn first_sentence(chunk: &str) -> String { ... }
 
-/// Ingests one turn's user input as USR_T{turn}_{NNN} system_referential
-/// tokens (spec §3.1/§4.3/§9.1 step 2/§11). Backend-agnostic — calls only
-/// SquireStore::upsert_token, matching ingest_tool_registry's established
-/// shape. Returns nothing; callers that want the created ids (none do today)
-/// can derive them from chunk_user_input + the same turn number.
+/// Generic chunk ingestor: splits `text` into `{prefix}_T{turn}_{NNN}`-id
+/// `system_referential` tokens. Used for both user input (prefix="USR")
+/// and model responses (prefix="RESP").
+pub async fn ingest_text_chunks(text: &str, turn: u64, prefix: &str, store: &dyn SquireStore) { ... }
+
+/// Backward-compat alias: ingests user input as USR_T{turn}_{NNN} tokens.
 pub async fn ingest_user_input_chunks(text: &str, turn: u64, store: &dyn SquireStore) {
-    for (i, chunk) in chunk_user_input(text).into_iter().enumerate() {
-        let id = format!("USR_T{}_{:03}", turn, i + 1);
-        store.upsert_token(
-            NewTokenSpec {
-                id,
-                token_type: "system_referential".to_string(),
+    ingest_text_chunks(text, turn, "USR", store).await
+}
+
+/// Ingests model response as RESP_T{turn}_{NNN} tokens (called from
+/// finalize_turn after storing the response).
+pub async fn ingest_response_chunks(text: &str, turn: u64, store: &dyn SquireStore) {
+    ingest_text_chunks(text, turn, "RESP", store).await
+}
+```
+
+Call sites:
+- `build_turn_input`: `ingest_user_input_chunks(&user_text, current_turn, store)` — runs
+  before the bootstrap vector search so the turn's own input is discoverable immediately.
+- `finalize_turn`: `ingest_response_chunks(&parsed.content, turn, store)` — runs after the
+  response is stored, so the model's output is also discoverable for future turns.
+
+## (5) Model response chunking: RESP_T{turn}_{NNN} tokens
+
+The same dumb heuristic used for user input is also applied to the model's response at the
+end of each turn. Both the user's message and the model's reply become `system_referential`
+tokens stored in the same namespace, differentiated only by the `USR_`/`RESP_` prefix.
+
+The AI can place `§^bookmark` markers at byte offsets within its own response text, and can
+create referential tokens that define semantic ranges across both `USR_T*` and `RESP_T*`
+tokens — see `0012-referential-token-ranges.md` and the `ranges` field on
+`NewTokenSpec`.
+
+## (6) NewTokenSpec.type defaults to "concept"
+
+The `type` field on `NewTokenSpec` is now optional. When omitted, it defaults to `"concept"`.
+This reduces the burden on the model — most tokens the model creates are conceptual memory
+units, and requiring an explicit type for every token was causing unnecessary compliance
+failures. Explicit types (`"todo"`, `"decision"`, `"assumption"`, `"workflow"`, `"skill"`,
+`"tool"`) are still needed when tools/workflows create them, but the model doesn't need to
+specify them for `§^`-span tokens or explicit `new_tokens` entries.
+
+## (7) Referential token ranges — ADR 0012
+
+See `ArchitecturePlanning/adr/0012-referential-token-ranges.md` for the full design. In
+summary: a `NewTokenSpec` can carry a `ranges: Vec<TokenRange>` field where each entry
+specifies a slice of a `USR_T*` or `RESP_T*` token via bookmark name + optional offset/
+length. This lets the AI define semantic groupings over the dumb chunk boundaries without
+duplicating text.
                 short_desc: first_sentence(&chunk),
                 full_desc: Some(chunk),
             },

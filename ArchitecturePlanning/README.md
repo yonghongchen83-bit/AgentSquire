@@ -17,7 +17,13 @@ ArchitecturePlanning/
     ├── 0004-conversation-store-abstraction-trait.md
     ├── 0005-chat-ui-with-block-based-rendering.md
     ├── 0006-ripgrep-only-code-search.md
-    └── 0007-use-momoi-explorer-for-file-tree.md
+    ├── 0007-use-momoi-explorer-for-file-tree.md
+    ├── 0008-startup-scripts.md
+    ├── 0009-log-debug-mode.md
+    ├── 0010-deploy-method.md
+    ├── 0011-test-code-refactoring-strategy.md
+    └── 0012-referential-token-ranges.md
+    ├── 0012-referential-token-ranges.md
 ```
 
 ## ADR Process
@@ -40,7 +46,11 @@ Each ADR follows this format:
 | 4 | Conversation Store Abstraction via Trait | Accepted |
 | 5 | Chat UI with Block-Based Rendering | Accepted |
 | 6 | ripgrep-Only Code Search — No Built-in Indexing | Accepted |
-| 7 | Use momoi-explorer for File Tree | Accepted |
+| 8 | Startup Scripts | Accepted |
+| 9 | Log Debug Mode | Accepted |
+| 10 | Deploy Method | Accepted |
+| 11 | Test Code Refactoring Strategy | Accepted |
+| 12 | Referential Token Ranges — Bookmark-Based Slicing | Accepted |
 
 ## State Principle
 

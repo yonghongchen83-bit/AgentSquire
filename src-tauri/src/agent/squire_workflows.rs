@@ -63,6 +63,18 @@ macro_rules! builtin_workflows {
                 "WF_Debugging",
                 include_str!("../../workflows/WF_Debugging.toml"),
             ),
+            (
+                "WF_DecisionTree",
+                include_str!("../../workflows/WF_DecisionTree.toml"),
+            ),
+            (
+                "WF_UseSubagent",
+                include_str!("../../workflows/WF_UseSubagent.toml"),
+            ),
+            (
+                "WF_DebugTesting",
+                include_str!("../../workflows/WF_DebugTesting.toml"),
+            ),
         ]
     };
 }
@@ -151,6 +163,7 @@ pub async fn ingest_one_workflow(store: &dyn SquireStore, wf: &WorkflowDef) {
                 short_desc: wf.short_desc.clone(),
                 full_desc: Some(wf.full_desc.clone()),
                 endpoint: None,
+                ranges: vec![],
             },
             0,
         )

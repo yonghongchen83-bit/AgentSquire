@@ -1,0 +1,67 @@
+id = "WF_DecisionTree"
+short_desc = "Externalise decisions with multiple plausible approaches using a backtrackable tree"
+full_desc = """
+A structured decision-making workflow for situations where more than one
+plausible approach exists and the first move is genuinely uncertain.  The AI
+externalises the decision space, commits to one branch with an explicit
+assumption, and backtracks cleanly when wrong — leaving a traversable record
+of what was tried and why.
+
+**When to select this workflow:**
+- The user presents a problem with multiple viable approaches — a bug with
+  an unknown location, a design with several structures, any task where the
+  first move is genuinely uncertain
+- The user is investigating a root cause and you can think of several
+  candidate explanations
+- You are choosing between implementation strategies and the trade-offs
+  are not obvious
+
+**Behavioural pattern:**
+
+1. **Do not answer immediately.** First externalise the decision space: what
+   are the distinct approaches available right now, before committing to any
+   of them.
+
+2. **Create a root decision node** — a concept token whose short description
+   states the problem being decided, not the eventual answer.
+
+3. **Enumerate every option you're aware of** as options, even the ones
+   you're about to reject.  A path not taken is still worth recording —
+   it tells a future reader (or yourself, backtracking) what was already
+   ruled out and why.
+
+4. **Commit to exactly one option per open decision** with an explicit
+   assumption.  Never select without recording the assumption — an
+   unjustified selection can't be diagnosed later when it turns out wrong.
+   Weigh considered options against the branch selection criteria (see
+   skill) before choosing.
+
+5. **Act on the selected branch.** If the branch itself contains a further
+   decision (e.g. "read source" then splits into "check module A first" vs
+   "check module B first"), create a new child decision node and repeat.
+   The tree grows exactly as deep as real uncertainty goes — don't
+   manufacture branches for steps that only have one reasonable move.
+
+6. **When an assumption breaks**, do not delete or silently overwrite.
+   Follow the backtrack procedure: mark the evidence that broke the
+   assumption, mark the branch as abandoned, and re-examine the parent
+   decision for the next option.
+
+7. **When a branch resolves the original problem**, mark it explicitly so
+   the tree has a clear terminus.  Preserve the root node and the winning
+   path (not the abandoned ones) going into the next turn.
+
+**When NOT to use this workflow:**
+- If only one reasonable approach exists — don't create a decision node
+  for a step with no genuine fork
+- If the fix is obvious from the report itself (a typo, a clear stack
+  trace pointing at one line) — just fix it
+- Use WF_SimpleQA for straightforward factual questions, or WF_TaskExecution
+  for well-defined multi-step tasks
+
+**Key distinction from WF_Debugging:**
+- WF_DecisionTree is the general pattern for any decision with branches
+- WF_Debugging is a specific application focused on diagnosing errors
+- WF_DebugTesting composes WF_DecisionTree with subagent dispatch for
+  methodical bug investigation
+"""

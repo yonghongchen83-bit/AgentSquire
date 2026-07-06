@@ -1,0 +1,77 @@
+id = "WF_DebugTesting"
+short_desc = "Methodically debug and test using decision trees with subagent-driven evidence gathering"
+full_desc = """
+A structured debugging workflow that composes WF_DecisionTree with
+WF_UseSubagent.  Bug investigation is treated as a decision tree whose
+evidence-gathering step routes through subagent dispatch.  Introduces
+pre-tree observation capture and a fix/verification recording pattern
+alongside the standard decision tree lifecycle.
+
+**When to select this workflow:**
+- The user reports something broken, failing, or behaving unexpectedly
+- The cause is not immediately obvious from the report alone — more than
+  one plausible cause exists
+- The user says "debug this", "find the bug", "why is this happening"
+- You need to investigate a test failure or crash with an unknown root
+  cause
+
+**Behavioural pattern:**
+
+1. **Create the root node first.**  The root concept token uses a short
+   description stating the symptom as reported, not a guessed cause.
+
+2. **Capture raw observations before any hypothesis exists.**  A bug report
+   usually arrives with facts that predate any decision — error text, repro
+   steps, what was expected vs. what happened.  Mark each as evidence
+   immediately, with the relationship pointing to the root bug node.
+   Do not wait for candidate explanations to exist before capturing these —
+   they are evidence available to whichever hypotheses get proposed next.
+
+3. **Run the Decision Tree pattern from here, unmodified.**  Propose
+   candidate explanations as sibling decision nodes.  Select one via
+   selection + assumption, weighed against the four branch selection
+   criteria — confidence, effort, reversibility, narrowing effect, in that
+   precedence order.  The narrowing criterion is bisection: prefer the test
+   that cuts the surviving hypothesis set roughly in half over the one that
+   merely feels most likely.
+
+4. **Gather the evidence the assumption predicts via subagent dispatch.**
+   Package the assumption's claim directly as the subagent's success
+   contract — e.g. "confirm or deny that the failure reproduces when
+   condition X holds."  Follow the subagent packaging checklist: a
+   self-contained task description, an explicit return contract, no
+   memory-graph responsibility handed to the subagent.
+
+5. **On the result, follow two symmetric paths:**
+   - **Holds** → confirm the assumption with the evidence, then either
+     drill deeper (new child decision node under the current one) or,
+     if this fully accounts for the symptom, proceed to terminus.
+   - **Breaks** → follow the backtrack procedure: invalidate the assumption
+     with the evidence, abandon the branch, and reselect at the parent with
+     a new assumption.  An inconclusive or failed subagent run is itself
+     valid evidence for invalidation — it does not need to be a no-op retry.
+
+6. **Repeat steps 3–5** until a branch accounts for the symptom with
+   confirmed evidence, not just an unbroken assumption.
+
+7. **Mark the terminus** with a resolution relationship.  Then, outside the
+   decision tree proper, record:
+   - The actual change made (the fix)
+   - A test run confirming resolution (the verification)
+   With relationships: fix fixes the root bug node, and verification
+   verifies the fix.  Fix and verification stay distinct so a later
+   regression gets a new verification token without rewriting the original.
+
+**When NOT to use this workflow:**
+- If the fix is obvious from the report itself (a typo, a clear stack
+  trace pointing at one line) — there is no genuine fork; just fix it
+- Use WF_SimpleQA for straightforward factual questions
+- Use WF_Debugging for simpler debugging where the cause is already
+  suspected or the investigation path is linear
+
+**Key distinction from WF_Debugging:**
+- WF_Debugging is a simpler linear diagnose→hypothesise→investigate→fix path
+- WF_DebugTesting is a more structured decision-tree + subagent composition
+  for cases with multiple plausible root causes where the first move is
+  genuinely uncertain
+"""

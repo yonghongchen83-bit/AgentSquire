@@ -126,6 +126,9 @@
 | 4.7 | Tool registry | Register all tools, inject into `ChatRequest` for LLM tool calling |
 | 4.8 | Tool result rendering | Wire tool call results back into chat stream as `<ToolCallBlock>` |
 | 4.9 | Approve/reject flow | Optional: human-in-the-loop for write/delete/terminal tools |
+| 4.10 | **Response chunking** | `ingest_response_chunks` in `finalize_turn` — model output chunked into `RESP_T{turn}_{NNN}` tokens same as user input |
+| 4.11 | **Token type defaults** | `NewTokenSpec.type` defaults to `"concept"` — the model doesn't need to specify type for most tokens |
+| 4.12 | **Referential token ranges** | `TokenRange` struct on `NewTokenSpec` — AI can define byte-range slices across `USR_T*`/`RESP_T*` tokens via bookmark+offset. See ADR 0012. |
 
 **Depends on:** Phase 3 (chat system to invoke tools)
 

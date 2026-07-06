@@ -16,55 +16,81 @@ publish = false
 ### BEGIN HAKARI SECTION
 [dependencies]
 aho-corasick = { version = "1" }
+bytes = { version = "1" }
+chrono = { version = "0.4", features = ["serde"] }
 deranged = { version = "0.5", features = ["serde"] }
 either = { version = "1", features = ["use_std"] }
 fastrand = { version = "2" }
 foldhash = { version = "0.2" }
 form_urlencoded = { version = "1" }
+futures-channel = { version = "0.3", features = ["sink"] }
+futures-core = { version = "0.3" }
+futures-io = { version = "0.3" }
+futures-sink = { version = "0.3" }
+futures-util = { version = "0.3", features = ["channel", "io", "sink"] }
+libc = { version = "0.2", features = ["extra_traits"] }
 log = { version = "0.4", default-features = false, features = ["kv_unstable", "std"] }
+memchr = { version = "2" }
 miniz_oxide = { version = "0.8", features = ["simd"] }
+num-traits = { version = "0.2", features = ["i128", "libm"] }
 percent-encoding = { version = "2" }
 phf_shared = { version = "0.13" }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 prost = { version = "0.13", features = ["prost-derive"] }
 prost-types = { version = "0.13" }
+regex = { version = "1" }
 regex-automata = { version = "0.4", default-features = false, features = ["dfa-build", "dfa-onepass", "hybrid", "meta", "nfa", "perf", "std", "unicode"] }
+regex-syntax = { version = "0.8" }
+reqwest = { version = "0.12", features = ["json", "rustls-tls-native-roots", "stream"] }
 schemars = { version = "0.8", features = ["preserve_order", "url", "uuid1"] }
+semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1", features = ["alloc", "rc"] }
 serde_json = { version = "1", features = ["alloc", "raw_value", "unbounded_depth"] }
 simd-adler32 = { version = "0.3" }
+slab = { version = "0.4" }
 smallvec = { version = "1", default-features = false, features = ["const_new"] }
+stable_deref_trait = { version = "1" }
 tauri-utils = { version = "2", default-features = false, features = ["build-2", "compression", "resources"] }
 time = { version = "0.3", features = ["local-offset", "macros", "serde-well-known"] }
+tokio = { version = "1", features = ["full"] }
+tracing-core = { version = "0.1" }
 typenum = { version = "1", default-features = false, features = ["const-generics"] }
+url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 
 [build-dependencies]
 aho-corasick = { version = "1" }
+bytes = { version = "1" }
 deranged = { version = "0.5", features = ["serde"] }
 either = { version = "1", features = ["use_std"] }
 fastrand = { version = "2" }
 foldhash = { version = "0.2" }
 form_urlencoded = { version = "1" }
 log = { version = "0.4", default-features = false, features = ["kv_unstable", "std"] }
+memchr = { version = "2" }
 miniz_oxide = { version = "0.8", features = ["simd"] }
 percent-encoding = { version = "2" }
 phf_shared = { version = "0.13" }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 prost = { version = "0.13", features = ["prost-derive"] }
 prost-types = { version = "0.13" }
+regex = { version = "1" }
 regex-automata = { version = "0.4", default-features = false, features = ["dfa-build", "dfa-onepass", "hybrid", "meta", "nfa", "perf", "std", "unicode"] }
+regex-syntax = { version = "0.8" }
 schemars = { version = "0.8", features = ["preserve_order", "url", "uuid1"] }
+semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1", features = ["alloc", "rc"] }
 serde_json = { version = "1", features = ["alloc", "raw_value", "unbounded_depth"] }
 simd-adler32 = { version = "0.3" }
 smallvec = { version = "1", default-features = false, features = ["const_new"] }
+stable_deref_trait = { version = "1" }
 syn = { version = "2", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
 tauri-utils = { version = "2", default-features = false, features = ["build-2", "compression", "resources"] }
 time = { version = "0.3", features = ["local-offset", "macros", "serde-well-known"] }
 typenum = { version = "1", default-features = false, features = ["const-generics"] }
+url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 
 ### END HAKARI SECTION

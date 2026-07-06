@@ -7,7 +7,8 @@ members = [
     "crates/provider-openai",
     "crates/provider-anthropic",
     "crates/provider-registry",
-    "crates/mcp-sdk"
+    "crates/mcp-sdk",
+    "crates/squire-store"
 ]
 resolver = "2"
 
@@ -35,6 +36,7 @@ provider-openai = { path = "crates/provider-openai" }
 provider-anthropic = { path = "crates/provider-anthropic" }
 provider-registry = { path = "crates/provider-registry" }
 mcp-sdk = { path = "crates/mcp-sdk" }
+squire-store = { path = "crates/squire-store" }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
@@ -61,18 +63,6 @@ ignore = "0.4"
 regex = "1"
 futures = "0.3"
 async-trait = "0.1"
-lancedb = "0.14"
-arrow-array = "53.2"
-arrow-schema = "53.2"
-# Text embeddings for Squire semantic vector search. default-features off to
-# drop the heavy `image-models` feature (image codecs) we don't use; keep
-# `hf-hub` (model download) + `ort-download-binaries-native-tls` (auto-provision
-# the ONNX Runtime binary on this Windows x64 machine on first build).
-fastembed = { version = "5.17.2", default-features = false, features = [
-    "hf-hub",
-    "hf-hub-native-tls",
-    "ort-download-binaries-native-tls",
-] }
 hakari = { version = "0.1", path = "hakari" }
 
 [dev-dependencies]

@@ -131,6 +131,41 @@ pub struct McpServerConfig {
     pub headers: std::collections::HashMap<String, String>,
 }
 
+// Conversion between the main crate's McpServerConfig and squire-store's
+// McpServerConfig (identical shape, separate types to avoid a dependency
+// edge from the store crate back to the main crate).
+impl From<squire_store::McpServerConfig> for McpServerConfig {
+    fn from(c: squire_store::McpServerConfig) -> Self {
+        McpServerConfig {
+            id: c.id,
+            name: c.name,
+            transport: c.transport,
+            command: c.command,
+            args: c.args,
+            url: c.url,
+            enabled: c.enabled,
+            env: c.env,
+            headers: c.headers,
+        }
+    }
+}
+
+impl From<McpServerConfig> for squire_store::McpServerConfig {
+    fn from(c: McpServerConfig) -> Self {
+        squire_store::McpServerConfig {
+            id: c.id,
+            name: c.name,
+            transport: c.transport,
+            command: c.command,
+            args: c.args,
+            url: c.url,
+            enabled: c.enabled,
+            env: c.env,
+            headers: c.headers,
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }

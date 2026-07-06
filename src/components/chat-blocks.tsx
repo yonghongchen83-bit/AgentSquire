@@ -49,6 +49,27 @@ function isTodoTreePayload(result: string): { items: TodoTreeItem[] } | null {
   }
 }
 
+// ── Decision Tree Viewer ──
+
+interface DecisionTreeItem {
+  id: string
+  title: string
+  status: 'considered' | 'active' | 'confirmed' | 'invalidated' | 'abandoned' | 'resolved'
+  children: DecisionTreeItem[]
+}
+
+function isDecisionTreePayload(result: string): { items: DecisionTreeItem[] } | null {
+  try {
+    const parsed = JSON.parse(result)
+    if (parsed._type === 'decision_tree' && Array.isArray(parsed.items)) {
+      return { items: parsed.items }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 function parseTodoOperation(args: string): string | null {
   try {
     const parsed = JSON.parse(args)
@@ -120,6 +141,75 @@ function TodoTreeViewer({ items }: { items: TodoTreeItem[] }) {
   )
 }
 
+// ── Decision Tree Viewer ──
+
+const decisionStatusColors: Record<string, string> = {
+  considered: 'text-gray-400',
+  active: 'text-blue-500',
+  confirmed: 'text-green-500',
+  invalidated: 'text-red-500',
+  abandoned: 'text-orange-500',
+  resolved: 'text-purple-500',
+}
+
+function DecisionTreeItemRow({ item, depth }: { item: DecisionTreeItem; depth: number }) {
+  const [expanded, setExpanded] = useState(true)
+  const children = item.children ?? []
+  const hasChildren = children.length > 0
+
+  const statusColor = decisionStatusColors[item.status] ?? 'text-gray-400'
+  const statusLabel = item.status === 'considered' ? 'option'
+    : item.status === 'active' ? 'active'
+    : item.status === 'confirmed' ? 'confirmed'
+    : item.status === 'invalidated' ? 'invalidated'
+    : item.status === 'abandoned' ? 'abandoned'
+    : item.status === 'resolved' ? 'resolved'
+    : item.status
+
+  return (
+    <div>
+      <div
+        className="flex items-center gap-1.5 py-1 text-sm cursor-pointer hover:bg-gray-50 rounded px-1"
+        style={{ paddingLeft: `${depth * 20 + 4}px` }}
+        onClick={() => hasChildren && setExpanded(!expanded)}
+      >
+        {hasChildren ? (
+          expanded
+            ? <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+            : <ChevronRight className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+        ) : (
+          <span className="w-3.5 flex-shrink-0" />
+        )}
+        <span className={`h-4 w-4 rounded-full border-2 flex-shrink-0 ${statusColor} border-current`} />
+        <span className="text-gray-800">{item.title}</span>
+        <span className={`text-[10px] ml-1 ${statusColor}`}>
+          {statusLabel}
+        </span>
+      </div>
+      {expanded && hasChildren && (
+        <div>
+          {children.map(child => (
+            <DecisionTreeItemRow key={child.id} item={child} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DecisionTreeViewer({ items }: { items: DecisionTreeItem[] }) {
+  if (items.length === 0) {
+    return <p className="text-sm text-gray-500 py-2">No decisions found.</p>
+  }
+  return (
+    <div className="py-1">
+      {items.map(item => (
+        <DecisionTreeItemRow key={item.id} item={item} depth={0} />
+      ))}
+    </div>
+  )
+}
+
 function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }> }) {
   const approveToolCall = useChatStore((s) => s.approveToolCall)
   const rejectToolCall = useChatStore((s) => s.rejectToolCall)
@@ -127,6 +217,7 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
   // For run_terminal: build a nice display label
   const isTerminalTool = block.toolName === 'run_terminal'
   const isTodoTree = block.toolName === 'todo_tree'
+  const isDecisionTree = block.toolName === 'decision_tree'
   const cmdAnalysis = block.commandAnalysis
   const displayLabel = isTerminalTool && cmdAnalysis
     ? `${cmdAnalysis.command} ${cmdAnalysis.args.join(' ')}`
@@ -139,11 +230,14 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
   const todoOperation = isTodoTree ? parseTodoOperation(block.args) : null
   const isTreeOperation = isTreeProducingOperation(todoOperation)
 
+  // Parse decision tree payload
+  const dtData = isDecisionTree && block.result ? isDecisionTreePayload(block.result) : null
+
   // Only render todo_tree blocks that produce a tree (list/get).
   // Create/update/delete are administrative — don't show them in chat.
   if (isTodoTree && !isTreeOperation) return null
 
-  const [expanded, setExpanded] = useState(isTreeOperation)
+  const [expanded, setExpanded] = useState(isTreeOperation || isDecisionTree)
 
   return (
     <div className="border border-border rounded-md overflow-hidden my-1">
@@ -155,6 +249,8 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
         <span className="flex-1 min-w-0 text-left">
           {isTodoTree ? (
             <>Todo Tree</>
+          ) : isDecisionTree ? (
+            <>Decision Tree</>
           ) : displayLabel ? (
             <>
               <span className="font-mono text-[11px]">{displayLabel}</span>
@@ -201,6 +297,8 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
           )}
           {treeData ? (
             <TodoTreeViewer items={treeData.items} />
+          ) : dtData ? (
+            <DecisionTreeViewer items={dtData.items} />
           ) : (
             <>
               {block.args}

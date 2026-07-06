@@ -1,0 +1,117 @@
+id = "SK_DecisionTree"
+short_desc = "Token conventions, relationship vocabulary, branch selection criteria, and backtrack procedure for decision trees"
+full_desc = """
+The detailed skill for executing the Decision Tree workflow.  Covers the
+token naming conventions, relationship vocabulary, branch selection
+criteria, and backtrack procedure.
+
+## Token conventions
+
+No new token type is introduced.  Everything is a standard concept or
+referential token; the pattern lives entirely in naming and relationships.
+
+| Token | Naming | Represents |
+|-------|--------|------------|
+| Decision node | `CONCEPT_DT_<slug>` | A point where more than one approach exists. `short_desc` = the question, not the answer. |
+| Assumption | `CONCEPT_Assumption_<slug>` | The belief that justifies a specific selection. Always exactly one per selection edge. |
+| Evidence / outcome | `TRT_<slug>` (via `§^`) | Actual content — what you found, read, or observed. This is what assumptions get validated or invalidated against. |
+
+## Relationship vocabulary
+
+| Predicate | Subject → Object | Meaning |
+|-----------|-----------------|---------|
+| `considers` | parent decision node → child decision node | Option was identified. Does not imply it was chosen. |
+| `selects` | parent decision node → child decision node | This is the currently active path. A parent may have multiple `selects` edges over time — the live one is whichever child hasn't been `abandoned`. |
+| `drivenBy` | child decision node → assumption | The assumption that justified this selection. Mandatory on every `selects`. |
+| `invalidatedBy` | assumption → evidence | The concrete evidence that broke the assumption. |
+| `confirmedBy` | assumption → evidence | The concrete evidence that supported the assumption. Mirrors `invalidatedBy`; without this, a tested-and-holding assumption is graph-indistinguishable from one nobody has checked yet. |
+| `abandoned` | child decision node → assumption | Marks a previously-selected branch as no longer active, pointing at the assumption that failed. |
+| `resolves` | child decision node → root decision node | Marks a branch as the terminus that actually solved the original problem. |
+
+## Branch selection criteria
+
+When more than one considered option is viable, weigh them against these
+four factors, in this order of precedence when they conflict:
+
+1. **Confidence of success** — how likely is this approach to actually
+   resolve the problem, given what's currently known?  Prefer the option
+   you have the most concrete reason to believe will work over one that's
+   merely plausible.
+
+2. **Minimal effort/time** — among options with comparable confidence,
+   prefer the one that costs less to try.  Cheap-to-test approaches should
+   generally be attempted before expensive ones, since a wrong cheap guess
+   costs little.
+
+3. **Least destructive** — prefer approaches that are easy to undo or that
+   don't foreclose other options if wrong.  A reversible experiment beats
+   an irreversible commitment when confidence is otherwise similar.
+
+4. **Most narrowing effect** — when confidence is genuinely low and several
+   options are roughly equal on the above, prefer whichever option
+   eliminates the largest share of the remaining possibility space
+   regardless of outcome — i.e. it is informative even when it "fails."
+
+These are precedence rules, not a strict lexicographic formula — use
+judgment when factors trade off against each other (e.g. a slightly slower
+option that is far more narrowing may still win).  Record the reasoning:
+the assumption token's description should name which criterion or criteria
+drove the choice, so a later backtrack is diagnostic rather than a dead end.
+
+## Confirming without resolving
+
+Not every assumption that holds up is the root cause — it may just justify
+drilling one level deeper.  When evidence supports an assumption but the
+branch is not yet the terminus:
+
+1. Mark the evidence with `§^` if it is not already a token.
+2. Write `CONCEPT_Assumption_x confirmedBy TRT_evidence`.
+3. Proceed to create a child decision node rather than looping back to
+   `considers` at the same level.
+
+## Backtrack procedure
+
+When a selected branch's assumption breaks:
+
+1. Mark the evidence that broke it with `§^` if it is not already a token.
+2. Write `CONCEPT_Assumption_x invalidatedBy TRT_evidence`.
+3. Write `CONCEPT_DT_child abandoned CONCEPT_Assumption_x`.
+4. Return to the parent decision node.  Re-examine the original considers
+   list — is there an already-identified option to try next, or does this
+   new evidence surface an option that was not visible before?
+5. Write a new `selects` edge and a new `drivenBy` assumption for it.
+
+The parent node now has two `selects` edges.  This is intentional, not a
+cleanup problem: exploration from the parent surfaces both, and the
+`abandoned` edge disambiguates which is live.  Hit-count decay does the
+rest — the abandoned branch stops accumulating references and drifts down
+in ranking naturally.
+
+## Worked example
+
+```text
+CONCEPT_DT_LocateBug            considers   CONCEPT_DT_ReadSource
+CONCEPT_DT_LocateBug            considers   CONCEPT_DT_SetBreakpoint
+CONCEPT_DT_LocateBug            considers   CONCEPT_DT_AssertCondition
+CONCEPT_DT_LocateBug            selects     CONCEPT_DT_ReadSource
+CONCEPT_DT_ReadSource           drivenBy    CONCEPT_Assumption_ReadSourceFast
+
+-- assumption breaks --
+
+CONCEPT_Assumption_ReadSourceFast  invalidatedBy  TRT_CodeMoreComplexThanExpected
+CONCEPT_DT_ReadSource              abandoned      CONCEPT_Assumption_ReadSourceFast
+CONCEPT_DT_LocateBug               selects        CONCEPT_DT_SetBreakpoint
+CONCEPT_DT_SetBreakpoint           drivenBy       CONCEPT_Assumption_NeedRuntimeEvidence
+
+-- bug found --
+
+CONCEPT_DT_SetBreakpoint           resolves       CONCEPT_DT_LocateBug
+```
+
+## When not to use this skill
+
+Do not create a decision node for a step with only one reasonable move.
+The tree should reflect genuine forks, not every action taken.  If you
+would not be able to articulate a second option someone might reasonably
+have chosen instead, it is not a decision node.
+"""

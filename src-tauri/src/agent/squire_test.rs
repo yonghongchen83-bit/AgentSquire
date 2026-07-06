@@ -1,6 +1,16 @@
 use super::*;
+use crate::agent::context_adapter::ContextManagerAdapter;
+use crate::agent::{Tool, ToolRegistry, ToolResult};
+use crate::llm::provider::{ChatRole, ToolDefinition};
 use crate::state::config::SquirePrefetchConfig;
-use crate::storage::conversation_store::{ContextMode, Message, Session, StoreError};
+use crate::storage::conversation_store::{
+    ContextMode, ConversationStore, Message, MessageRole, NewMessage, Session, SessionId,
+    SessionWithMessages, StoreError,
+};
+use async_trait::async_trait;
+use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use uuid::Uuid;
 
@@ -652,7 +662,6 @@ async fn token_to_detail_tool_increments_hit_count_on_store_backed_token() {
         .await;
     let tool = SquireTokenToDetailTool {
         store: store.clone(),
-        tool_registry: Arc::new(ToolRegistry::empty()),
     };
 
     tool.execute(
@@ -703,7 +712,7 @@ async fn explore_memory_breaks_near_ties_by_effective_priority() {
 // ---- SquireContextAdapter ----
 
 #[tokio::test]
-async fn build_turn_input_ignores_base_tools_and_exposes_only_built_ins() {
+async fn build_turn_input_merges_base_tools_with_built_ins() {
     let store = Arc::new(InMemorySquireStore::new());
     let mut adapter = SquireContextAdapter::new(store);
     let session = fixture_session("hello squire");
@@ -716,8 +725,7 @@ async fn build_turn_input_ignores_base_tools_and_exposes_only_built_ins() {
     let turn_input = adapter.build_turn_input(&session, &base_tools).await.unwrap();
 
     let tool_names: Vec<&str> = turn_input.tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(tool_names, vec!["explore", "token_to_detail", "invoke"]);
-    assert!(!tool_names.contains(&"run_terminal"));
+    assert_eq!(tool_names, vec!["explore", "token_to_detail", "run_terminal"]);
 
     assert!(matches!(turn_input.messages[0].role, ChatRole::System));
     assert!(matches!(turn_input.messages[1].role, ChatRole::User));
@@ -1338,9 +1346,10 @@ async fn finalize_turn_ask_user_does_not_reset_retry_count() {
 async fn explore_tool_searches_full_tool_registry_for_resource_type_tool() {
     let mut registry = ToolRegistry::empty();
     registry.register(Box::new(crate::agent::TerminalTool));
+    let tool_defs_snapshot = registry.definitions();
     let tool = SquireExploreTool {
         store: Arc::new(InMemorySquireStore::new()),
-        tool_registry: Arc::new(registry),
+        tool_defs: tool_defs_snapshot,
         session_id: Uuid::new_v4(),
     };
 
@@ -1351,53 +1360,6 @@ async fn explore_tool_searches_full_tool_registry_for_resource_type_tool() {
     let parsed: Vec<TokenSummary> = serde_json::from_str(&result.output).unwrap();
     assert_eq!(parsed.len(), 1);
     assert_eq!(parsed[0].token_id, "run_terminal");
-}
-
-#[tokio::test]
-async fn invoke_tool_proxies_to_real_tool_and_rejects_unknown_token() {
-    let mut registry = ToolRegistry::empty();
-    registry.register(Box::new(crate::agent::TerminalTool));
-    let tool = SquireInvokeTool {
-        tool_registry: Arc::new(registry),
-        store: Arc::new(InMemorySquireStore::new()),
-    };
-
-    assert_eq!(tool.danger(), ToolDanger::Destructive);
-
-    let missing = tool
-        .execute("call-1", serde_json::json!({"token_id": "nonexistent", "params": {}}))
-        .await;
-    assert!(missing.is_error);
-    assert_eq!(missing.output, "non-invocable token nonexistent");
-}
-
-#[tokio::test]
-async fn invoke_tool_falls_back_to_store_token_detail_when_not_in_registry() {
-    let registry = ToolRegistry::empty();
-    let store = Arc::new(InMemorySquireStore::new());
-    store
-        .upsert_token(
-            NewTokenSpec {
-                id: "TOOL_Ingested".to_string(),
-                token_type: "tool_skill".to_string(),
-                short_desc: "a tool discovered via explore but not yet ingested".to_string(),
-                full_desc: None,
-                endpoint: None,
-            },
-            0,
-        )
-        .await;
-    let tool = SquireInvokeTool {
-        tool_registry: Arc::new(registry),
-        store: store.clone(),
-    };
-
-    let result = tool
-        .execute("call-1", serde_json::json!({"token_id": "TOOL_Ingested", "params": {}}))
-        .await;
-    assert!(result.is_error);
-    assert!(result.output.contains("TOOL_Ingested"));
-    assert!(result.output.contains("no invocable endpoint"));
 }
 
 // ---- endpoint-carrying TokenDetail extension ----
@@ -1419,7 +1381,7 @@ fn fake_mcp_server(id: &str) -> crate::state::config::McpServerConfig {
 #[test]
 fn token_detail_and_new_token_spec_endpoint_round_trip_through_serde() {
     let endpoint = ToolEndpoint::Mcp {
-        server: fake_mcp_server("srv1"),
+        server: fake_mcp_server("srv1").into(),
         remote_name: "remote_tool".to_string(),
     };
     let detail = TokenDetail {
@@ -1436,7 +1398,7 @@ fn token_detail_and_new_token_spec_endpoint_round_trip_through_serde() {
 async fn upsert_token_persists_and_returns_endpoint_via_in_memory_store() {
     let store = InMemorySquireStore::new();
     let endpoint = ToolEndpoint::Mcp {
-        server: fake_mcp_server("srv1"),
+        server: fake_mcp_server("srv1").into(),
         remote_name: "remote_tool".to_string(),
     };
     store
@@ -1460,7 +1422,7 @@ async fn upsert_token_persists_and_returns_endpoint_via_in_memory_store() {
 async fn upsert_token_without_endpoint_preserves_previously_stored_endpoint() {
     let store = InMemorySquireStore::new();
     let endpoint = ToolEndpoint::Mcp {
-        server: fake_mcp_server("srv1"),
+        server: fake_mcp_server("srv1").into(),
         remote_name: "remote_tool".to_string(),
     };
     store
@@ -1501,7 +1463,7 @@ async fn ingest_tool_registry_populates_endpoint_only_for_mcp_sourced_definition
     endpoints.insert(
         "run_terminal".to_string(),
         ToolEndpoint::Mcp {
-            server: fake_mcp_server("srv1"),
+            server: fake_mcp_server("srv1").into(),
             remote_name: "remote_terminal".to_string(),
         },
     );
@@ -1530,46 +1492,6 @@ async fn ingest_tool_registry_with_empty_endpoints_map_matches_pre_existing_beha
 }
 
 #[tokio::test]
-async fn invoke_tool_dispatches_via_stored_mcp_endpoint_when_not_in_live_registry() {
-    let registry = ToolRegistry::empty();
-    let store = Arc::new(InMemorySquireStore::new());
-    store
-        .upsert_token(
-            NewTokenSpec {
-                id: "mcp_srv1_remote_tool".to_string(),
-                token_type: "tool".to_string(),
-                short_desc: "an mcp tool from a server not live this turn".to_string(),
-                full_desc: None,
-                endpoint: Some(ToolEndpoint::Mcp {
-                    server: fake_mcp_server("srv1"),
-                    remote_name: "remote_tool".to_string(),
-                }),
-            },
-            0,
-        )
-        .await;
-    let tool = SquireInvokeTool {
-        tool_registry: Arc::new(registry),
-        store: store.clone(),
-    };
-
-    let result = tool
-        .execute(
-            "call-1",
-            serde_json::json!({"token_id": "mcp_srv1_remote_tool", "params": {"x": 1}}),
-        )
-        .await;
-
-    assert!(result.is_error, "connecting to a nonexistent command must fail");
-    assert!(!result.output.contains("no invocable endpoint bound yet"));
-    assert!(
-        result.output.contains("MCP tool call failed") || result.output.contains("MCP"),
-        "expected a real MCP connection-failure message, got: {}",
-        result.output
-    );
-}
-
-#[tokio::test]
 async fn token_to_detail_tool_output_never_leaks_endpoint_data() {
     let store = Arc::new(InMemorySquireStore::new());
     let mut server = fake_mcp_server("srv1");
@@ -1584,7 +1506,7 @@ async fn token_to_detail_tool_output_never_leaks_endpoint_data() {
                 short_desc: "an mcp tool".to_string(),
                 full_desc: Some("full description".to_string()),
                 endpoint: Some(ToolEndpoint::Mcp {
-                    server,
+                    server: server.into(),
                     remote_name: "remote_tool".to_string(),
                 }),
             },
@@ -1593,7 +1515,6 @@ async fn token_to_detail_tool_output_never_leaks_endpoint_data() {
         .await;
     let tool = SquireTokenToDetailTool {
         store: store.clone(),
-        tool_registry: Arc::new(ToolRegistry::empty()),
     };
 
     let short = tool
@@ -1613,12 +1534,13 @@ async fn token_to_detail_tool_output_never_leaks_endpoint_data() {
 }
 
 #[tokio::test]
-async fn token_to_detail_tool_prefers_real_tool_schema_over_store() {
+async fn token_to_detail_tool_returns_tool_schema_from_store() {
     let mut registry = ToolRegistry::empty();
     registry.register(Box::new(crate::agent::TerminalTool));
+    let store = Arc::new(InMemorySquireStore::new());
+    ingest_tool_registry(&registry, store.as_ref(), &HashMap::new()).await;
     let tool = SquireTokenToDetailTool {
-        store: Arc::new(InMemorySquireStore::new()),
-        tool_registry: Arc::new(registry),
+        store: store.clone(),
     };
 
     let result = tool
@@ -1755,25 +1677,6 @@ async fn ingest_tool_registry_with_empty_registry_writes_nothing() {
     ingest_tool_registry(&registry, &store, &HashMap::new()).await;
     let results = store.explore_memory("tool", "", 0, 100, 0).await;
     assert!(results.is_empty());
-}
-
-#[tokio::test]
-async fn invoke_tool_can_resolve_a_token_ingested_by_ingest_tool_registry() {
-    let mut registry = ToolRegistry::empty();
-    registry.register(Box::new(crate::agent::TerminalTool));
-    let store = Arc::new(InMemorySquireStore::new());
-    ingest_tool_registry(&registry, store.as_ref(), &HashMap::new()).await;
-
-    assert!(store.token_exists("run_terminal").await);
-
-    let invoke_tool = SquireInvokeTool {
-        tool_registry: Arc::new(registry),
-        store: store.clone(),
-    };
-    let result = invoke_tool
-        .execute("call-1", serde_json::json!({"token_id": "run_terminal", "params": {}}))
-        .await;
-    assert_ne!(result.output, "non-invocable token run_terminal");
 }
 
 // ---- user-input auto-chunking ----

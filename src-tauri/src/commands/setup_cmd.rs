@@ -32,7 +32,7 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
     let squire_lancedb_dir = config_dir.join("squire_lancedb");
     let squire_store: std::sync::Arc<dyn crate::agent::squire::SquireStore> =
         std::sync::Arc::new(
-            tauri::async_runtime::block_on(crate::storage::squire_lancedb::LanceDbSquireStore::open(
+            tauri::async_runtime::block_on(squire_store::LanceDbSquireStore::open(
                 &squire_lancedb_dir,
             ))
             .map_err(|e| format!("Failed to open Squire LanceDB store: {}", e))?,

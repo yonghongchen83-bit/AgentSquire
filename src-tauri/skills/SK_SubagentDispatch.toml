@@ -1,0 +1,62 @@
+id = "SK_SubagentDispatch"
+short_desc = "How to package, invoke, handle results from, and handle failures of subagent dispatches"
+full_desc = """
+The detailed skill for executing the Subagent Dispatch workflow.  Covers
+token conventions, the packaging checklist, result handling, and failure
+handling.
+
+## Token conventions
+
+| Token | Naming | Represents |
+|-------|--------|------------|
+| Subagent tool | `TOOL_Subagent_<capability>` | A tool token whose full description is a standard MCP schema, discovered via tool exploration like any other tool. |
+
+No new token type.  The "subagent" concept exists only in naming convention
+and in the behavioural guidance — the Squire treats it identically to any
+other tool token.
+
+## Packaging checklist
+
+Before invoking a subagent tool, confirm:
+
+- **Self-contained task description** — does NOT assume the subagent can
+  see anything from the current session's memory graph.
+- **Explicit return contract** — what shape should the result come back in,
+  and what counts as success vs failure vs partial result.
+- **No memory-graph responsibility handed off** — the subagent does NOT
+  create tokens or relationships itself.  Only Main AI writes to the graph.
+  Subagents return data; Main AI decides what, if anything, becomes memory.
+
+## Result handling
+
+Default: ephemeral, discarded at turn end, same as any tool result.
+
+To retain: mark the relevant portion of your own response summarising the
+subagent's finding (not the subagent's raw output verbatim), and connect it
+via relationships to whatever concept token the task relates to.  Optional
+provenance relationship if useful:
+
+```text
+TRT_evidence   gatheredBy   TOOL_Subagent_CodeSearch
+```
+
+This is optional, not mandatory — only add it if provenance (which subagent
+produced this) is likely to matter for interpreting the evidence later.
+
+## Failure handling
+
+A subagent that fails, times out, or returns an inconclusive result is
+itself evidence.  If dispatched to gather evidence for a Decision Tree
+branch, an inconclusive result can validly invalidate the driving assumption
+(e.g. "assumed the subagent could isolate the failure; it could not narrow
+it down" is a legitimate reason to backtrack), rather than being treated as
+a no-op.
+
+## When not to use this skill
+
+Do not delegate a task you cannot specify a success contract for — those
+need the ongoing judgment of direct reasoning, not a one-shot dispatch.
+Do not delegate small single-tool-call tasks; the packaging overhead is not
+worth it for anything a direct invocation or exploration already handles in
+one step.
+"""

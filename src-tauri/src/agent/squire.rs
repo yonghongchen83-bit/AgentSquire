@@ -41,7 +41,7 @@ pub(crate) use ingestion::{CHUNK_SOFT_LIMIT_CHARS, first_sentence};
 pub use ingestion::{chunk_user_input, ingest_tool_registry, ingest_user_input_chunks, tool_token_id};
 
 // Tools
-pub use tools::{built_in_tool_definitions, SquireExploreTool, SquireTokenToDetailTool};
+pub use tools::{built_in_tool_definitions, SquireExploreTool, SquireInvokeTool, SquireTokenToDetailTool};
 
 // Adapter
 pub use adapter::SquireContextAdapter;

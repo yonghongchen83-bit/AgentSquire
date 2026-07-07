@@ -32,7 +32,9 @@ use crate::storage::conversation_store::{
 
 const SQUIRE_SYSTEM_PROMPT: &str = r#"You are the Main AI in the Context Squire system. You have no memory between turns other than what the current request provides. Do not assume you remember anything - if it is not in this request, it does not exist in your working context.
 
-You have two Squire-specific tools: explore(resource_type, query, num_hops, max_results) to search memory and discover available tools, and token_to_detail(token_id, detail_level) for full token descriptions. All other available tools are listed alongside them — call any tool directly by name via standard tool-calling conventions.
+You have three tools: explore(resource_type, query, num_hops, max_results) to search memory and discover available tools, token_to_detail(token_id, detail_level) to retrieve a token's full description, and invoke(token_id, params) to execute any tool you discovered via explore(). Use explore(resource_type="tool_skill", query="...") to find tools, then invoke(token_id, params) to call them.
+
+The user request includes two token lists: expanded_tokens (with full_description) are already in full context — do not re-fetch them. tokens (with short_description) are identified but not expanded — use token_to_detail if you need the full detail. Tokens in expanded_tokens never appear in tokens.
 
 Two sigils appear in your output, never visible to the user:
 - §!TokenID - inline reference to an existing token, expanded to its short description before display. The token must exist in the store or be defined in this response's new_tokens.
@@ -235,7 +237,7 @@ impl ContextManagerAdapter for SquireContextAdapter {
     async fn build_turn_input(
         &mut self,
         session: &SessionWithMessages,
-        base_tools: &[ToolDefinition],
+        _base_tools: &[ToolDefinition],
     ) -> Result<TurnInput, String> {
         let user_text = session
             .messages
@@ -275,17 +277,13 @@ impl ContextManagerAdapter for SquireContextAdapter {
             .explore_memory("skill", &user_text, 1, self.prefetch.skill_top_k, current_turn)
             .await;
 
-        let mut seen: HashSet<String> = HashSet::new();
-        let mut prefetched_tokens: Vec<_> = Vec::new();
-        let mut bootstrap_tokens: Vec<_> = Vec::new();
-
-        // Preserved-first merge order per product requirement.
-        for token in &preserved {
-            if seen.insert(token.token_id.clone()) {
-                bootstrap_tokens.push(token.clone());
-            }
-        }
-
+        // Merge all sources (preserved + semantic prefetch) into one
+        // deduplicated token list. Preserved tokens take priority, and
+        // duplicates across prefetch sources or within a single source
+        // (e.g. the same workflow returned twice) are removed.
+        let mut seen: HashSet<String> =
+            preserved.iter().map(|t| t.token_id.clone()).collect();
+        let mut all_tokens: Vec<_> = preserved.into_iter().collect();
         for token in memory_prefetched
             .into_iter()
             .chain(workflow_prefetched.into_iter())
@@ -293,45 +291,26 @@ impl ContextManagerAdapter for SquireContextAdapter {
             .chain(skill_prefetched.into_iter())
         {
             if seen.insert(token.token_id.clone()) {
-                prefetched_tokens.push(token.clone());
-                bootstrap_tokens.push(token);
+                all_tokens.push(token);
             }
         }
 
-        let mut prefetched_payload: Vec<serde_json::Value> = Vec::new();
-        for token in &prefetched_tokens {
+        // Build two lists: tokens with full descriptions (expanded), and
+        // tokens with only short descriptions. No token appears in both.
+        let mut expanded_tokens: Vec<serde_json::Value> = Vec::new();
+        let mut short_tokens: Vec<serde_json::Value> = Vec::new();
+        for token in &all_tokens {
             let detail = self.store.token_detail(&token.token_id).await;
-            let description = detail
-                .and_then(|d| d.full_desc)
-                .unwrap_or_else(|| token.short_desc.clone());
-            prefetched_payload.push(serde_json::json!({
-                "token_id": token.token_id,
-                "full_description": description,
-            }));
-        }
-
-        let mut preserved_payload: Vec<serde_json::Value> = Vec::new();
-        for token in &preserved {
-            let detail = self.store.token_detail(&token.token_id).await;
-            let description = detail
-                .and_then(|d| d.full_desc)
-                .unwrap_or_else(|| token.short_desc.clone());
-            preserved_payload.push(serde_json::json!({
-                "token_id": token.token_id,
-                "full_description": description,
-            }));
-        }
-
-        let mut bootstrap_payload: Vec<serde_json::Value> = Vec::new();
-        for token in &bootstrap_tokens {
-            let detail = self.store.token_detail(&token.token_id).await;
-            let description = detail
-                .and_then(|d| d.full_desc)
-                .unwrap_or_else(|| token.short_desc.clone());
-            bootstrap_payload.push(serde_json::json!({
-                "token_id": token.token_id,
-                "full_description": description,
-            }));
+            match detail.and_then(|d| d.full_desc) {
+                Some(full) => expanded_tokens.push(serde_json::json!({
+                    "token_id": token.token_id,
+                    "full_description": full,
+                })),
+                None => short_tokens.push(serde_json::json!({
+                    "token_id": token.token_id,
+                    "short_description": token.short_desc,
+                })),
+            }
         }
 
         let active_process_state =
@@ -339,9 +318,8 @@ impl ContextManagerAdapter for SquireContextAdapter {
 
         let request = serde_json::json!({
             "user_request": user_text,
-            "prefetched_tokens": prefetched_payload,
-            "preserved_tokens": preserved_payload,
-            "bootstrap_tokens": bootstrap_payload,
+            "expanded_tokens": expanded_tokens,
+            "tokens": short_tokens,
             "active_process_state": active_process_state,
         });
 
@@ -362,12 +340,15 @@ impl ContextManagerAdapter for SquireContextAdapter {
             },
         ];
 
+        // Q5: Squire mode exposes only the two built-in Squire protocol
+        // tools (explore, token_to_detail) as direct ToolDefinitions.
+        // External tools — MCP, built-in agent tools — are NOT injected
+        // into ChatRequest.tools. The AI discovers them through
+        // explore(resource_type="tool_skill") and calls them via the
+        // invoke(token_id, params) tool.
         Ok(TurnInput {
             messages,
-            tools: built_in_tool_definitions()
-                .into_iter()
-                .chain(base_tools.iter().cloned())
-                .collect(),
+            tools: built_in_tool_definitions(),
         })
     }
 

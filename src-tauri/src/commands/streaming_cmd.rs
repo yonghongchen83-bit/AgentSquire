@@ -1,7 +1,7 @@
 use super::utils::{derive_session_title_from_message, is_valid_tool_schema};
 use super::AppState;
 use crate::agent::context_adapter::{ContextManagerAdapter, LegacyContextAdapter, TurnOutcome};
-use crate::agent::squire::{SquireContextAdapter, SquireExploreTool, SquireTokenToDetailTool};
+use crate::agent::squire::{SquireContextAdapter, SquireExploreTool, SquireInvokeTool, SquireTokenToDetailTool};
 use crate::agent::{self, McpProxyTool, PendingApprovals, PendingAskUserQuestions, ToolDanger, ToolRegistry};
 use crate::llm::provider::{ChatMessage, ChatRole, ChatRequest, FinishReason, StreamEvent, ToolCall};
 use crate::state::config::{McpServerConfig, SquirePrefetchConfig};
@@ -384,6 +384,10 @@ pub async fn send_message_impl(
                     squire_store.clone(),
                     session.session.id,
                 )));
+                // Register the invoke proxy tool. The dispatch loop rewrites
+                // "invoke" calls to the real tool before execution, so the
+                // frontend sees the actual tool name (not "invoke").
+                tool_registry.register(Box::new(SquireInvokeTool));
             }
 
             let tool_registry = Arc::new(tool_registry);
@@ -471,7 +475,29 @@ pub async fn send_message_impl(
                             full_thinking.push_str(&text);
                             let _ = app_clone.emit("stream-thinking", text);
                         }
-                        StreamEvent::ToolCall(tc) => {
+                        StreamEvent::ToolCall(mut tc) => {
+                            // In Squire mode, rewrite "invoke" tool calls so
+                            // the frontend sees the real tool name (not "invoke").
+                            // The AI calls invoke(token_id, params) but the UI
+                            // should render it as if the tool was called directly.
+                            if session.session.context_mode == ContextMode::Squire
+                                && tc.name == "invoke"
+                            {
+                                if let Some(real_name) = tc
+                                    .arguments
+                                    .get("token_id")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string())
+                                {
+                                    let real_args = tc
+                                        .arguments
+                                        .get("params")
+                                        .cloned()
+                                        .unwrap_or(serde_json::json!({}));
+                                    tc.name = real_name;
+                                    tc.arguments = real_args;
+                                }
+                            }
                             tool_calls.push(tc.clone());
                             let _ = app_clone.emit("stream-tool-call", tc);
                         }

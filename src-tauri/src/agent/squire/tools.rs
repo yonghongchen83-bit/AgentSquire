@@ -1,9 +1,11 @@
-//! The two built-in Squire protocol tools: `explore` and `token_to_detail`.
+//! The three built-in Squire protocol tools: `explore`, `token_to_detail`,
+//! and `invoke`.
 //!
-//! These are registered alongside the real tool surface — the model calls
-//! all tools via standard tool-calling conventions (spec §6). Only these
-//! two plus `invoke` are the Squire-mode entry points; everything else is
-//! discovered through `explore(resource_type="tool_skill", ...)`.
+//! `explore` and `token_to_detail` are the discovery surface. `invoke`
+//! proxies a call to a tool/skill discovered via `explore()`, identified by
+//! its `token_id`. The streaming orchestration in `streaming_cmd.rs`
+//! rewrites the `stream-tool-call` event so the frontend sees the real tool
+//! name (not "invoke"), keeping the UI consistent with Legacy mode.
 
 use std::sync::Arc;
 
@@ -47,6 +49,24 @@ pub fn built_in_tool_definitions() -> Vec<ToolDefinition> {
                     "detail_level": {"type": "string", "enum": ["short", "full"]}
                 },
                 "required": ["token_id", "detail_level"]
+            }),
+        },
+        ToolDefinition {
+            name: "invoke".to_string(),
+            description: "Execute a tool or skill by its token_id (discovered via explore(resource_type='tool_skill', ...)). The result is returned as if the tool was called directly.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "token_id": {
+                        "type": "string",
+                        "description": "The token_id of the tool or skill to invoke, as returned by explore()"
+                    },
+                    "params": {
+                        "type": "object",
+                        "description": "Parameters to pass to the tool, matching its input schema"
+                    }
+                },
+                "required": ["token_id", "params"]
             }),
         },
     ]
@@ -247,6 +267,50 @@ impl Tool for SquireTokenToDetailTool {
                 output: format!("Unknown token: {}", token_id),
                 is_error: true,
             },
+        }
+    }
+}
+
+// ─────────────────────────── Invoke tool ───────────────────────────
+
+/// Squire's `invoke(token_id, params)` tool — a ToolDefinition-only entry point.
+///
+/// This struct exists so the `invoke` tool has a `ToolDefinition` visible to
+/// the AI. The actual execution is handled by `streaming_cmd.rs`'s dispatch
+/// loop: when `tc.name == "invoke"`, it extracts `token_id` from `tc.arguments`
+/// and dispatches to the real tool from `dispatch_registry`. The frontend
+/// receives `stream-tool-call` with the real tool name, not `"invoke"`.
+///
+/// This `execute()` should never be called — if it is, something went wrong
+/// in the orchestration.
+pub struct SquireInvokeTool;
+
+#[async_trait]
+impl Tool for SquireInvokeTool {
+    fn name(&self) -> &str {
+        "invoke"
+    }
+
+    fn description(&self) -> &str {
+        "Execute a tool or skill by its token_id (discovered via explore())."
+    }
+
+    fn input_schema(&self) -> Value {
+        built_in_tool_definitions()[2].input_schema.clone()
+    }
+
+    fn danger(&self) -> crate::agent::ToolDanger {
+        crate::agent::ToolDanger::Destructive
+    }
+
+    async fn execute(&self, _call_id: &str, _args: Value) -> ToolResult {
+        // This should never be reached — the streaming orchestration
+        // rewrites "invoke" tool calls before dispatch. If we get here,
+        // the rewrite logic failed.
+        ToolResult {
+            call_id: String::new(),
+            output: "Internal error: invoke tool was not redirected by orchestration".to_string(),
+            is_error: true,
         }
     }
 }

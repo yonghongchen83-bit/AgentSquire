@@ -310,7 +310,6 @@ impl LlmProvider for OpenAIProvider {
                 };
                 let request_log = format!(">>> REQUEST to {}\n{}", request_url, body_pretty);
                 append_wire_log(wire_log_path.as_ref(), &request_log);
-                tx.send(StreamEvent::Log(request_log)).await.ok();
             }
 
             let response = client
@@ -333,7 +332,6 @@ impl LlmProvider for OpenAIProvider {
                     if verbose {
                         let log_line = format!("<<< CONNECTION FAILED: {}", e);
                         append_wire_log(wire_log_path.as_ref(), &log_line);
-                        tx.send(StreamEvent::Log(log_line)).await.ok();
                     }
                     tx.send(StreamEvent::Error(
                         "Connection failed: unable to reach the server".to_string(),
@@ -351,13 +349,12 @@ impl LlmProvider for OpenAIProvider {
                 let body_text = resp.text().await.unwrap_or_default();
                 if verbose {
                     let response_log = format!(
-                        "<<< RESPONSE {} {}\n{}",
+                        "<<< {} {}\n{}",
                         status.as_u16(),
                         status.canonical_reason().unwrap_or(""),
                         body_text,
                     );
                     append_wire_log(wire_log_path.as_ref(), &response_log);
-                    tx.send(StreamEvent::Log(response_log)).await.ok();
                 }
                 let err = match status.as_u16() {
                     401 => LlmError::Auth,
@@ -384,7 +381,6 @@ impl LlmProvider for OpenAIProvider {
                     status.canonical_reason().unwrap_or(""),
                 );
                 append_wire_log(wire_log_path.as_ref(), &log_line);
-                tx.send(StreamEvent::Log(log_line)).await.ok();
             }
 
             let mut stream = resp.bytes_stream();

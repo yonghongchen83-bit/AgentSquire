@@ -30,14 +30,14 @@ function ThinkingBlock({ content }: { content: string }) {
 
 // ── Todo Tree Viewer ──
 
-interface TodoTreeItem {
+export interface TodoTreeItem {
   id: string
   title: string
   status: 'todo' | 'in_progress' | 'done'
   children: TodoTreeItem[]
 }
 
-function isTodoTreePayload(result: string): { items: TodoTreeItem[] } | null {
+export function isTodoTreePayload(result: string): { items: TodoTreeItem[] } | null {
   try {
     const parsed = JSON.parse(result)
     if (parsed._type === 'todo_tree' && Array.isArray(parsed.items)) {
@@ -51,14 +51,14 @@ function isTodoTreePayload(result: string): { items: TodoTreeItem[] } | null {
 
 // ── Decision Tree Viewer ──
 
-interface DecisionTreeItem {
+export interface DecisionTreeItem {
   id: string
   title: string
   status: 'considered' | 'active' | 'confirmed' | 'invalidated' | 'abandoned' | 'resolved'
   children: DecisionTreeItem[]
 }
 
-function isDecisionTreePayload(result: string): { items: DecisionTreeItem[] } | null {
+export function isDecisionTreePayload(result: string): { items: DecisionTreeItem[] } | null {
   try {
     const parsed = JSON.parse(result)
     if (parsed._type === 'decision_tree' && Array.isArray(parsed.items)) {
@@ -128,7 +128,7 @@ function TodoTreeItemRow({ item, depth }: { item: TodoTreeItem; depth: number })
   )
 }
 
-function TodoTreeViewer({ items }: { items: TodoTreeItem[] }) {
+export function TodoTreeViewer({ items }: { items: TodoTreeItem[] }) {
   if (items.length === 0) {
     return <p className="text-sm text-gray-500 py-2">No todo items found.</p>
   }
@@ -197,7 +197,7 @@ function DecisionTreeItemRow({ item, depth }: { item: DecisionTreeItem; depth: n
   )
 }
 
-function DecisionTreeViewer({ items }: { items: DecisionTreeItem[] }) {
+export function DecisionTreeViewer({ items }: { items: DecisionTreeItem[] }) {
   if (items.length === 0) {
     return <p className="text-sm text-gray-500 py-2">No decisions found.</p>
   }
@@ -233,11 +233,16 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
   // Parse decision tree payload
   const dtData = isDecisionTree && block.result ? isDecisionTreePayload(block.result) : null
 
+  // Hooks must be called before any early return to keep hook order stable.
+  const [expanded, setExpanded] = useState(isTreeOperation || isDecisionTree)
+
   // Only render todo_tree blocks that produce a tree (list/get).
   // Create/update/delete are administrative — don't show them in chat.
   if (isTodoTree && !isTreeOperation) return null
 
-  const [expanded, setExpanded] = useState(isTreeOperation || isDecisionTree)
+  // Trees are rendered at the bottom of ChatPanel — skip inline rendering.
+  if ((isTodoTree && isTreeOperation && treeData && !block.isPending) ||
+      (isDecisionTree && dtData && !block.isPending)) return null
 
   return (
     <div className="border border-border rounded-md overflow-hidden my-1">
@@ -295,11 +300,7 @@ function ToolCallBlock({ block }: { block: Extract<Block, { type: 'tool_call' }>
               ))}
             </div>
           )}
-          {treeData ? (
-            <TodoTreeViewer items={treeData.items} />
-          ) : dtData ? (
-            <DecisionTreeViewer items={dtData.items} />
-          ) : (
+          {treeData ? null : dtData ? null : (
             <>
               {block.args}
               {block.result && (

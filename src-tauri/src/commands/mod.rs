@@ -7,7 +7,7 @@ use crate::agent::squire::SquireStore;
 use crate::agent::{PendingApprovals, PendingAskUserQuestions};
 use crate::fs::ops::FileEntry;
 use crate::fs::watcher::FileWatcher;
-use crate::llm::registry::{ProviderInfo, ProviderRegistry};
+use crate::llm::registry::{from_app_config_with_wire_log, ProviderInfo, ProviderRegistry};
 use crate::search::grep::SearchMatch;
 use crate::shell::exec::CommandResult;
 use crate::state::config::{self, AppConfig, McpServerConfig};
@@ -33,7 +33,7 @@ pub use diagnostics::{ErrorEntry, OutputEntry};
 
 pub struct AppState {
     pub config: RwLock<AppConfig>,
-    pub store: Arc<dyn ConversationStore>,
+    pub store: RwLock<Arc<dyn ConversationStore>>,
     pub registry: RwLock<ProviderRegistry>,
     pub stream_tasks: Arc<TokioMutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
     pub subagent_tasks: Arc<TokioMutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
@@ -43,7 +43,11 @@ pub struct AppState {
     /// at app startup in `setup_cmd.rs` against `<app_config_dir>/squire_lancedb`;
     /// persists across restarts. `agent::squire::InMemorySquireStore` remains
     /// available as a fast in-process test double for unit tests.
-    pub squire_store: Arc<dyn SquireStore>,
+    ///
+    /// Wrapped in `RwLock` so the active store can be swapped at runtime when
+    /// binding/unbinding a workspace — the frontend session panel then refreshes
+    /// to show only sessions scoped to that workspace.
+    pub squire_store: RwLock<Arc<dyn SquireStore>>,
 }
 
 pub struct WatcherState {
@@ -165,6 +169,101 @@ pub async fn set_message_blocks(
     blocks_json: String,
 ) -> Result<(), String> {
     conversations::set_message_blocks_impl(state, message_id, blocks_json).await
+}
+
+// ── Workspace Binding ──
+
+/// Bind to a workspace directory: swap the active stores to workspace-local
+/// `.squire/squirecli.db` and `.squire/squire_lancedb/`. Emits
+/// `workspace-changed` so the frontend refreshes the session panel.
+#[tauri::command]
+pub async fn bind_workspace(path: String, state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
+    let squire_dir = std::path::Path::new(&path).join(".squire");
+    std::fs::create_dir_all(&squire_dir).map_err(|e| format!("Failed to create .squire directory: {}", e))?;
+
+    // Open workspace-local SQLite store
+    let db_path = squire_dir.join("squirecli.db");
+    let db = crate::state::db::Database::open(&db_path)
+        .map_err(|e| format!("Failed to open workspace database: {}", e))?;
+
+    // Open workspace-local LanceDB store
+    let lancedb_dir = squire_dir.join("squire_lancedb");
+    let raw_store = squire_store::LanceDbSquireStore::open(&lancedb_dir)
+        .await
+        .map_err(|e| format!("Failed to open workspace Squire store: {}", e))?;
+    let squire_store: Arc<dyn SquireStore> = Arc::new(raw_store);
+
+    // Clear stale preserve lists on the new store
+    squire_store.clear_all_preserve_lists().await;
+
+    // Seed workflows and skills from the workspace (async variant — we are
+    // already on the Tokio runtime inside a #[tauri::command])
+    let config_dir = crate::state::config::config_dir();
+    let project_path_ref = std::path::Path::new(&path);
+    crate::agent::squire_workflows::seed_all_workflows_async(
+        squire_store.clone(),
+        &config_dir,
+        Some(project_path_ref),
+    ).await;
+    crate::agent::squire_skills::seed_all_skills_async(
+        squire_store.clone(),
+        &config_dir,
+        Some(project_path_ref),
+    ).await;
+
+    // Swap stores in AppState
+    *state.store.write().map_err(|e| e.to_string())? = Arc::new(db);
+    *state.squire_store.write().map_err(|e| e.to_string())? = squire_store;
+    *state.project_path.write().map_err(|e| e.to_string())? = path;
+
+    // Redirect the provider wire log and Squire trace log under the
+    // workspace's .squire/ directory
+    let wire_log_path = Some(squire_dir.join("provider-wire.log"));
+    squire_store::trace::set_trace_dir(squire_dir.clone());
+    let config = state.config.read().map_err(|e| e.to_string())?.clone();
+    let new_registry = from_app_config_with_wire_log(&config, wire_log_path);
+    *state.registry.write().map_err(|e| e.to_string())? = new_registry;
+
+    // Notify frontend to refresh session panel
+    let _ = app.emit("workspace-changed", ());
+
+    Ok(())
+}
+
+/// Unbind the current workspace: revert to orphan-mode stores in the global
+/// config directory. Emits `workspace-changed` so the frontend refreshes.
+#[tauri::command]
+pub async fn unbind_workspace(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
+    let config_dir = crate::state::config::config_dir();
+
+    // Open (or create) orphan-mode stores in config_dir
+    let db_path = config_dir.join("squirecli.db");
+    let db = crate::state::db::Database::open(&db_path)
+        .map_err(|e| format!("Failed to open orphan database: {}", e))?;
+
+    let lancedb_dir = config_dir.join("squire_lancedb");
+    let raw_store = squire_store::LanceDbSquireStore::open(&lancedb_dir)
+        .await
+        .map_err(|e| format!("Failed to open orphan Squire store: {}", e))?;
+    let squire_store: Arc<dyn SquireStore> = Arc::new(raw_store);
+
+    squire_store.clear_all_preserve_lists().await;
+
+    // Swap stores back to orphan mode
+    *state.store.write().map_err(|e| e.to_string())? = Arc::new(db);
+    *state.squire_store.write().map_err(|e| e.to_string())? = squire_store;
+    *state.project_path.write().map_err(|e| e.to_string())? = String::new();
+
+    // Revert the provider wire log and Squire trace log back to the
+    // default config directory
+    squire_store::trace::set_trace_dir(config_dir.clone());
+    let config = state.config.read().map_err(|e| e.to_string())?.clone();
+    let new_registry = crate::llm::registry::from_app_config(&config);
+    *state.registry.write().map_err(|e| e.to_string())? = new_registry;
+
+    let _ = app.emit("workspace-changed", ());
+
+    Ok(())
 }
 
 // ── Send Message (with tool support) ──

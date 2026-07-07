@@ -188,6 +188,13 @@ pub mod predicates {
     /// Cross-tree: Todo leaf → Decision Tree root — links a todo that
     /// required investigation to the decision tree opened to resolve it.
     pub const INVESTIGATED_VIA: &str = "investigatedVia";
+    /// Generic hierarchy: parent → child — the child is contained within
+    /// the parent. Auto-mirrored with `Contains` (inserting a HasParent
+    /// edge automatically creates the inverse Contains edge).
+    pub const HAS_PARENT: &str = "HasParent";
+    /// Generic hierarchy inverse: container → contained. Auto-mirrored
+    /// from `HasParent` — never inserted directly.
+    pub const CONTAINS: &str = "Contains";
 }
 
 /// Represents the currently-active process tree state for Squire bootstrap

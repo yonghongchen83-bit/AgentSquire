@@ -17,6 +17,10 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
         .unwrap_or_else(|_| std::path::PathBuf::from("."));
     config::set_config_dir(config_dir.clone());
 
+    // Point the Squire trace log at the config directory (overridden during
+    // workspace bind to land under `.squire/squire-trace.log`).
+    squire_store::trace::set_trace_dir(config_dir.clone());
+
     let config: AppConfig = config::load_config().unwrap_or_default();
 
     let db_path = config_dir.join("squirecli.db");
@@ -101,12 +105,12 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
 
     app.manage(AppState {
         config: RwLock::new(config),
-        store: Arc::new(db),
+        store: RwLock::new(Arc::new(db)),
         registry: RwLock::new(registry),
         stream_tasks: Arc::new(TokioMutex::new(HashMap::new())),
         subagent_tasks: Arc::new(TokioMutex::new(HashMap::new())),
         project_path: RwLock::new(initial_project_path),
-        squire_store,
+        squire_store: RwLock::new(squire_store),
     });
 
     app.manage(WatcherState {

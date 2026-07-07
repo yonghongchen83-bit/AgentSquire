@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useLayoutStore } from '@/stores/ui-store'
-import { setProjectPath as setBackendProjectPath } from '@/lib/ipc'
+import { setProjectPath as setBackendProjectPath, bindWorkspace, unbindWorkspace } from '@/lib/ipc'
 
 interface MenuItem {
   label: string
@@ -33,7 +33,16 @@ export function MenuBar() {
       if (selected) {
         setProjectPath(selected)
         setBackendProjectPath(selected).catch(() => {})
+        bindWorkspace(selected).catch(() => {})
       }
+    } catch {}
+    setOpenMenu(null)
+  }, [setProjectPath])
+
+  const handleCloseProject = useCallback(async () => {
+    setProjectPath('')
+    try {
+      await unbindWorkspace()
     } catch {}
     setOpenMenu(null)
   }, [setProjectPath])
@@ -65,7 +74,7 @@ export function MenuBar() {
       label: 'File',
       items: [
         { label: 'Open Project', shortcut: 'Ctrl+O', action: handleOpenProject },
-        { label: 'Close Project', action: () => { setProjectPath(''); setOpenMenu(null) } },
+        { label: 'Close Project', action: handleCloseProject },
         { separatorAfter: true, label: '', action: () => {} },
         { label: 'Save', shortcut: 'Ctrl+S', action: () => setOpenMenu(null) },
         { label: 'Save As...', action: () => setOpenMenu(null) },

@@ -3,7 +3,7 @@ import { FolderOpen, Settings, Wifi, History } from 'lucide-react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useLayoutStore } from '@/stores/ui-store'
 import { useSettingsStore } from '@/stores/settings-store'
-import { setProjectPath as setBackendProjectPath } from '@/lib/ipc'
+import { setProjectPath as setBackendProjectPath, bindWorkspace } from '@/lib/ipc'
 
 const RECENT_KEY = 'myagent_recent_projects'
 
@@ -42,16 +42,18 @@ export function WelcomeScreen() {
         setRecentProjects(getRecentProjects())
         setProjectPath(selected)
         setBackendProjectPath(selected).catch(() => {})
+        bindWorkspace(selected).catch(() => {})
       }
     } catch {
       // Not running in Tauri or dialog cancelled
     }
   }
 
-  const handleOpenRecent = (path: string) => {
+  const handleOpenRecent = async (path: string) => {
     addRecentProject(path)
     setProjectPath(path)
     setBackendProjectPath(path).catch(() => {})
+    bindWorkspace(path).catch(() => {})
   }
 
   return (

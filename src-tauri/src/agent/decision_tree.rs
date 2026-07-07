@@ -686,8 +686,11 @@ impl DecisionTreeTool {
              invalidated_set, abandoned_set, resolves_set, _) =
             load_dt_indices(self.store.as_ref()).await;
 
+        // Walk up to root so the frontend always gets the complete tree.
+        let root = find_dt_root(id, &rels);
+
         let tree = dt_build_tree(
-            id,
+            &root,
             &rels,
             self.store.as_ref(),
             &selects_set,

@@ -1,0 +1,45 @@
+R1/R4/R5/R6: workspace-bound storage, tree API, referential default-typing, log redirects
+
+R1 — Workspace-bound storage:
+- AppState.store and AppState.squire_store changed from Arc<T> to RwLock<Arc<T>>
+  for runtime swapping
+- bind_workspace / unbind_workspace Tauri commands: swap DB + Squire stores to
+  {workspace}/.squire/ or back to orphan {config_dir}/
+- Conversations handlers use Arc-clone-before-await pattern to avoid !Send
+  RwLockReadGuard across await points
+- Frontend ipc.ts exports bindWorkspace/unbindWorkspace wrappers
+- Welcome screen and menu bar call bindWorkspace after opening a project,
+  menu bar calls unbindWorkspace on Close Project
+- workspace-changed event triggers conversation reload + clear active session
+
+R4 — Tree API (SquireStore):
+- Added HAS_PARENT/CONTAINS predicate constants
+- 7 new SquireStore trait methods: add_relationship, get_children, get_parent,
+  get_ancestors, get_type, get_instances, get_root
+- Implemented in LanceDbSquireStore and InMemorySquireStore
+- add_relationship auto-mirrors HasParent <-> Contains
+
+R5 — Referential default-typing:
+- Tokens from section-caret spans automatically get token_type = "referential"
+- Other tokens without explicit type default to "concept"
+
+R6 — System prompt update:
+- Documents HasParent/Contains auto-mirroring
+- Adapter switched from insert_relationship to add_relationship
+
+Log file workspace redirects:
+- provider-wire.log: registry.rs exposes from_app_config_with_wire_log() for
+  custom path; bind/unbind redirect to {workspace}/.squire/provider-wire.log
+- squire-trace.log: TRACE_DIR changed from OnceLock to RwLock for runtime
+  updates; initialized at startup, redirected on bind/unbind
+
+block_on fix:
+- seed_all_workflows/seed_all_skills extracted into load+merge helpers with
+  sync (block_on) and async (direct .await) entry points
+- bind_workspace uses async variants to avoid nested runtime panic
+
+Todo/decision tree frontend enhancements:
+- chat-blocks.tsx exports types and parsers for tree data
+- chat-panel.tsx extracts tree data from tool_call results and renders at
+  bottom of chat (todo tree + decision tree sections)
+- Todo/decision tree tools walk up to root so frontend gets complete trees

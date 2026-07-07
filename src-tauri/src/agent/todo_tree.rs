@@ -766,20 +766,15 @@ impl TodoTreeTool {
             };
         }
 
+        // Walk up to root so the frontend always gets the complete tree.
+        let root_id = store.get_root(id).await.map(|r| r.token_id).unwrap_or_else(|| id.to_string());
+
         let (_root_ids, outgoing, _incoming, marked_done) = load_todo_indices(store).await;
-        let children_ids = outgoing.get(id).cloned().unwrap_or_default();
-        let children = build_tree_json(&children_ids, store, &outgoing, &marked_done).await;
-        let done = is_todo_done(id, &marked_done, &outgoing);
-        let status_str = if done { "done" } else { "in_progress" };
+        let items = build_tree_json(&[root_id.clone()], store, &outgoing, &marked_done).await;
 
         let payload = serde_json::json!({
             "_type": "todo_tree",
-            "items": [{
-                "id": id,
-                "title": detail.unwrap().short_desc,
-                "status": status_str,
-                "children": children,
-            }],
+            "items": items,
         });
         ToolResult {
             call_id: call_id.to_string(),
@@ -884,21 +879,15 @@ impl TodoTreeTool {
                     };
                     let (_root_ids, outgoing, _incoming, marked_done) =
                         load_todo_indices(store).await;
-                    let children_ids = outgoing.get(id).cloned().unwrap_or_default();
-                    let children = build_tree_json(&children_ids, store, &outgoing, &marked_done).await;
-                    let done = is_todo_done(id, &marked_done, &outgoing);
-                    let status_str = if done { "done" } else { "in_progress" };
-                    let detail = store.token_detail(id).await;
+                    // Walk up to root so the frontend always gets the complete tree.
+                    let root_id = store.get_root(id).await.map(|r| r.token_id).unwrap_or_else(|| id.to_string());
+                    let items = build_tree_json(&[root_id.clone()], store, &outgoing, &marked_done).await;
                     results.push(serde_json::json!({
                         "index": idx,
                         "operation": "get",
                         "ok": true,
-                        "item": {
-                            "id": id,
-                            "title": detail.map(|d| d.short_desc).unwrap_or_default(),
-                            "status": status_str,
-                            "children": children,
-                        }
+                        "root_id": root_id,
+                        "items": items,
                     }));
                 }
                 "update" => {
@@ -1101,7 +1090,7 @@ impl TodoTreeTool {
                                     is_error: true,
                                 };
                             };
-                            let Some(node) = store.nodes.get(id) else {
+                            if !store.nodes.contains_key(id) {
                                 return ToolResult {
                                     call_id: call_id.to_string(),
                                     output: format!(
@@ -1111,22 +1100,23 @@ impl TodoTreeTool {
                                     is_error: true,
                                 };
                             };
-                            let status_str = match node.status {
-                                TodoStatus::Todo => "todo",
-                                TodoStatus::InProgress => "in_progress",
-                                TodoStatus::Done => "done",
+                            // Walk up parent chain to root so the frontend always gets the complete tree.
+                            let root_id = {
+                                let mut cur = id.to_string();
+                                loop {
+                                    let parent = store.nodes.get(&cur).and_then(|n| n.parent.clone());
+                                    match parent {
+                                        Some(p) => cur = p,
+                                        None => break cur,
+                                    }
+                                }
                             };
-                            let children = store.build_tree_json(&node.children);
+                            let items = store.build_tree_json(&[root_id]);
                             results.push(serde_json::json!({
                                 "index": idx,
                                 "operation": "get",
                                 "ok": true,
-                                "item": {
-                                    "id": node.id,
-                                    "title": node.title,
-                                    "status": status_str,
-                                    "children": children,
-                                }
+                                "items": items,
                             }));
                         }
                         "update" => {
@@ -1337,30 +1327,28 @@ impl TodoTreeTool {
                     }
                 };
                 let store = TodoStore::load(&store_path);
-                let node = match store.nodes.get(id) {
-                    Some(n) => n,
-                    None => {
-                        return ToolResult {
-                            call_id: call_id.to_string(),
-                            output: format!("Node not found: {}", id),
-                            is_error: true,
+                if !store.nodes.contains_key(id) {
+                    return ToolResult {
+                        call_id: call_id.to_string(),
+                        output: format!("Node not found: {}", id),
+                        is_error: true,
+                    };
+                }
+                // Walk up parent chain to root so the frontend always gets the complete tree.
+                let root_id = {
+                    let mut cur = id.to_string();
+                    loop {
+                        let parent = store.nodes.get(&cur).and_then(|n| n.parent.clone());
+                        match parent {
+                            Some(p) => cur = p,
+                            None => break cur,
                         }
                     }
                 };
-                let status_str = match node.status {
-                    TodoStatus::Todo => "todo",
-                    TodoStatus::InProgress => "in_progress",
-                    TodoStatus::Done => "done",
-                };
-                let children = store.build_tree_json(&node.children);
+                let items = store.build_tree_json(&[root_id]);
                 let payload = serde_json::json!({
                     "_type": "todo_tree",
-                    "items": [{
-                        "id": node.id,
-                        "title": node.title,
-                        "status": status_str,
-                        "children": children,
-                    }],
+                    "items": items,
                 });
                 ToolResult {
                     call_id: call_id.to_string(),

@@ -10,9 +10,9 @@ use tokio::sync::Mutex;
 use async_trait::async_trait;
 
 use squire_store::{
-    effective_priority, sort_by_score_then_priority, ComplianceFailureRecord, NewTokenSpec,
-    RawPartitionRecord, Relationship, SquireStore, StoredToken, TokenDetail, TokenSummary,
-    TraversalNode, traverse_relationships,
+    effective_priority, sort_by_score_then_priority, predicates, ComplianceFailureRecord,
+    NewTokenSpec, RawPartitionRecord, Relationship, SquireStore, StoredToken, TokenDetail,
+    TokenSummary, TraversalNode, traverse_relationships,
 };
 use crate::storage::conversation_store::SessionId;
 
@@ -281,4 +281,131 @@ impl SquireStore for InMemorySquireStore {
         self.tokens.lock().await.keys().cloned().collect()
     }
 
+    // ── Tree API convenience methods ──
+
+    async fn add_relationship(&self, rel: Relationship) {
+        if rel.predicate == predicates::CONTAINS {
+            return;
+        }
+        self.insert_relationship(rel.clone()).await;
+        if rel.predicate == predicates::HAS_PARENT {
+            self.insert_relationship(Relationship {
+                subject: rel.object.clone(),
+                predicate: predicates::CONTAINS.to_string(),
+                object: rel.subject.clone(),
+            })
+            .await;
+        }
+    }
+
+    async fn get_children(&self, token_id: &str) -> Vec<TokenSummary> {
+        let rels = self
+            .get_relationships(Some(token_id), Some(predicates::HAS_PARENT), None)
+            .await;
+        let tokens = self.tokens.lock().await;
+        rels.iter()
+            .filter_map(|rel| {
+                tokens.get(&rel.object).map(|t| TokenSummary {
+                    token_id: rel.object.clone(),
+                    token_type: t.token_type.clone(),
+                    score: 0.0,
+                    short_desc: t.short_desc.clone(),
+                    accumulated_hits: t.accumulated_hits,
+                    hop_distance: 0,
+                    via_token_id: None,
+                })
+            })
+            .collect()
+    }
+
+    async fn get_parent(&self, token_id: &str) -> Option<TokenSummary> {
+        let rels = self
+            .get_relationships(None, Some(predicates::HAS_PARENT), Some(token_id))
+            .await;
+        let parent_id = rels.first()?.subject.clone();
+        let tokens = self.tokens.lock().await;
+        tokens.get(&parent_id).map(|t| TokenSummary {
+            token_id: parent_id,
+            token_type: t.token_type.clone(),
+            score: 0.0,
+            short_desc: t.short_desc.clone(),
+            accumulated_hits: t.accumulated_hits,
+            hop_distance: 0,
+            via_token_id: None,
+        })
+    }
+
+    async fn get_ancestors(&self, token_id: &str, max_depth: u32) -> Vec<TokenSummary> {
+        let mut ancestors = Vec::new();
+        let mut current = token_id.to_string();
+        for _ in 0..max_depth {
+            let rels = self
+                .get_relationships(None, Some(predicates::HAS_PARENT), Some(&current))
+                .await;
+            let Some(parent_rel) = rels.first() else {
+                break;
+            };
+            current = parent_rel.subject.clone();
+            let tokens = self.tokens.lock().await;
+            if let Some(t) = tokens.get(&current) {
+                ancestors.push(TokenSummary {
+                    token_id: current.clone(),
+                    token_type: t.token_type.clone(),
+                    score: 0.0,
+                    short_desc: t.short_desc.clone(),
+                    accumulated_hits: t.accumulated_hits,
+                    hop_distance: 0,
+                    via_token_id: None,
+                });
+            }
+        }
+        ancestors
+    }
+
+    async fn get_type(&self, token_id: &str) -> Option<String> {
+        self.tokens
+            .lock()
+            .await
+            .get(token_id)
+            .map(|t| t.token_type.clone())
+    }
+
+    async fn get_instances(&self, token_type: &str) -> Vec<TokenSummary> {
+        let tokens = self.tokens.lock().await;
+        tokens
+            .iter()
+            .filter(|(_, t)| t.token_type == token_type)
+            .map(|(id, t)| TokenSummary {
+                token_id: id.clone(),
+                token_type: t.token_type.clone(),
+                score: 0.0,
+                short_desc: t.short_desc.clone(),
+                accumulated_hits: t.accumulated_hits,
+                hop_distance: 0,
+                via_token_id: None,
+            })
+            .collect()
+    }
+
+    async fn get_root(&self, token_id: &str) -> Option<TokenSummary> {
+        let mut current = token_id.to_string();
+        loop {
+            let rels = self
+                .get_relationships(None, Some(predicates::HAS_PARENT), Some(&current))
+                .await;
+            let Some(parent_rel) = rels.first() else {
+                let tokens = self.tokens.lock().await;
+                return tokens.get(&current).map(|t| TokenSummary {
+                    token_id: current,
+                    token_type: t.token_type.clone(),
+                    score: 0.0,
+                    short_desc: t.short_desc.clone(),
+                    accumulated_hits: t.accumulated_hits,
+                    hop_distance: 0,
+                    via_token_id: None,
+                });
+            };
+            current = parent_rel.subject.clone();
+        }
+    }
 }

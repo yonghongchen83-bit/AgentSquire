@@ -17,23 +17,32 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::RwLock;
 
 use serde::Serialize;
 use serde_json::Value;
 
-/// Directory where `squire-trace.log` is written. Set once at startup.
-static TRACE_DIR: OnceLock<PathBuf> = OnceLock::new();
+/// Directory where `squire-trace.log` is written.
+///
+/// Initialised at app startup to `{config_dir}`.  Updated during workspace
+/// bind to `{workspace}/.squire` and reverted on unbind, so the trace log
+/// follows the active workspace.
+static TRACE_DIR: RwLock<Option<PathBuf>> = RwLock::new(None);
 
-/// Configure the trace output directory. Should be called once at app
-/// startup, before any trace event is emitted. The second and later calls
-/// are silently ignored.
+/// Configure the trace output directory.  Can be called multiple times;
+/// later calls replace the previous value.
 pub fn set_trace_dir(dir: PathBuf) {
-    let _ = TRACE_DIR.set(dir);
+    if let Ok(mut guard) = TRACE_DIR.write() {
+        *guard = Some(dir);
+    }
 }
 
 fn trace_log_path() -> PathBuf {
-    let dir = TRACE_DIR.get().cloned().unwrap_or_else(|| PathBuf::from("."));
+    let dir = TRACE_DIR
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .unwrap_or_else(|| PathBuf::from("."));
     dir.join("squire-trace.log")
 }
 

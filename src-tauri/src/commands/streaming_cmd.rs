@@ -170,8 +170,8 @@ pub async fn send_message_impl(
     let sid =
         SessionId::parse_str(&session_id).map_err(|e| format!("Invalid session ID: {}", e))?;
 
-    state
-        .store
+    let store_arc = state.store.read().map_err(|e| e.to_string())?.clone();
+    store_arc
         .append_message(NewMessage {
             session_id: sid,
             role: crate::storage::conversation_store::MessageRole::User,
@@ -181,15 +181,16 @@ pub async fn send_message_impl(
         .await
         .map_err(|e| e.to_string())?;
 
-    let session = state
-        .store
+    let session = store_arc
         .get_session(sid)
         .await
         .map_err(|e| e.to_string())?;
 
     if session.session.title.trim().eq_ignore_ascii_case("new chat") {
         if let Some(generated_title) = derive_session_title_from_message(&content) {
-            let _ = state.store.update_session_title(sid, generated_title).await;
+            let _ = store_arc
+                .update_session_title(sid, generated_title)
+                .await;
         }
     }
 
@@ -227,8 +228,8 @@ pub async fn send_message_impl(
         .map(|p| p.clone())
         .unwrap_or_default();
 
-    let store = state.store.clone();
-    let squire_store = state.squire_store.clone();
+    let store = state.store.read().map_err(|e| e.to_string())?.clone();
+    let squire_store = state.squire_store.read().map_err(|e| e.to_string())?.clone();
     let app_clone = app.clone();
     let pending = pending_state.pending.clone();
     let pending_ask_user = pending_ask_user_state.pending.clone();

@@ -23,6 +23,7 @@ use crate::store::{
     traverse_relationships,
 };
 use crate::trace;
+use crate::types::predicates;
 use crate::types::{
     ComplianceFailureRecord, NewTokenSpec, Relationship, TokenDetail, TokenRange, TokenSummary,
     ToolEndpoint,
@@ -1011,4 +1012,135 @@ impl SquireStore for LanceDbSquireStore {
         ids
     }
 
+    // ── Tree API convenience methods ──
+
+    async fn add_relationship(&self, rel: Relationship) {
+        // Auto-mirror HasParent ↔ Contains
+        if rel.predicate == predicates::CONTAINS {
+            // Contains edges must not be inserted directly — use HasParent
+            return;
+        }
+        self.insert_relationship(rel.clone()).await;
+        if rel.predicate == predicates::HAS_PARENT {
+            self.insert_relationship(Relationship {
+                subject: rel.object.clone(),
+                predicate: predicates::CONTAINS.to_string(),
+                object: rel.subject.clone(),
+            })
+            .await;
+        }
+    }
+
+    async fn get_children(&self, token_id: &str) -> Vec<TokenSummary> {
+        let rels = self
+            .get_relationships(Some(token_id), Some(predicates::HAS_PARENT), None)
+            .await;
+        let mut children = Vec::with_capacity(rels.len());
+        for rel in rels {
+            if let Some(row) = self.find_token_row(&rel.object).await.unwrap_or(None) {
+                children.push(TokenSummary {
+                    token_id: row.token_id,
+                    token_type: row.token_type,
+                    score: 0.0,
+                    short_desc: row.short_desc,
+                    accumulated_hits: row.accumulated_hits,
+                    hop_distance: 0,
+                    via_token_id: None,
+                });
+            }
+        }
+        children
+    }
+
+    async fn get_parent(&self, token_id: &str) -> Option<TokenSummary> {
+        let rels = self
+            .get_relationships(None, Some(predicates::HAS_PARENT), Some(token_id))
+            .await;
+        let parent_id = rels.first()?.subject.clone();
+        let row = self.find_token_row(&parent_id).await.unwrap_or(None)?;
+        Some(TokenSummary {
+            token_id: row.token_id,
+            token_type: row.token_type,
+            score: 0.0,
+            short_desc: row.short_desc,
+            accumulated_hits: row.accumulated_hits,
+            hop_distance: 0,
+            via_token_id: None,
+        })
+    }
+
+    async fn get_ancestors(&self, token_id: &str, max_depth: u32) -> Vec<TokenSummary> {
+        let mut ancestors = Vec::new();
+        let mut current = token_id.to_string();
+        for _ in 0..max_depth {
+            let rels = self
+                .get_relationships(None, Some(predicates::HAS_PARENT), Some(&current))
+                .await;
+            let Some(parent_rel) = rels.first() else {
+                break;
+            };
+            current = parent_rel.subject.clone();
+            if let Some(row) = self.find_token_row(&current).await.unwrap_or(None) {
+                ancestors.push(TokenSummary {
+                    token_id: row.token_id,
+                    token_type: row.token_type,
+                    score: 0.0,
+                    short_desc: row.short_desc,
+                    accumulated_hits: row.accumulated_hits,
+                    hop_distance: 0,
+                    via_token_id: None,
+                });
+            }
+        }
+        ancestors
+    }
+
+    async fn get_type(&self, token_id: &str) -> Option<String> {
+        let row = self.find_token_row(token_id).await.unwrap_or(None)?;
+        Some(row.token_type)
+    }
+
+    async fn get_instances(&self, token_type: &str) -> Vec<TokenSummary> {
+        let all_ids = self.list_token_ids().await;
+        let mut results = Vec::new();
+        for id in &all_ids {
+            if let Some(row) = self.find_token_row(id).await.unwrap_or(None) {
+                if row.token_type == token_type {
+                    results.push(TokenSummary {
+                        token_id: row.token_id,
+                        token_type: row.token_type,
+                        score: 0.0,
+                        short_desc: row.short_desc,
+                        accumulated_hits: row.accumulated_hits,
+                        hop_distance: 0,
+                        via_token_id: None,
+                    });
+                }
+            }
+        }
+        results
+    }
+
+    async fn get_root(&self, token_id: &str) -> Option<TokenSummary> {
+        let mut current = token_id.to_string();
+        loop {
+            let rels = self
+                .get_relationships(None, Some(predicates::HAS_PARENT), Some(&current))
+                .await;
+            let Some(parent_rel) = rels.first() else {
+                // No parent — current is the root
+                let row = self.find_token_row(&current).await.unwrap_or(None)?;
+                return Some(TokenSummary {
+                    token_id: row.token_id,
+                    token_type: row.token_type,
+                    score: 0.0,
+                    short_desc: row.short_desc,
+                    accumulated_hits: row.accumulated_hits,
+                    hop_distance: 0,
+                    via_token_id: None,
+                });
+            };
+            current = parent_rel.subject.clone();
+        }
+    }
 }

@@ -128,6 +128,14 @@ export async function getProjectPath(): Promise<string> {
   return invoke('get_project_path')
 }
 
+export async function bindWorkspace(path: string): Promise<void> {
+  return invoke('bind_workspace', { path })
+}
+
+export async function unbindWorkspace(): Promise<void> {
+  return invoke('unbind_workspace')
+}
+
 export async function listConversations(): Promise<SessionSummary[]> {
   const rows = await invoke<RawSessionSummary[]>('list_conversations')
   return rows.map(mapSessionSummary)

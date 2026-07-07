@@ -8,7 +8,8 @@ use uuid::Uuid;
 pub async fn list_conversations_impl(
     state: State<'_, AppState>,
 ) -> Result<Vec<SessionSummary>, String> {
-    state.store.list_sessions().await.map_err(|e| e.to_string())
+    let store = state.store.read().map_err(|e| e.to_string())?.clone();
+    store.list_sessions().await.map_err(|e| e.to_string())
 }
 
 pub async fn get_conversation_impl(
@@ -16,8 +17,8 @@ pub async fn get_conversation_impl(
     id: String,
 ) -> Result<SessionWithMessages, String> {
     let session_id = SessionId::parse_str(&id).map_err(|e| format!("Invalid session ID: {}", e))?;
-    state
-        .store
+    let store = state.store.read().map_err(|e| e.to_string())?.clone();
+    store
         .get_session(session_id)
         .await
         .map_err(|e| e.to_string())
@@ -34,8 +35,8 @@ pub async fn create_conversation_impl(
         ),
         None => None,
     };
-    state
-        .store
+    let store = state.store.read().map_err(|e| e.to_string())?.clone();
+    store
         .create_session(NewSession { title, context_mode })
         .await
         .map_err(|e| e.to_string())
@@ -43,8 +44,8 @@ pub async fn create_conversation_impl(
 
 pub async fn delete_conversation_impl(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let session_id = SessionId::parse_str(&id).map_err(|e| format!("Invalid session ID: {}", e))?;
-    state
-        .store
+    let store = state.store.read().map_err(|e| e.to_string())?.clone();
+    store
         .delete_session(session_id)
         .await
         .map_err(|e| e.to_string())
@@ -66,8 +67,8 @@ pub async fn rename_conversation_impl(
 ) -> Result<(), String> {
     let session_id = SessionId::parse_str(&id).map_err(|e| format!("Invalid session ID: {}", e))?;
     let sanitized = sanitize_conversation_title(title)?;
-    state
-        .store
+    let store = state.store.read().map_err(|e| e.to_string())?.clone();
+    store
         .update_session_title(session_id, sanitized)
         .await
         .map_err(|e| e.to_string())
@@ -80,8 +81,8 @@ pub async fn truncate_messages_from_impl(
 ) -> Result<(), String> {
     let sid = SessionId::parse_str(&session_id).map_err(|e| format!("Invalid session ID: {}", e))?;
     let mid = Uuid::parse_str(&message_id).map_err(|e| format!("Invalid message ID: {}", e))?;
-    state
-        .store
+    let store = state.store.read().map_err(|e| e.to_string())?.clone();
+    store
         .truncate_messages_from(sid, mid)
         .await
         .map_err(|e| e.to_string())
@@ -93,9 +94,10 @@ pub async fn set_message_blocks_impl(
     blocks_json: String,
 ) -> Result<(), String> {
     let mid = Uuid::parse_str(&message_id).map_err(|e| format!("Invalid message ID: {}", e))?;
-    state
-        .store
+    let store = state.store.read().map_err(|e| e.to_string())?.clone();
+    store
         .set_message_blocks(mid, blocks_json)
         .await
         .map_err(|e| e.to_string())
 }
+

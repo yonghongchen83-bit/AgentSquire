@@ -40,6 +40,32 @@ pub trait SquireStore: Send + Sync {
     async fn clear_all_preserve_lists(&self);
     async fn record_raw_output(&self, session_id: SessionId, turn: u64, content: String);
 
+    /// Insert a relationship, auto-mirroring `HasParent` ↔ `Contains`.
+    /// If the predicate is `HasParent`, a `Contains` edge (subject↔object
+    /// swapped) is inserted automatically. `Contains` edges must not be
+    /// inserted directly — this method ignores them.
+    async fn add_relationship(&self, rel: Relationship);
+
+    /// Get all children of a token via `HasParent` edges.
+    async fn get_children(&self, token_id: &str) -> Vec<TokenSummary>;
+
+    /// Get the parent of a token via `HasParent` edge (if any).
+    async fn get_parent(&self, token_id: &str) -> Option<TokenSummary>;
+
+    /// Walk up the `HasParent` chain up to `max_depth` steps.
+    /// Returns ancestors closest to the token first (parent, grandparent, …).
+    async fn get_ancestors(&self, token_id: &str, max_depth: u32) -> Vec<TokenSummary>;
+
+    /// Get the `token_type` string for a token.
+    async fn get_type(&self, token_id: &str) -> Option<String>;
+
+    /// Find all tokens whose `token_type` matches the given type string.
+    async fn get_instances(&self, token_type: &str) -> Vec<TokenSummary>;
+
+    /// Walk up the `HasParent` chain to find the root ancestor.
+    /// Useful for todo/decision tree root discovery.
+    async fn get_root(&self, token_id: &str) -> Option<TokenSummary>;
+
     /// List all token IDs in the store.
     async fn list_token_ids(&self) -> Vec<String>;
 

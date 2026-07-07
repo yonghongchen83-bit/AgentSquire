@@ -158,13 +158,13 @@ pub async fn ingest_one_skill(store: &dyn SquireStore, sk: &SkillDef) {
 /// `{project_path}/.squire/skills/`).  If a source directory does not
 /// exist or no project is loaded, that source is silently skipped.
 ///
-/// Uses `tauri::async_runtime::block_on` because this is called from the
-/// synchronous [`setup_cmd`](crate::commands::setup_cmd) path.
-pub fn seed_all_skills(
-    store: Arc<dyn SquireStore>,
+// ── Helpers to load + merge skill sources ─────────────────────────────
+
+/// Load built-in, user, and project skills, returning the merged list.
+fn load_and_merge_skills(
     config_dir: &Path,
     project_path: Option<&Path>,
-) {
+) -> Vec<SkillDef> {
     let builtin = load_builtin_skills();
     let user = load_skills_from_dir(&config_dir.join("skills"));
     let project = project_path
@@ -173,7 +173,6 @@ pub fn seed_all_skills(
         .map(|d| load_skills_from_dir(&d))
         .unwrap_or_default();
 
-    // Merge by id: later sources overwrite earlier ones.
     let mut merged: HashMap<String, SkillDef> = HashMap::new();
     for sk in builtin {
         merged.insert(sk.id.clone(), sk);
@@ -184,12 +183,21 @@ pub fn seed_all_skills(
     for sk in project {
         merged.insert(sk.id.clone(), sk);
     }
+    merged.into_values().collect()
+}
 
-    let all: Vec<SkillDef> = merged.into_values().collect();
+/// Sync entry-point called from the Tauri setup closure (which runs on the
+/// main thread, not inside the Tokio runtime).  Uses
+/// `tauri::async_runtime::block_on` internally.
+pub fn seed_all_skills(
+    store: Arc<dyn SquireStore>,
+    config_dir: &Path,
+    project_path: Option<&Path>,
+) {
+    let all = load_and_merge_skills(config_dir, project_path);
     if all.is_empty() {
         return;
     }
-
     let store_clone = store.clone();
     tauri::async_runtime::block_on(async move {
         for sk in &all {
@@ -200,6 +208,26 @@ pub fn seed_all_skills(
             all.len()
         );
     });
+}
+
+/// Async entry-point called from `#[tauri::command]` handlers (which run
+/// on the Tokio runtime).  Does NOT use `block_on`.
+pub async fn seed_all_skills_async(
+    store: Arc<dyn SquireStore>,
+    config_dir: &Path,
+    project_path: Option<&Path>,
+) {
+    let all = load_and_merge_skills(config_dir, project_path);
+    if all.is_empty() {
+        return;
+    }
+    for sk in &all {
+        ingest_one_skill(store.as_ref(), sk).await;
+    }
+    log::info!(
+        "squire_skills: seeded {} skill tokens",
+        all.len()
+    );
 }
 
 // ── File-system watcher for live re-ingest ─────────────────────────────

@@ -51,8 +51,8 @@ Always respond with a single JSON object in exactly this shape (empty fields pre
 ask_user: a question for the user. If populated, content must be empty. Ask one focused question you cannot answer yourself via explore() or other tools.
 content: your response to the user, may contain §! and §^ markers. Your response is automatically chunked into RESP_T{turn}_{NNN} tokens after each turn — you can reference these in future turns.
 preserve: token IDs to carry forward to next turn's preserved_tokens, bypassing semantic scoring. Underpreserve rather than overpreserve.
-new_tokens: definitions for every token you reference via §! that isn't already in the store, and for every §^ span. Required fields: id (or token_id), short_desc. Optional fields: type (defaults to "concept" — you rarely need this), full_desc (the span text is captured automatically for §^ spans), ranges (see below).
-relationships: directed triples {subject, predicate, object} connecting tokens you create - an unconnected token is nearly unreachable later.
+new_tokens: definitions for every token you reference via §! that isn't already in the store, and for every §^ span. Required fields: id (or token_id), short_desc. Optional fields: type (defaults to "concept", automatically set to "referential" for §^ span tokens — you rarely need to set type yourself), full_desc (the span text is captured automatically for §^ spans), ranges (see below).
+relationships: directed triples {subject, predicate, object} connecting tokens you create - an unconnected token is nearly unreachable later. Use "HasParent"/"Contains" for generic hierarchy (e.g. a todo subtask or a decision-tree branch). "HasParent" is auto-mirrored with "Contains" — inserting subject→HasParent→object automatically creates object→Contains→subject. Domain-specific predicates like "subtask", "considers", "selects", "drivenBy" are also available for process trees; they have no auto-mirroring.
 
 For referential tokens (type "referential"), you can define a `ranges` array that slices across USR_T* (user input chunks) or RESP_T* (your own response chunks) tokens. Each range entry specifies:
   { "token": "USR_T1_005", "bookmark": "§^myBookmark", "offset": 0, "length": 200 }
@@ -494,6 +494,12 @@ impl ContextManagerAdapter for SquireContextAdapter {
 
         for token in &parsed.new_tokens {
             let mut token = token.clone();
+            // Default-typing (spec v3): tokens from §^ spans are
+            // "referential"; all others without an explicit type remain
+            // "concept" (handled by serde default on NewTokenSpec).
+            if spans.iter().any(|(id, _)| id == &token.id) {
+                token.token_type = "referential".to_string();
+            }
             if token.full_desc.is_none() {
                 if let Some((_, span_text)) = spans.iter().find(|(id, _)| id == &token.id) {
                     token.full_desc = Some(span_text.clone());
@@ -502,7 +508,7 @@ impl ContextManagerAdapter for SquireContextAdapter {
             self.store.upsert_token(token, turn).await;
         }
         for rel in &parsed.relationships {
-            self.store.insert_relationship(rel.clone()).await;
+            self.store.add_relationship(rel.clone()).await;
         }
         self.store
             .set_preserve_list(session_id, parsed.preserve.clone())

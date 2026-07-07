@@ -55,6 +55,8 @@ pub fn run() {
             commands::check_update,
             commands::set_project_path,
             commands::get_project_path,
+            commands::bind_workspace,
+            commands::unbind_workspace,
             commands::list_available_tools,
             commands::get_output,
             commands::get_errors,

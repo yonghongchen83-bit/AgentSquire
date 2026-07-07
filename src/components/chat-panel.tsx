@@ -5,7 +5,9 @@ import { loadConfig } from '@/lib/ipc'
 import { ChatMessage } from '@/components/chat-message'
 import { ChatInput } from '@/components/chat-input'
 import { ConversationSidebar } from '@/components/conversation-sidebar'
-import { MessagesSquare, MessageSquareText, PlugZap, SlidersHorizontal, AlertCircle, Check, X } from 'lucide-react'
+import { MessagesSquare, MessageSquareText, PlugZap, SlidersHorizontal, AlertCircle, Check, X, GitBranch, ListTree } from 'lucide-react'
+import type { Block } from '@/types/ipc'
+import { isTodoTreePayload, isDecisionTreePayload, TodoTreeViewer, DecisionTreeViewer } from '@/components/chat-blocks'
 import {
   Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -63,10 +65,24 @@ export function ChatPanel() {
   useEffect(() => {
     loadConversations()
     loadProviders()
-    const unlisten = listen('providers-changed', () => {
+    const unlistenA = listen('providers-changed', () => {
       loadProviders()
     })
-    return () => { unlisten.then((fn) => fn()) }
+    const unlistenB = listen('workspace-changed', () => {
+      loadConversations()
+      // Clear active conversation when workspace changes — set to null
+      // directly in the store so the backend never sees an invalid ID.
+      useChatStore.setState({
+        activeConversationId: null,
+        messages: [],
+        pendingApprovals: [],
+        pendingAskUserQuestion: null,
+      })
+    })
+    return () => {
+      unlistenA.then((fn) => fn())
+      unlistenB.then((fn) => fn())
+    }
   }, [loadConversations, loadProviders])
 
   useEffect(() => {
@@ -139,6 +155,38 @@ export function ChatPanel() {
     void answerAskUserQuestion(pendingAskUserQuestion.question_id, askUserAnswerDraft.trim())
     setAskUserAnswerDraft('')
   }, [pendingAskUserQuestion, askUserAnswerDraft, answerAskUserQuestion])
+
+  // ── Tree data extraction ─────────────────────────────────────
+  // Collect todo/decision tree data from all messages and streaming blocks,
+  // then render them at the bottom of the chat (just above approvals).
+  const { todoTreeData, decisionTreeData } = useMemo(() => {
+    let todoResult: string | null = null
+    let dtResult: string | null = null
+
+    const scanBlocks = (blocks: Block[] | undefined) => {
+      if (!blocks) return
+      for (const block of blocks) {
+        if (block.type === 'tool_call') {
+          if (block.toolName === 'todo_tree' && block.result) {
+            todoResult = block.result
+          }
+          if (block.toolName === 'decision_tree' && block.result) {
+            dtResult = block.result
+          }
+        }
+      }
+    }
+
+    for (const msg of messages) {
+      scanBlocks(msg.blocks)
+    }
+    scanBlocks(streamingBlocks)
+
+    return {
+      todoTreeData: todoResult ? isTodoTreePayload(todoResult) : null,
+      decisionTreeData: dtResult ? isDecisionTreePayload(dtResult) : null,
+    }
+  }, [messages, streamingBlocks])
 
   return (
     <div className="flex h-full bg-background">
@@ -251,6 +299,29 @@ export function ChatPanel() {
                 </div>
               )}
             </div>
+            {/* ── Tree section: always at bottom, above approvals ── */}
+            {(todoTreeData || decisionTreeData) && (
+              <div className="border-t border-border bg-[#FAFBFC] px-4 py-3 space-y-3">
+                {todoTreeData && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-[#6B7B8D] mb-1 flex items-center gap-1.5">
+                      <ListTree className="h-3.5 w-3.5" />
+                      Todo Tree
+                    </h4>
+                    <TodoTreeViewer items={todoTreeData.items} />
+                  </div>
+                )}
+                {decisionTreeData && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-[#6B7B8D] mb-1 flex items-center gap-1.5">
+                      <GitBranch className="h-3.5 w-3.5" />
+                      Decision Tree
+                    </h4>
+                    <DecisionTreeViewer items={decisionTreeData.items} />
+                  </div>
+                )}
+              </div>
+            )}
             {(isStreaming || pendingApprovals.length > 0 || autoApproveScope !== 'none' || pendingAskUserQuestion) && (
               <div className="border-t border-border bg-[#F8F9FB] px-4 py-2 space-y-2">
                 {isStreaming && (

@@ -114,23 +114,25 @@ async fn run() {
         Some("Please review my project proposal.")
     );
 
-    // ---- Confirm same-turn bootstrap discoverability via the real request JSON ----
-    let request: serde_json::Value =
-        serde_json::from_str(&turn_input.messages[1].content).expect("request body should be JSON");
-    let prefetched = request["prefetched_tokens"]
-        .as_array()
-        .expect("prefetched_tokens should be an array");
-    let chunk_in_prefetch = prefetched
+    // ---- Confirm same-turn bootstrap discoverability via the context block ----
+    let marker = "--- Context for this turn ---\n";
+    let pos = turn_input.messages[0].content.find(marker)
+        .expect("context block should be present");
+    let ctx: serde_json::Value = serde_json::from_str(&turn_input.messages[0].content[pos + marker.len()..])
+        .expect("context JSON should parse");
+    let tokens = ctx["tokens"].as_array()
+        .expect("tokens should be an array");
+    let chunk_in_prefetch = tokens
         .iter()
         .any(|t| t["token_id"] == "USR_T0_001" || t["token_id"] == "USR_T0_002");
     println!(
-        "\n===== prefetched_tokens includes this turn's own chunk(s): {} =====",
+        "\n===== tokens includes this turn's own chunk(s): {} =====",
         chunk_in_prefetch
     );
     assert!(
         chunk_in_prefetch,
         "expected at least one of this turn's freshly-created chunks to appear in \
-         the same turn's bootstrap prefetch — confirms chunking runs before the \
+         the same turn's context — confirms chunking runs before the \
          bootstrap explore_memory call, not just that tokens exist afterward"
     );
 

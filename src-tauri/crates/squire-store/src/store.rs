@@ -20,7 +20,7 @@ use crate::types::SessionId;
 #[async_trait]
 pub trait SquireStore: Send + Sync {
     async fn token_exists(&self, token_id: &str) -> bool;
-    async fn upsert_token(&self, token: NewTokenSpec, creation_turn: u64);
+    async fn upsert_token(&self, token: NewTokenSpec, creation_turn: u64, session_id: SessionId);
     async fn insert_relationship(&self, rel: Relationship);
     async fn set_preserve_list(&self, session_id: SessionId, tokens: Vec<String>);
     async fn preserved_tokens(&self, session_id: SessionId) -> Vec<TokenSummary>;
@@ -31,6 +31,7 @@ pub trait SquireStore: Send + Sync {
         num_hops: u32,
         max_results: u32,
         current_turn: u64,
+        session_id: SessionId,
     ) -> Vec<TokenSummary>;
     async fn token_detail(&self, token_id: &str) -> Option<TokenDetail>;
     async fn current_turn(&self, session_id: SessionId) -> u64;
@@ -69,6 +70,15 @@ pub trait SquireStore: Send + Sync {
     /// List all token IDs in the store.
     async fn list_token_ids(&self) -> Vec<String>;
 
+    /// List token IDs filtered by session. Default impl returns all IDs
+    /// (backward-compatible for test doubles). Production impls should
+    /// return only tokens whose `session_id` matches the given session
+    /// **or** `SessionId::nil()` (global).
+    async fn list_token_ids_by_session(&self, session_id: SessionId) -> Vec<String> {
+        let _ = session_id;
+        self.list_token_ids().await
+    }
+
     /// Query relationships with optional filtering by subject, predicate,
     /// and/or object. Any `None` filter matches all values.
     async fn get_relationships(
@@ -86,10 +96,8 @@ pub trait SquireStore: Send + Sync {
     /// Default implementation uses `list_token_ids` + `get_relationships`.
     /// Implementations only override for custom behaviour.
     async fn compute_active_process_state(&self, session_id: SessionId) -> ActiveProcessState {
-        let _ = session_id;
-
         let all_rels = self.get_relationships(None, None, None).await;
-        let all_ids = self.list_token_ids().await;
+        let all_ids = self.list_token_ids_by_session(session_id).await;
 
         // --- index relationships ---
         let mut outgoing_subtask: HashMap<String, Vec<String>> = HashMap::new();
@@ -281,6 +289,7 @@ pub struct StoredToken {
     pub accumulated_hits: u64,
     pub endpoint: Option<ToolEndpoint>,
     pub ranges: Vec<TokenRange>,
+    pub session_id: SessionId,
 }
 
 /// `effective_priority = accumulated_hits - (current_turn - creation_turn)`

@@ -22,6 +22,7 @@ use serde::Deserialize;
 
 use notify::Watcher as _;
 
+use squire_store::SessionId;
 use crate::agent::squire::{NewTokenSpec, SquireStore};
 
 // ── Data types ─────────────────────────────────────────────────────────
@@ -146,6 +147,7 @@ pub async fn ingest_one_skill(store: &dyn SquireStore, sk: &SkillDef) {
                 ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
 }
@@ -352,7 +354,7 @@ mod tests {
     #[test]
     fn parse_builtin_skills() {
         let wfs = load_builtin_skills();
-        assert_eq!(wfs.len(), 2, "expected 2 built-in skills");
+        assert_eq!(wfs.len(), 4, "expected 4 built-in skills");
 
         // Spot-check: every expected id is present.
         let ids: std::collections::HashSet<String> =
@@ -468,7 +470,7 @@ full_desc = "Body"
 
         // Explore for skill tokens.
         let results = store
-            .explore_memory("skill", "roundtrip", 1, 10, 0)
+            .explore_memory("skill", "roundtrip", 1, 10, 0, SessionId::nil())
             .await;
 
         // We should find our token among the results.

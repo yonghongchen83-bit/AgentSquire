@@ -25,6 +25,7 @@ pub use subagent::SubagentTool;
 #[cfg(test)]
 pub(crate) use todo_tree::{TodoStatus, TodoStore};
 pub mod squire;
+pub mod squire_prompts;
 pub mod squire_skills;
 pub mod squire_workflows;
 

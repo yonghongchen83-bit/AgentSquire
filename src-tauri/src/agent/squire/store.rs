@@ -57,7 +57,7 @@ impl SquireStore for InMemorySquireStore {
         self.tokens.lock().await.contains_key(token_id)
     }
 
-    async fn upsert_token(&self, token: NewTokenSpec, creation_turn: u64) {
+    async fn upsert_token(&self, token: NewTokenSpec, creation_turn: u64, session_id: SessionId) {
         let mut tokens = self.tokens.lock().await;
         tokens
             .entry(token.id.clone())
@@ -83,6 +83,7 @@ impl SquireStore for InMemorySquireStore {
                 accumulated_hits: 1,
                 endpoint: token.endpoint.clone(),
                 ranges: token.ranges.clone(),
+                session_id,
             });
     }
 
@@ -129,6 +130,7 @@ impl SquireStore for InMemorySquireStore {
         num_hops: u32,
         max_results: u32,
         current_turn: u64,
+        session_id: SessionId,
     ) -> Vec<TokenSummary> {
         let q = query.to_lowercase();
         let tokens = self.tokens.lock().await;
@@ -139,9 +141,18 @@ impl SquireStore for InMemorySquireStore {
                     && (t == "concept" || t == "referential" || t == "system_referential"))
                 || (resource_type == "tool_skill" && t == "skill")
         };
+
+        // Session filter: include tokens whose session_id is the current
+        // session OR nil (global). Tokens from OTHER sessions are excluded.
+        let nil = uuid::Uuid::nil();
+        let session_matches = |t: &StoredToken| {
+            t.session_id == session_id || t.session_id == nil
+        };
+
         let mut direct: Vec<TokenSummary> = tokens
             .iter()
             .filter(|(_, t)| type_matches(&t.token_type))
+            .filter(|(_, t)| session_matches(t))
             .filter(|(id, t)| {
                 q.is_empty()
                     || id.to_lowercase().contains(&q)

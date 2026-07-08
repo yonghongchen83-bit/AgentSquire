@@ -52,6 +52,15 @@ pub struct SquirePrefetchConfig {
     pub workflow_top_k: u32,
     pub tool_top_k: u32,
     pub skill_top_k: u32,
+    /// Minimum cosine-similarity score for prefetched tokens. Any token
+    /// whose explore_memory score is below this threshold is discarded.
+    /// Set to 0.0 to disable filtering (include everything).
+    #[serde(default = "default_prefetch_min_score")]
+    pub min_score: f32,
+}
+
+fn default_prefetch_min_score() -> f32 {
+    0.3
 }
 
 impl Default for SquirePrefetchConfig {
@@ -61,6 +70,7 @@ impl Default for SquirePrefetchConfig {
             workflow_top_k: 3,
             tool_top_k: 3,
             skill_top_k: 3,
+            min_score: default_prefetch_min_score(),
         }
     }
 }

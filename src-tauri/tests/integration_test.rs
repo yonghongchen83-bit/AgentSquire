@@ -41,6 +41,7 @@ fn test_config_serde_roundtrip() {
         right_panel_width: None,
         bottom_panel_height: None,
         disabled_tools: vec![],
+        squire_prefetch: Default::default(),
     };
 
     let json = serde_json::to_string(&config).unwrap();

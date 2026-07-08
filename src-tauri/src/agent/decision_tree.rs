@@ -359,6 +359,7 @@ impl DecisionTreeTool {
                     ranges: vec![],
                 },
                 turn,
+                self.session_id,
             )
             .await;
 
@@ -414,6 +415,7 @@ impl DecisionTreeTool {
                     ranges: vec![],
                 },
                 turn,
+                self.session_id,
             )
             .await;
 
@@ -479,6 +481,7 @@ impl DecisionTreeTool {
                             ranges: vec![],
                         },
                         turn,
+                        self.session_id,
                     )
                     .await;
                 self.store

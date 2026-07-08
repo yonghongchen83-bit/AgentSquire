@@ -22,6 +22,7 @@ use serde::Deserialize;
 
 use notify::Watcher as _;
 
+use squire_store::SessionId;
 use crate::agent::squire::{NewTokenSpec, SquireStore};
 
 // ── Data types ─────────────────────────────────────────────────────────
@@ -166,6 +167,7 @@ pub async fn ingest_one_workflow(store: &dyn SquireStore, wf: &WorkflowDef) {
                 ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
 }
@@ -372,7 +374,7 @@ mod tests {
     #[test]
     fn parse_builtin_workflows() {
         let wfs = load_builtin_workflows();
-        assert_eq!(wfs.len(), 6, "expected 6 built-in workflows");
+        assert_eq!(wfs.len(), 9, "expected 9 built-in workflows");
 
         // Spot-check: every expected id is present.
         let ids: std::collections::HashSet<String> =
@@ -495,7 +497,7 @@ full_desc = "Body"
 
         // Explore for workflow tokens.
         let results = store
-            .explore_memory("workflow", "roundtrip", 1, 10, 0)
+            .explore_memory("workflow", "roundtrip", 1, 10, 0, SessionId::nil())
             .await;
 
         // We should find our token among the results.

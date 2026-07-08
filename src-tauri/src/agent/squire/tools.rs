@@ -155,7 +155,7 @@ impl Tool for SquireExploreTool {
             if resource_type == "tool_skill" {
                 let skills = self
                     .store
-                    .explore_memory("skill", &query, num_hops, max_results, current_turn)
+                    .explore_memory("skill", &query, num_hops, max_results, current_turn, self.session_id)
                     .await;
                 tool_results.extend(skills);
             }
@@ -195,7 +195,7 @@ impl Tool for SquireExploreTool {
             tool_results
         } else {
             self.store
-                .explore_memory(&resource_type, &query, num_hops, max_results, current_turn)
+                .explore_memory(&resource_type, &query, num_hops, max_results, current_turn, self.session_id)
                 .await
         };
 

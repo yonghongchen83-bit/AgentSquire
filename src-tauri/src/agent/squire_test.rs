@@ -94,6 +94,15 @@ impl ConversationStore for RecordingStore {
     }
 }
 
+/// Extracts the context JSON block (expanded_tokens, tokens, active_process_state)
+/// from the system message in a `build_turn_input` response, where it is appended
+/// after the `--- Context for this turn ---` delimiter.
+fn extract_context(system_content: &str) -> Value {
+    let marker = "--- Context for this turn ---\n";
+    let pos = system_content.find(marker).expect("context block not found in system message");
+    serde_json::from_str(&system_content[pos + marker.len()..]).expect("context JSON should parse")
+}
+
 // ---- sigil parsing ----
 
 #[test]
@@ -212,6 +221,7 @@ fn validate_allows_inline_ref_defined_in_new_tokens() {
             short_desc: "new concept".to_string(),
             full_desc: None,
             endpoint: None,
+            ranges: vec![],
         }],
         ..Default::default()
     };
@@ -253,8 +263,10 @@ async fn in_memory_store_roundtrips_token_and_preserve_list() {
                 short_desc: "desc".to_string(),
                 full_desc: Some("full".to_string()),
                 endpoint: None,
+                ranges: vec![],
             },
             1,
+            SessionId::nil(),
         )
         .await;
     assert!(store.token_exists("CONCEPT_X").await);
@@ -294,8 +306,10 @@ async fn in_memory_store_clear_all_preserve_lists_wipes_every_session() {
                 short_desc: "desc".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store
@@ -374,8 +388,10 @@ async fn explore_memory_filters_by_type_and_query() {
                 short_desc: "fishing locations".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store
@@ -386,16 +402,18 @@ async fn explore_memory_filters_by_type_and_query() {
                 short_desc: "friendly chat".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
 
-    let results = store.explore_memory("concept", "fish", 0, 10, 0).await;
+    let results = store.explore_memory("concept", "fish", 0, 10, 0, SessionId::nil()).await;
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].token_id, "CONCEPT_Fish");
 
-    let all = store.explore_memory("all", "", 0, 10, 0).await;
+    let all = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
     assert_eq!(all.len(), 2);
 }
 
@@ -412,8 +430,10 @@ async fn explore_memory_num_hops_zero_does_not_expand() {
                 short_desc: "fishing locations".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store
@@ -424,8 +444,10 @@ async fn explore_memory_num_hops_zero_does_not_expand() {
                 short_desc: "Middle Harbour bream spot".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store
@@ -436,7 +458,7 @@ async fn explore_memory_num_hops_zero_does_not_expand() {
         })
         .await;
 
-    let results = store.explore_memory("all", "fish", 0, 10, 0).await;
+    let results = store.explore_memory("all", "fish", 0, 10, 0, SessionId::nil()).await;
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].token_id, "CONCEPT_Fish");
     assert_eq!(results[0].hop_distance, 0);
@@ -453,8 +475,10 @@ async fn explore_memory_num_hops_one_expands_directly_connected_token() {
                 short_desc: "fishing locations".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store
@@ -465,8 +489,10 @@ async fn explore_memory_num_hops_one_expands_directly_connected_token() {
                 short_desc: "Middle Harbour is a great bream spot".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store
@@ -477,8 +503,10 @@ async fn explore_memory_num_hops_one_expands_directly_connected_token() {
                 short_desc: "totally unrelated workflow".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store
@@ -489,7 +517,7 @@ async fn explore_memory_num_hops_one_expands_directly_connected_token() {
         })
         .await;
 
-    let results = store.explore_memory("all", "fishing", 1, 10, 0).await;
+    let results = store.explore_memory("all", "fishing", 1, 10, 0, SessionId::nil()).await;
     let ids: Vec<&str> = results.iter().map(|t| t.token_id.as_str()).collect();
     assert!(ids.contains(&"CONCEPT_Fish"));
     assert!(ids.contains(&"TRT_Spot"));
@@ -514,8 +542,10 @@ async fn explore_memory_traversal_is_undirected_and_multi_hop() {
                     short_desc: format!("node {}", id),
                     full_desc: None,
                     endpoint: None,
+                    ranges: vec![],
                 },
                 0,
+                SessionId::nil(),
             )
             .await;
     }
@@ -534,7 +564,7 @@ async fn explore_memory_traversal_is_undirected_and_multi_hop() {
         })
         .await;
 
-    let from_a = store.explore_memory("all", "node A", 2, 10, 0).await;
+    let from_a = store.explore_memory("all", "node A", 2, 10, 0, SessionId::nil()).await;
     let ids: Vec<&str> = from_a.iter().map(|t| t.token_id.as_str()).collect();
     assert!(ids.contains(&"A"));
     assert!(ids.contains(&"B"));
@@ -554,8 +584,10 @@ async fn explore_memory_traversal_still_respects_max_results() {
                 short_desc: "hub node".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     for i in 0..5 {
@@ -568,8 +600,10 @@ async fn explore_memory_traversal_still_respects_max_results() {
                     short_desc: "connected leaf".to_string(),
                     full_desc: None,
                     endpoint: None,
+                    ranges: vec![],
                 },
                 0,
+            SessionId::nil(),
             )
             .await;
         store
@@ -581,7 +615,7 @@ async fn explore_memory_traversal_still_respects_max_results() {
             .await;
     }
 
-    let results = store.explore_memory("all", "hub", 1, 2, 0).await;
+    let results = store.explore_memory("all", "hub", 1, 2, 0, SessionId::nil()).await;
     assert_eq!(results.len(), 2);
 }
 
@@ -606,16 +640,18 @@ async fn record_hit_increments_accumulated_hits() {
                 short_desc: "desc".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
-    let results = store.explore_memory("all", "", 0, 10, 0).await;
+    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
     assert_eq!(results[0].accumulated_hits, 1);
 
     store.record_hit("CONCEPT_X").await;
     store.record_hit("CONCEPT_X").await;
-    let results = store.explore_memory("all", "", 0, 10, 0).await;
+    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
     assert_eq!(results[0].accumulated_hits, 3);
 }
 
@@ -631,8 +667,10 @@ async fn preserved_tokens_increments_hit_on_load() {
                 short_desc: "desc".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store
@@ -656,8 +694,10 @@ async fn token_to_detail_tool_increments_hit_count_on_store_backed_token() {
                 short_desc: "desc".to_string(),
                 full_desc: Some("full".to_string()),
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     let tool = SquireTokenToDetailTool {
@@ -670,7 +710,7 @@ async fn token_to_detail_tool_increments_hit_count_on_store_backed_token() {
     )
     .await;
 
-    let results = store.explore_memory("all", "", 0, 10, 0).await;
+    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
     assert_eq!(results[0].accumulated_hits, 2);
 }
 
@@ -685,8 +725,10 @@ async fn explore_memory_breaks_near_ties_by_effective_priority() {
                 short_desc: "shared topic".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store
@@ -697,15 +739,17 @@ async fn explore_memory_breaks_near_ties_by_effective_priority() {
                 short_desc: "shared topic".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store.record_hit("CONCEPT_Popular").await;
     store.record_hit("CONCEPT_Popular").await;
     store.record_hit("CONCEPT_Popular").await;
 
-    let results = store.explore_memory("all", "shared topic", 0, 10, 10).await;
+    let results = store.explore_memory("all", "shared topic", 0, 10, 10, SessionId::nil()).await;
     assert_eq!(results[0].token_id, "CONCEPT_Popular");
 }
 
@@ -725,15 +769,19 @@ async fn build_turn_input_merges_base_tools_with_built_ins() {
     let turn_input = adapter.build_turn_input(&session, &base_tools).await.unwrap();
 
     let tool_names: Vec<&str> = turn_input.tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(tool_names, vec!["explore", "token_to_detail", "run_terminal"]);
+    // SquireContextAdapter replaces base_tools with its own built-in set.
+    assert_eq!(tool_names, vec!["explore", "token_to_detail", "invoke"]);
 
     assert!(matches!(turn_input.messages[0].role, ChatRole::System));
     assert!(matches!(turn_input.messages[1].role, ChatRole::User));
     let request: Value = serde_json::from_str(&turn_input.messages[1].content).unwrap();
-    assert_eq!(request["user_request"], "hello squire");
-    assert!(request["prefetched_tokens"].is_array());
-    assert!(request["preserved_tokens"].is_array());
-    assert!(request["bootstrap_tokens"].is_array());
+    let session_short = &session.session.id.simple().to_string()[..8];
+    let expected = format!("§!USR_T0_001_{} hello squire", session_short);
+    assert_eq!(request["user_request"], expected);
+    let ctx = extract_context(&turn_input.messages[0].content);
+    assert!(ctx["expanded_tokens"].is_array());
+    assert!(ctx["tokens"].is_array());
+    assert!(ctx["active_process_state"].is_object());
 }
 
 #[tokio::test]
@@ -747,8 +795,10 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
                 short_desc: "alpha memory".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store
@@ -759,8 +809,10 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
                 short_desc: "alpha workflow".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store
@@ -771,8 +823,10 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
                 short_desc: "alpha tool".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store
@@ -783,24 +837,33 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
                 short_desc: "alpha skill".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
 
     let mut adapter = SquireContextAdapter::new_with_prefetch(
-        store,
+        store.clone(),
         SquirePrefetchConfig {
             memory_top_k: 1,
             workflow_top_k: 1,
             tool_top_k: 1,
             skill_top_k: 1,
+            min_score: 0.0,
         },
     );
     let session = fixture_session("alpha");
     let turn_input = adapter.build_turn_input(&session, &[]).await.unwrap();
-    let request: Value = serde_json::from_str(&turn_input.messages[1].content).unwrap();
-    let ids: Vec<String> = request["prefetched_tokens"]
+    // The user chunk USR_T0_001_* was ingested into the store but is not in
+    // the request JSON (it's not part of preserved/prefetched tokens).
+    let session_short = &session.session.id.simple().to_string()[..8];
+    assert!(store.token_exists(&format!("USR_T0_001_{}", session_short)).await);
+    let ctx = extract_context(&turn_input.messages[0].content);
+
+    // Prefetched tokens have no full_desc, so they go to the tokens (short) list.
+    let ids: Vec<String> = ctx["tokens"]
         .as_array()
         .unwrap()
         .iter()
@@ -824,8 +887,10 @@ async fn build_turn_input_merges_preserved_first_then_prefetch_without_duplicate
                 short_desc: "topic".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
 
@@ -837,16 +902,21 @@ async fn build_turn_input_merges_preserved_first_then_prefetch_without_duplicate
 
     let mut adapter = SquireContextAdapter::new(store);
     let turn_input = adapter.build_turn_input(&session, &[]).await.unwrap();
-    let request: Value = serde_json::from_str(&turn_input.messages[1].content).unwrap();
-    let bootstrap = request["bootstrap_tokens"].as_array().unwrap();
-    let bootstrap_ids: Vec<String> = bootstrap
+    let ctx = extract_context(&turn_input.messages[0].content);
+    // Preserved tokens (CONCEPT_Keep) are expanded — they go in expanded_tokens.
+    // The user chunk USR_T0_001 has full_desc, so it is also in expanded_tokens.
+    let expanded = ctx["expanded_tokens"].as_array().unwrap();
+    assert!(!expanded.is_empty());
+    let expanded_ids: Vec<String> = expanded
         .iter()
         .filter_map(|v| v.get("token_id").and_then(|id| id.as_str()).map(str::to_string))
         .collect();
-
-    assert_eq!(bootstrap_ids.first().map(String::as_str), Some("CONCEPT_Keep"));
+    // Preserved tokens come first in the merged list, so CONCEPT_Keep
+    // should be the first entry in expanded_tokens.
+    assert_eq!(expanded_ids.first().map(String::as_str), Some("CONCEPT_Keep"));
+    // No duplicates.
     assert_eq!(
-        bootstrap_ids
+        expanded_ids
             .iter()
             .filter(|id| id.as_str() == "CONCEPT_Keep")
             .count(),
@@ -899,11 +969,13 @@ async fn finalize_turn_credits_a_hit_for_a_preexisting_token_cited_via_sigil_wit
                 short_desc: "an existing workflow".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
-    let baseline_hits = store.explore_memory("all", "", 0, 10, 0).await[0].accumulated_hits;
+    let baseline_hits = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await[0].accumulated_hits;
 
     let mut adapter = SquireContextAdapter::new(store.clone());
     let conv_store = RecordingStore {
@@ -927,7 +999,7 @@ async fn finalize_turn_credits_a_hit_for_a_preexisting_token_cited_via_sigil_wit
         .unwrap();
     assert!(matches!(outcome, TurnOutcome::Done));
 
-    let results = store.explore_memory("all", "", 0, 10, 0).await;
+    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
     let after = results
         .iter()
         .find(|t| t.token_id == "WF_Existing")
@@ -960,7 +1032,7 @@ async fn finalize_turn_does_not_double_credit_a_token_defined_and_cited_in_the_s
         .unwrap();
     assert!(matches!(outcome, TurnOutcome::Done));
 
-    let results = store.explore_memory("all", "", 0, 10, 0).await;
+    let results = store.explore_memory("all", "", 0, 10, 0, sid).await;
     let token = results.iter().find(|t| t.token_id == "TRT_New").unwrap();
     assert_eq!(token.accumulated_hits, 1);
 }
@@ -976,11 +1048,13 @@ async fn finalize_turn_credits_exactly_one_hit_for_repeated_citations_of_the_sam
                 short_desc: "cited twice".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
-    let baseline_hits = store.explore_memory("all", "", 0, 10, 0).await[0].accumulated_hits;
+    let baseline_hits = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await[0].accumulated_hits;
 
     let mut adapter = SquireContextAdapter::new(store.clone());
     let conv_store = RecordingStore {
@@ -1004,7 +1078,7 @@ async fn finalize_turn_credits_exactly_one_hit_for_repeated_citations_of_the_sam
         .unwrap();
     assert!(matches!(outcome, TurnOutcome::Done));
 
-    let results = store.explore_memory("all", "", 0, 10, 0).await;
+    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
     let after = results
         .iter()
         .find(|t| t.token_id == "CONCEPT_Repeated")
@@ -1388,6 +1462,7 @@ fn token_detail_and_new_token_spec_endpoint_round_trip_through_serde() {
         short_desc: "d".to_string(),
         full_desc: None,
         endpoint: Some(endpoint.clone()),
+        ranges: vec![],
     };
     let json = serde_json::to_string(&detail).unwrap();
     let back: TokenDetail = serde_json::from_str(&json).unwrap();
@@ -1409,8 +1484,10 @@ async fn upsert_token_persists_and_returns_endpoint_via_in_memory_store() {
                 short_desc: "an mcp tool".to_string(),
                 full_desc: None,
                 endpoint: Some(endpoint.clone()),
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
 
@@ -1433,8 +1510,10 @@ async fn upsert_token_without_endpoint_preserves_previously_stored_endpoint() {
                 short_desc: "v1".to_string(),
                 full_desc: None,
                 endpoint: Some(endpoint.clone()),
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     store
@@ -1445,8 +1524,10 @@ async fn upsert_token_without_endpoint_preserves_previously_stored_endpoint() {
                 short_desc: "v2".to_string(),
                 full_desc: None,
                 endpoint: None,
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
 
@@ -1509,8 +1590,10 @@ async fn token_to_detail_tool_output_never_leaks_endpoint_data() {
                     server: server.into(),
                     remote_name: "remote_tool".to_string(),
                 }),
+                ranges: vec![],
             },
             0,
+            SessionId::nil(),
         )
         .await;
     let tool = SquireTokenToDetailTool {
@@ -1611,7 +1694,7 @@ async fn ingest_tool_registry_is_idempotent_and_updates_rather_than_duplicates()
     ingest_tool_registry(&registry, &store, &HashMap::new()).await;
     ingest_tool_registry(&registry, &store, &HashMap::new()).await;
 
-    let results = store.explore_memory("tool", "", 0, 100, 0).await;
+    let results = store.explore_memory("tool", "", 0, 100, 0, SessionId::nil()).await;
     assert_eq!(results.len(), registry.definitions().len());
 
     let ids: std::collections::HashSet<&str> =
@@ -1653,7 +1736,7 @@ async fn ingest_tool_registry_reflects_schema_change_on_next_ingestion() {
     ingest_tool_registry(&registry_v2, &store, &HashMap::new()).await;
     assert_eq!(store.token_detail("fake_tool").await.unwrap().short_desc, "version two");
 
-    let results = store.explore_memory("tool", "", 0, 100, 0).await;
+    let results = store.explore_memory("tool", "", 0, 100, 0, SessionId::nil()).await;
     assert_eq!(results.iter().filter(|t| t.token_id == "fake_tool").count(), 1);
 }
 
@@ -1663,10 +1746,10 @@ async fn ingested_tool_tokens_are_discoverable_via_explore_tool_skill_type_filte
     let store = InMemorySquireStore::new();
     ingest_tool_registry(&registry, &store, &HashMap::new()).await;
 
-    let by_tool_type = store.explore_memory("tool", "", 0, 100, 0).await;
+    let by_tool_type = store.explore_memory("tool", "", 0, 100, 0, SessionId::nil()).await;
     assert_eq!(by_tool_type.len(), registry.definitions().len());
 
-    let by_all = store.explore_memory("all", "", 0, 100, 0).await;
+    let by_all = store.explore_memory("all", "", 0, 100, 0, SessionId::nil()).await;
     assert!(by_all.len() >= registry.definitions().len());
 }
 
@@ -1675,7 +1758,7 @@ async fn ingest_tool_registry_with_empty_registry_writes_nothing() {
     let registry = ToolRegistry::empty();
     let store = InMemorySquireStore::new();
     ingest_tool_registry(&registry, &store, &HashMap::new()).await;
-    let results = store.explore_memory("tool", "", 0, 100, 0).await;
+    let results = store.explore_memory("tool", "", 0, 100, 0, SessionId::nil()).await;
     assert!(results.is_empty());
 }
 
@@ -1759,75 +1842,75 @@ fn first_sentence_stops_at_newline() {
 async fn ingest_user_input_chunks_writes_one_token_per_chunk_with_expected_id_scheme() {
     let store = InMemorySquireStore::new();
     let text = "First paragraph.\n\nSecond paragraph.";
-    ingest_user_input_chunks(text, 3, &store).await;
+    ingest_user_input_chunks(text, 3, &store, SessionId::nil()).await;
 
-    assert!(store.token_exists("USR_T3_001").await);
-    assert!(store.token_exists("USR_T3_002").await);
-    assert!(!store.token_exists("USR_T3_003").await);
+    assert!(store.token_exists("USR_T3_001_00000000").await);
+    assert!(store.token_exists("USR_T3_002_00000000").await);
+    assert!(!store.token_exists("USR_T3_003_00000000").await);
 
-    let d1 = store.token_detail("USR_T3_001").await.unwrap();
+    let d1 = store.token_detail("USR_T3_001_00000000").await.unwrap();
     assert_eq!(d1.short_desc, "First paragraph.");
     assert_eq!(d1.full_desc, Some("First paragraph.".to_string()));
 
-    let d2 = store.token_detail("USR_T3_002").await.unwrap();
+    let d2 = store.token_detail("USR_T3_002_00000000").await.unwrap();
     assert_eq!(d2.short_desc, "Second paragraph.");
 }
 
 #[tokio::test]
 async fn ingest_user_input_chunks_uses_system_referential_type_discoverable_via_explore() {
     let store = InMemorySquireStore::new();
-    ingest_user_input_chunks("Some chat message content.", 1, &store).await;
+    ingest_user_input_chunks("Some chat message content.", 1, &store, SessionId::nil()).await;
 
     let results = store
-        .explore_memory("system_referential", "chat message", 0, 10, 1)
+        .explore_memory("system_referential", "chat message", 0, 10, 1, SessionId::nil())
         .await;
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].token_id, "USR_T1_001");
+    assert_eq!(results[0].token_id, "USR_T1_001_00000000");
     assert_eq!(results[0].token_type, "system_referential");
 
-    let via_all = store.explore_memory("all", "", 0, 100, 1).await;
-    assert!(via_all.iter().any(|t| t.token_id == "USR_T1_001"));
+    let via_all = store.explore_memory("all", "", 0, 100, 1, SessionId::nil()).await;
+    assert!(via_all.iter().any(|t| t.token_id == "USR_T1_001_00000000"));
 }
 
 #[tokio::test]
 async fn explore_memory_alias_includes_system_referential_tokens() {
     let store = InMemorySquireStore::new();
-    ingest_user_input_chunks("Some chat message content.", 1, &store).await;
+    ingest_user_input_chunks("Some chat message content.", 1, &store, SessionId::nil()).await;
 
     let via_memory = store
-        .explore_memory("memory", "chat message", 0, 10, 1)
+        .explore_memory("memory", "chat message", 0, 10, 1, SessionId::nil())
         .await;
-    assert!(via_memory.iter().any(|t| t.token_id == "USR_T1_001"));
+    assert!(via_memory.iter().any(|t| t.token_id == "USR_T1_001_00000000"));
 }
 
 #[tokio::test]
 async fn ingest_user_input_chunks_sequence_resets_per_turn() {
     let store = InMemorySquireStore::new();
-    ingest_user_input_chunks("Turn one paragraph A.\n\nTurn one paragraph B.", 1, &store)
+    ingest_user_input_chunks("Turn one paragraph A.\n\nTurn one paragraph B.", 1, &store, SessionId::nil())
         .await;
-    ingest_user_input_chunks("Turn two single message.", 2, &store).await;
+    ingest_user_input_chunks("Turn two single message.", 2, &store, SessionId::nil()).await;
 
-    assert!(store.token_exists("USR_T1_001").await);
-    assert!(store.token_exists("USR_T1_002").await);
-    assert!(store.token_exists("USR_T2_001").await);
-    assert!(!store.token_exists("USR_T2_002").await);
+    assert!(store.token_exists("USR_T1_001_00000000").await);
+    assert!(store.token_exists("USR_T1_002_00000000").await);
+    assert!(store.token_exists("USR_T2_001_00000000").await);
+    assert!(!store.token_exists("USR_T2_002_00000000").await);
 }
 
 #[tokio::test]
 async fn ingest_user_input_chunks_creation_turn_matches_the_turn_argument() {
     let store = InMemorySquireStore::new();
-    ingest_user_input_chunks("Some content here.", 5, &store).await;
+    ingest_user_input_chunks("Some content here.", 5, &store, SessionId::nil()).await;
 
-    let results = store.explore_memory("all", "content", 0, 10, 5).await;
-    let chunk = results.iter().find(|t| t.token_id == "USR_T5_001").unwrap();
+    let results = store.explore_memory("all", "content", 0, 10, 5, SessionId::nil()).await;
+    let chunk = results.iter().find(|t| t.token_id == "USR_T5_001_00000000").unwrap();
     assert_eq!(chunk.accumulated_hits, 1);
 }
 
 #[tokio::test]
 async fn ingest_user_input_chunks_empty_text_writes_no_tokens() {
     let store = InMemorySquireStore::new();
-    ingest_user_input_chunks("   ", 1, &store).await;
-    let results = store.explore_memory("system_referential", "", 0, 10, 1).await;
+    ingest_user_input_chunks("   ", 1, &store, SessionId::nil()).await;
+    let results = store.explore_memory("system_referential", "", 0, 10, 1, SessionId::nil()).await;
     assert!(results.is_empty());
 }
 
@@ -1839,15 +1922,18 @@ async fn build_turn_input_ingests_user_message_as_system_referential_chunk_same_
 
     let turn_input = adapter.build_turn_input(&session, &[]).await.unwrap();
 
-    assert!(store.token_exists("USR_T0_001").await);
-    let detail = store.token_detail("USR_T0_001").await.unwrap();
+    let session_short = &session.session.id.simple().to_string()[..8];
+    let usr_id = format!("USR_T0_001_{}", session_short);
+    assert!(store.token_exists(&usr_id).await);
+    let detail = store.token_detail(&usr_id).await.unwrap();
     assert_eq!(detail.full_desc.as_deref(), Some("Please summarize the quarterly report for me."));
 
-    let request: Value = serde_json::from_str(&turn_input.messages[1].content).unwrap();
-    let prefetched = request["prefetched_tokens"].as_array().unwrap();
-    assert!(prefetched
+    let ctx = extract_context(&turn_input.messages[0].content);
+    // The user chunk USR_T0_001_* has full_desc, so it is in expanded_tokens.
+    let expanded = ctx["expanded_tokens"].as_array().unwrap();
+    assert!(expanded
         .iter()
-        .any(|t| t["token_id"] == "USR_T0_001"));
+        .any(|t| t["token_id"] == usr_id));
 }
 
 #[tokio::test]
@@ -1858,17 +1944,18 @@ async fn build_turn_input_chunks_multi_paragraph_user_message_into_multiple_toke
 
     adapter.build_turn_input(&session, &[]).await.unwrap();
 
-    assert!(store.token_exists("USR_T0_001").await);
-    assert!(store.token_exists("USR_T0_002").await);
+    let session_short = &session.session.id.simple().to_string()[..8];
+    assert!(store.token_exists(&format!("USR_T0_001_{}", session_short)).await);
+    assert!(store.token_exists(&format!("USR_T0_002_{}", session_short)).await);
 }
 
 #[tokio::test]
 async fn ingest_user_input_chunks_does_not_write_relationships() {
     let store = Arc::new(InMemorySquireStore::new());
-    ingest_user_input_chunks("Some content.\n\nMore content.", 1, store.as_ref()).await;
+    ingest_user_input_chunks("Some content.\n\nMore content.", 1, store.as_ref(), SessionId::nil()).await;
 
     let results = store
-        .explore_memory("system_referential", "", 1, 100, 1)
+        .explore_memory("system_referential", "", 1, 100, 1, SessionId::nil())
         .await;
     assert!(results.iter().all(|t| t.hop_distance == 0));
 }

@@ -54,6 +54,7 @@ fn tokens_schema() -> Arc<ArrowSchema> {
         ),
         Field::new("endpoint", DataType::Utf8, true),
         Field::new("ranges", DataType::Utf8, true),
+        Field::new("session_id", DataType::Utf8, true),
     ]))
 }
 
@@ -145,6 +146,19 @@ impl LanceDbSquireStore {
                     .execute()
                     .await
                     .map_err(|e| e.to_string())?;
+            } else if Self::tokens_has_column(&conn, "session_id").await != Some(true) {
+                log::warn!(
+                    "Squire storage: existing '{TOKENS_TABLE}' table missing 'session_id' \
+                     column; dropping and recreating it \
+                     (token rows will repopulate on next ingestion)"
+                );
+                conn.drop_table(TOKENS_TABLE)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                conn.create_empty_table(TOKENS_TABLE, tokens_schema())
+                    .execute()
+                    .await
+                    .map_err(|e| e.to_string())?;
             }
         } else {
             conn.create_empty_table(TOKENS_TABLE, tokens_schema())
@@ -197,6 +211,12 @@ impl LanceDbSquireStore {
             DataType::FixedSizeList(_, dim) => Some(*dim as usize),
             _ => None,
         }
+    }
+
+    async fn tokens_has_column(conn: &Connection, column: &str) -> Option<bool> {
+        let table = conn.open_table(TOKENS_TABLE).execute().await.ok()?;
+        let schema = table.schema().await.ok()?;
+        Some(schema.field_with_name(column).is_ok())
     }
 
     async fn tokens(&self) -> Result<Table, String> {
@@ -299,6 +319,7 @@ struct StoredTokenRow {
     accumulated_hits: u64,
     endpoint: Option<ToolEndpoint>,
     ranges: Vec<TokenRange>,
+    session_id: String,
 }
 
 fn rows_from_batches(batches: &[RecordBatch]) -> Vec<StoredTokenRow> {
@@ -328,6 +349,9 @@ fn rows_from_batches(batches: &[RecordBatch]) -> Vec<StoredTokenRow> {
             .and_then(|c| c.as_any().downcast_ref::<UInt64Array>().cloned());
         let endpoints = batch
             .column_by_name("endpoint")
+            .map(|c| c.as_string::<i32>().clone());
+        let session_ids = batch
+            .column_by_name("session_id")
             .map(|c| c.as_string::<i32>().clone());
         for i in 0..batch.num_rows() {
             out.push(StoredTokenRow {
@@ -359,6 +383,12 @@ fn rows_from_batches(batches: &[RecordBatch]) -> Vec<StoredTokenRow> {
                         }
                     })
                     .unwrap_or_default(),
+                session_id: session_ids
+                    .as_ref()
+                    .and_then(|s| {
+                        if s.is_null(i) { None } else { Some(s.value(i).to_string()) }
+                    })
+                    .unwrap_or_default(),
             });
         }
     }
@@ -382,7 +412,7 @@ impl SquireStore for LanceDbSquireStore {
         matches!(self.find_token_row(token_id).await, Ok(Some(_)))
     }
 
-    async fn upsert_token(&self, token: NewTokenSpec, creation_turn: u64) {
+    async fn upsert_token(&self, token: NewTokenSpec, creation_turn: u64, session_id: SessionId) {
         let _guard = self.write_lock.lock().await;
         let Ok(table) = self.tokens().await else {
             return;
@@ -414,6 +444,8 @@ impl SquireStore for LanceDbSquireStore {
             .as_ref()
             .and_then(|e| serde_json::to_string(e).ok());
 
+        let sid = session_id.to_string();
+
         let schema = tokens_schema();
         let batch = RecordBatch::try_new(
             schema.clone(),
@@ -427,6 +459,7 @@ impl SquireStore for LanceDbSquireStore {
                 Arc::new(embedding_array(&[embedding])),
                 Arc::new(StringArray::from(vec![final_endpoint_json])),
                 Arc::new(StringArray::from(vec![serde_json::to_string(&token.ranges).unwrap_or_default()])),
+                Arc::new(StringArray::from(vec![sid])),
             ],
         );
         let Ok(batch) = batch else { return };
@@ -534,6 +567,7 @@ impl SquireStore for LanceDbSquireStore {
         num_hops: u32,
         max_results: u32,
         current_turn: u64,
+        session_id: SessionId,
     ) -> Vec<TokenSummary> {
         let Ok(table) = self.tokens().await else {
             return Vec::new();
@@ -552,6 +586,13 @@ impl SquireStore for LanceDbSquireStore {
                     && (t == "concept" || t == "referential" || t == "system_referential"))
                 || (resource_type == "tool_skill" && t == "skill")
         };
+
+        // Session filter: include tokens whose session_id is the current
+        // session OR nil (global). Tokens from OTHER sessions are excluded
+        // from explore results (conversation-isolation).
+        let sid = session_id.to_string();
+        let nil = uuid::Uuid::nil().to_string();
+        let session_matches = |row_sid: &str| row_sid.is_empty() || row_sid == sid || row_sid == nil;
 
         let query_embedding = if query.is_empty() {
             None
@@ -591,12 +632,21 @@ impl SquireStore for LanceDbSquireStore {
                 .as_any()
                 .downcast_ref::<arrow_array::FixedSizeListArray>();
 
+            // Read session_id column (nullable — pre-migration stores won't have it)
+            let sid_col = batch.column_by_name("session_id").map(|c| c.as_string::<i32>());
+
             for i in 0..batch.num_rows() {
                 let token_type = types.value(i);
                 let token_id = ids.value(i);
                 let short_desc = shorts.value(i);
                 let accumulated_hits = hits_col.map(|a| a.value(i)).unwrap_or(0);
                 let creation_turn = turns_col.map(|a| a.value(i)).unwrap_or(0);
+
+                // Read row-level session_id, defaulting to empty (global)
+                let row_sid = sid_col
+                    .as_ref()
+                    .and_then(|c| if c.is_null(i) { None } else { Some(c.value(i)) })
+                    .unwrap_or("");
 
                 all_rows.insert(
                     token_id.to_string(),
@@ -609,8 +659,14 @@ impl SquireStore for LanceDbSquireStore {
                         accumulated_hits,
                         endpoint: None,
                         ranges: vec![],
+                        session_id: row_sid.to_string(),
                     },
                 );
+
+                // Apply session-scope filter: skip tokens from other sessions
+                if !session_matches(row_sid) {
+                    continue;
+                }
 
                 if !type_matches(token_type) {
                     continue;
@@ -911,6 +967,12 @@ impl SquireStore for LanceDbSquireStore {
             .endpoint
             .as_ref()
             .and_then(|e| serde_json::to_string(e).ok());
+        let sid = if existing.session_id.is_empty() {
+            None
+        } else {
+            Some(existing.session_id.as_str())
+        };
+
         let schema = tokens_schema();
         let batch = RecordBatch::try_new(
             schema.clone(),
@@ -924,6 +986,7 @@ impl SquireStore for LanceDbSquireStore {
                 Arc::new(embedding_array(&[embedding])),
                 Arc::new(StringArray::from(vec![existing_endpoint_json])),
                 Arc::new(StringArray::from(vec![serde_json::to_string(&existing.ranges).unwrap_or_default()])),
+                Arc::new(StringArray::from(vec![sid])),
             ],
         );
         let Ok(batch) = batch else { return };
@@ -994,6 +1057,43 @@ impl SquireStore for LanceDbSquireStore {
             return Vec::new();
         };
         let Ok(stream) = table.query().execute().await else {
+            return Vec::new();
+        };
+        let Ok(batches) = stream.try_collect::<Vec<_>>().await else {
+            return Vec::new();
+        };
+        let mut ids = Vec::new();
+        for batch in &batches {
+            let Some(id_col) = batch.column_by_name("token_id") else {
+                continue;
+            };
+            let arr = id_col.as_string::<i32>();
+            for i in 0..batch.num_rows() {
+                ids.push(arr.value(i).to_string());
+            }
+        }
+        ids
+    }
+
+    async fn list_token_ids_by_session(&self, session_id: SessionId) -> Vec<String> {
+        let Ok(table) = self.tokens().await else {
+            return Vec::new();
+        };
+        let sid = session_id.to_string();
+        let nil = uuid::Uuid::nil().to_string();
+        let escaped_sid = sid.replace('\'', "''");
+        let escaped_nil = nil.replace('\'', "''");
+        // Return tokens matching current session OR global (nil) session.
+        // Empty-string session_id handles pre-migration rows.
+        let Ok(stream) = table
+            .query()
+            .only_if(format!(
+                "session_id IS NULL OR session_id = '' OR session_id = '{}' OR session_id = '{}'",
+                escaped_sid, escaped_nil
+            ))
+            .execute()
+            .await
+        else {
             return Vec::new();
         };
         let Ok(batches) = stream.try_collect::<Vec<_>>().await else {

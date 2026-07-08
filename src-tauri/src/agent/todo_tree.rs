@@ -633,6 +633,7 @@ impl TodoTreeTool {
                     ranges: vec![],
                 },
                 turn,
+                self.session_id.unwrap_or_default(),
             )
             .await;
 

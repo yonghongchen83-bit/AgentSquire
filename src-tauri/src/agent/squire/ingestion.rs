@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use super::types::{NewTokenSpec, ToolEndpoint};
 use super::SquireStore;
 use crate::agent::{ToolDefinition, ToolRegistry};
+use crate::storage::conversation_store::SessionId;
 
 // ─────────────────────────── Tool-token ingestion (ss-9) ───────────────────────────
 
@@ -87,6 +88,7 @@ pub async fn ingest_tool_registry(
     store: &dyn SquireStore,
     endpoints: &HashMap<String, ToolEndpoint>,
 ) {
+    let global_session = SessionId::nil();
     for def in registry.definitions() {
         store
             .upsert_token(
@@ -99,6 +101,7 @@ pub async fn ingest_tool_registry(
                     ranges: vec![],
                 },
                 0,
+                global_session,
             )
             .await;
     }
@@ -199,17 +202,29 @@ pub(crate) fn first_sentence(chunk: &str) -> String {
     }
 }
 
-/// Ingests a text (user input or model response) as `{prefix}_T{turn}_{NNN}`-id
+/// Ingests a text (user input or model response) as `{prefix}_T{turn}_{NNN}_{session_short}`-id
 /// `system_referential` tokens. Same chunking algorithm regardless of source.
 ///
 /// `prefix` should be `"USR"` for user input or `"RESP"` for model responses.
-pub async fn ingest_text_chunks(text: &str, turn: u64, prefix: &str, store: &dyn SquireStore) {
+/// `session_id` is embedded in the token ID to prevent cross-session collisions —
+/// two different sessions never produce the same token ID, even at the same turn.
+///
+/// Returns the list of token IDs created, in order (same order as `chunk_user_input`).
+pub async fn ingest_text_chunks(
+    text: &str,
+    turn: u64,
+    prefix: &str,
+    store: &dyn SquireStore,
+    session_id: SessionId,
+) -> Vec<String> {
+    let session_short = &session_id.simple().to_string()[..8];
+    let mut ids = Vec::new();
     for (i, chunk) in chunk_user_input(text).into_iter().enumerate() {
-        let id = format!("{}_T{}_{:03}", prefix, turn, i + 1);
+        let id = format!("{}_T{}_{:03}_{}", prefix, turn, i + 1, session_short);
         store
             .upsert_token(
                 NewTokenSpec {
-                    id,
+                    id: id.clone(),
                     token_type: "system_referential".to_string(),
                     short_desc: first_sentence(&chunk),
                     full_desc: Some(chunk),
@@ -217,17 +232,32 @@ pub async fn ingest_text_chunks(text: &str, turn: u64, prefix: &str, store: &dyn
                     ranges: vec![],
                 },
                 turn,
+                session_id,
             )
             .await;
+        ids.push(id);
     }
+    ids
 }
 
-/// Backward-compat alias: ingests user input as `USR_T{turn}_{NNN}` tokens.
-pub async fn ingest_user_input_chunks(text: &str, turn: u64, store: &dyn SquireStore) {
-    ingest_text_chunks(text, turn, "USR", store).await
+/// Backward-compat alias: ingests user input as `USR_T{turn}_{NNN}_{session_short}` tokens.
+///
+/// Returns the list of token IDs created, in order.
+pub async fn ingest_user_input_chunks(
+    text: &str,
+    turn: u64,
+    store: &dyn SquireStore,
+    session_id: SessionId,
+) -> Vec<String> {
+    ingest_text_chunks(text, turn, "USR", store, session_id).await
 }
 
-/// Ingests model response as `RESP_T{turn}_{NNN}` tokens.
-pub async fn ingest_response_chunks(text: &str, turn: u64, store: &dyn SquireStore) {
-    ingest_text_chunks(text, turn, "RESP", store).await
+/// Ingests model response as `RESP_T{turn}_{NNN}_{session_short}` tokens.
+pub async fn ingest_response_chunks(
+    text: &str,
+    turn: u64,
+    store: &dyn SquireStore,
+    session_id: SessionId,
+) {
+    let _ = ingest_text_chunks(text, turn, "RESP", store, session_id).await;
 }

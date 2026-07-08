@@ -27,40 +27,10 @@ use crate::storage::conversation_store::{
 };
 
 // ═══════════════════════════════════════════════════════════════════════
-// System prompt
-// ═══════════════════════════════════════════════════════════════════════
-
-const SQUIRE_SYSTEM_PROMPT: &str = r#"You are the Main AI in the Context Squire system. You have no memory between turns other than what the current request provides. Do not assume you remember anything - if it is not in this request, it does not exist in your working context.
-
-You have three tools: explore(resource_type, query, num_hops, max_results) to search memory and discover available tools, token_to_detail(token_id, detail_level) to retrieve a token's full description, and invoke(token_id, params) to execute any tool you discovered via explore(). Use explore(resource_type="tool_skill", query="...") to find tools, then invoke(token_id, params) to call them.
-
-The user request includes two token lists: expanded_tokens (with full_description) are already in full context — do not re-fetch them. tokens (with short_description) are identified but not expanded — use token_to_detail if you need the full detail. Tokens in expanded_tokens never appear in tokens.
-
-Two sigils appear in your output, never visible to the user:
-- §!TokenID - inline reference to an existing token, expanded to its short description before display. The token must exist in the store or be defined in this response's new_tokens.
-- §^TokenID content §^ - marks a span of your output as a named retrievable memory unit (opened by §^TokenID, closed by bare §^, does not nest). This is the act of memory creation.
-- §^name§^ - a bare bookmark with no content between the markers. This defines a named position (byte offset) without creating a token. Bookmarks are used by referential tokens to define ranges across USR_T* or RESP_T* tokens — see the `ranges` field on new_tokens below.
-
-Always respond with a single JSON object in exactly this shape (empty fields present as empty string/array, never omitted):
-{
-  "ask_user": "",
-  "content": "",
-  "preserve": [],
-  "new_tokens": [],
-  "relationships": []
-}
-
-ask_user: a question for the user. If populated, content must be empty. Ask one focused question you cannot answer yourself via explore() or other tools.
-content: your response to the user, may contain §! and §^ markers. Your response is automatically chunked into RESP_T{turn}_{NNN} tokens after each turn — you can reference these in future turns.
-preserve: token IDs to carry forward to next turn's preserved_tokens, bypassing semantic scoring. Underpreserve rather than overpreserve.
-new_tokens: definitions for every token you reference via §! that isn't already in the store, and for every §^ span. Required fields: id (or token_id), short_desc. Optional fields: type (defaults to "concept", automatically set to "referential" for §^ span tokens — you rarely need to set type yourself), full_desc (the span text is captured automatically for §^ spans), ranges (see below).
-relationships: directed triples {subject, predicate, object} connecting tokens you create - an unconnected token is nearly unreachable later. Use "HasParent"/"Contains" for generic hierarchy (e.g. a todo subtask or a decision-tree branch). "HasParent" is auto-mirrored with "Contains" — inserting subject→HasParent→object automatically creates object→Contains→subject. Domain-specific predicates like "subtask", "considers", "selects", "drivenBy" are also available for process trees; they have no auto-mirroring.
-
-For referential tokens (type "referential"), you can define a `ranges` array that slices across USR_T* (user input chunks) or RESP_T* (your own response chunks) tokens. Each range entry specifies:
-  { "token": "USR_T1_005", "bookmark": "§^myBookmark", "offset": 0, "length": 200 }
-This selects 200 bytes starting from the position of §^myBookmark within that chunk token. If length is omitted, it goes to the next bookmark or end of token. Multiple ranges can be combined in one token.
-
-The Squire validates your response and rejects it with a reason if: ask_user and content are both populated; §!TokenID references a token not in the store and not in new_tokens; a §^ span is opened but never closed. On rejection, read the reason, fix only the specific issue, and resubmit."#;
+// System prompt — loaded from external file via squire_prompts module.
+// Define the prompt in prompts/system-prompt.md. Users can override it
+// at {config_dir}/prompts/system-prompt.md or project/.squire/prompts/system-prompt.md
+// without recompiling.
 
 // ═══════════════════════════════════════════════════════════════════════
 // Adapter struct
@@ -253,7 +223,26 @@ impl ContextManagerAdapter for SquireContextAdapter {
         // USR_T{turn}_{NNN} system_referential tokens before the bootstrap
         // vector search below, so this turn's own input is immediately
         // discoverable in the same turn it arrived (see decisions.md).
-        ingest_user_input_chunks(&user_text, current_turn, self.store.as_ref()).await;
+        let user_token_ids =
+            ingest_user_input_chunks(&user_text, current_turn, self.store.as_ref(), session.session.id).await;
+
+        // Reconstruct the user request text with inline §!TokenID markers at
+        // each chunk boundary, so the AI can see exactly which token ID
+        // corresponds to which part of the input — giving it the visual cue
+        // it needs to cite §!USR_T* in its response.
+        let inline_sigil_text: String = {
+            let chunks = crate::agent::squire::ingestion::chunk_user_input(&user_text);
+            if chunks.is_empty() {
+                user_text.clone()
+            } else {
+                chunks
+                    .into_iter()
+                    .zip(user_token_ids.iter())
+                    .map(|(chunk, tid)| format!("§!{} {}", tid, chunk))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        };
 
         let preserved = self.store.preserved_tokens(session.session.id).await;
 
@@ -262,27 +251,31 @@ impl ContextManagerAdapter for SquireContextAdapter {
         // like memory do not crowd out workflow/tool/skill candidates.
         let memory_prefetched = self
             .store
-            .explore_memory("memory", &user_text, 1, self.prefetch.memory_top_k, current_turn)
+            .explore_memory("memory", &user_text, 1, self.prefetch.memory_top_k, current_turn, session.session.id)
             .await;
         let workflow_prefetched = self
             .store
-            .explore_memory("workflow", &user_text, 1, self.prefetch.workflow_top_k, current_turn)
+            .explore_memory("workflow", &user_text, 1, self.prefetch.workflow_top_k, current_turn, session.session.id)
             .await;
         let tool_prefetched = self
             .store
-            .explore_memory("tool", &user_text, 1, self.prefetch.tool_top_k, current_turn)
+            .explore_memory("tool", &user_text, 1, self.prefetch.tool_top_k, current_turn, session.session.id)
             .await;
         let skill_prefetched = self
             .store
-            .explore_memory("skill", &user_text, 1, self.prefetch.skill_top_k, current_turn)
+            .explore_memory("skill", &user_text, 1, self.prefetch.skill_top_k, current_turn, session.session.id)
             .await;
 
         // Merge all sources (preserved + semantic prefetch) into one
         // deduplicated token list. Preserved tokens take priority, and
         // duplicates across prefetch sources or within a single source
         // (e.g. the same workflow returned twice) are removed.
+        // Prefetched tokens below the min_score threshold are discarded —
+        // irrelevant matches waste context and confuse the AI.
+        let min_score = self.prefetch.min_score;
         let mut seen: HashSet<String> =
             preserved.iter().map(|t| t.token_id.clone()).collect();
+        let preserved_ids: HashSet<String> = seen.clone();
         let mut all_tokens: Vec<_> = preserved.into_iter().collect();
         for token in memory_prefetched
             .into_iter()
@@ -290,50 +283,71 @@ impl ContextManagerAdapter for SquireContextAdapter {
             .chain(tool_prefetched.into_iter())
             .chain(skill_prefetched.into_iter())
         {
+            if token.score < min_score {
+                continue;
+            }
             if seen.insert(token.token_id.clone()) {
                 all_tokens.push(token);
             }
         }
 
-        // Build two lists: tokens with full descriptions (expanded), and
-        // tokens with only short descriptions. No token appears in both.
+        // Classification policy for expanded (full_desc) vs. short form:
+        //   - Preserved tokens — expanded, because the AI chose to keep them
+        //   - User/referential chunks (USR_T*, RESP_T*) — expanded, because
+        //     a referential token is meaningless without its content
+        //   - Prefetched bootstrap tokens — short form only; the AI uses
+        //     token_to_detail when it needs the full description
         let mut expanded_tokens: Vec<serde_json::Value> = Vec::new();
         let mut short_tokens: Vec<serde_json::Value> = Vec::new();
         for token in &all_tokens {
-            let detail = self.store.token_detail(&token.token_id).await;
-            match detail.and_then(|d| d.full_desc) {
-                Some(full) => expanded_tokens.push(serde_json::json!({
+            let is_preserved = preserved_ids.contains(&token.token_id);
+            let is_referential = token.token_id.starts_with("USR_T")
+                || token.token_id.starts_with("RESP_T");
+
+            if is_preserved || is_referential {
+                let detail = self.store.token_detail(&token.token_id).await;
+                expanded_tokens.push(serde_json::json!({
                     "token_id": token.token_id,
-                    "full_description": full,
-                })),
-                None => short_tokens.push(serde_json::json!({
+                    "full_desc": detail.and_then(|d| d.full_desc).unwrap_or_default(),
+                }));
+            } else {
+                short_tokens.push(serde_json::json!({
                     "token_id": token.token_id,
-                    "short_description": token.short_desc,
-                })),
+                    "short_desc": token.short_desc,
+                }));
             }
         }
 
         let active_process_state =
             self.store.compute_active_process_state(session.session.id).await;
 
-        let request = serde_json::json!({
-            "user_request": user_text,
+        let context = serde_json::json!({
             "expanded_tokens": expanded_tokens,
             "tokens": short_tokens,
             "active_process_state": active_process_state,
         });
 
+        let system_content = format!(
+            "{}\n\n--- Context for this turn ---\n{}",
+            crate::agent::squire_prompts::system_prompt(),
+            serde_json::to_string(&context).map_err(|e| e.to_string())?
+        );
+
+        let user_message = serde_json::json!({
+            "user_request": inline_sigil_text,
+        });
+
         let messages = vec![
             ChatMessage {
                 role: ChatRole::System,
-                content: SQUIRE_SYSTEM_PROMPT.to_string(),
+                content: system_content,
                 tool_call_id: None,
                 tool_calls: None,
                 reasoning_content: None,
             },
             ChatMessage {
                 role: ChatRole::User,
-                content: serde_json::to_string(&request).map_err(|e| e.to_string())?,
+                content: serde_json::to_string(&user_message).map_err(|e| e.to_string())?,
                 tool_call_id: None,
                 tool_calls: None,
                 reasoning_content: None,
@@ -486,7 +500,7 @@ impl ContextManagerAdapter for SquireContextAdapter {
                     token.full_desc = Some(span_text.clone());
                 }
             }
-            self.store.upsert_token(token, turn).await;
+            self.store.upsert_token(token, turn, session_id).await;
         }
         for rel in &parsed.relationships {
             self.store.add_relationship(rel.clone()).await;
@@ -498,7 +512,7 @@ impl ContextManagerAdapter for SquireContextAdapter {
 
         // Chunk the model's response into RESP_T{turn}_{NNN} tokens for
         // future bookmark/referential-token resolution.
-        ingest_response_chunks(&parsed.content, turn, self.store.as_ref()).await;
+        ingest_response_chunks(&parsed.content, turn, self.store.as_ref(), session_id).await;
 
         let display_content = self.expand_for_display(&parsed.content).await;
         if !display_content.is_empty() {

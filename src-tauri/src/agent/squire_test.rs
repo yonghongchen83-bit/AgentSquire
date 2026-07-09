@@ -775,9 +775,7 @@ async fn build_turn_input_merges_base_tools_with_built_ins() {
     assert!(matches!(turn_input.messages[0].role, ChatRole::System));
     assert!(matches!(turn_input.messages[1].role, ChatRole::User));
     let request: Value = serde_json::from_str(&turn_input.messages[1].content).unwrap();
-    let session_short = &session.session.id.simple().to_string()[..8];
-    let expected = format!("§!USR_T0_001_{} hello squire", session_short);
-    assert_eq!(request["user_request"], expected);
+    assert_eq!(request["user_request"], "§^chunk_0§^hello squire");
     let ctx = extract_context(&turn_input.messages[0].content);
     assert!(ctx["expanded_tokens"].is_array());
     assert!(ctx["tokens"].is_array());
@@ -847,7 +845,8 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
     let mut adapter = SquireContextAdapter::new_with_prefetch(
         store.clone(),
         SquirePrefetchConfig {
-            memory_top_k: 1,
+            memory_top_k: 2,  // 2 because the USR_T0_001_* token ingested in
+                              // build_turn_input also matches "alpha"
             workflow_top_k: 1,
             tool_top_k: 1,
             skill_top_k: 1,
@@ -1850,10 +1849,11 @@ async fn ingest_user_input_chunks_writes_one_token_per_chunk_with_expected_id_sc
 
     let d1 = store.token_detail("USR_T3_001_00000000").await.unwrap();
     assert_eq!(d1.short_desc, "First paragraph.");
-    assert_eq!(d1.full_desc, Some("First paragraph.".to_string()));
+    assert_eq!(d1.full_desc, Some("§^chunk_0§^First paragraph.".to_string()));
 
     let d2 = store.token_detail("USR_T3_002_00000000").await.unwrap();
     assert_eq!(d2.short_desc, "Second paragraph.");
+    assert_eq!(d2.full_desc, Some("§^chunk_1§^Second paragraph.".to_string()));
 }
 
 #[tokio::test]
@@ -1926,7 +1926,7 @@ async fn build_turn_input_ingests_user_message_as_system_referential_chunk_same_
     let usr_id = format!("USR_T0_001_{}", session_short);
     assert!(store.token_exists(&usr_id).await);
     let detail = store.token_detail(&usr_id).await.unwrap();
-    assert_eq!(detail.full_desc.as_deref(), Some("Please summarize the quarterly report for me."));
+    assert_eq!(detail.full_desc.as_deref(), Some("§^chunk_0§^Please summarize the quarterly report for me."));
 
     let ctx = extract_context(&turn_input.messages[0].content);
     // The user chunk USR_T0_001_* has full_desc, so it is in expanded_tokens.

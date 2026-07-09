@@ -61,6 +61,7 @@ notify = "6"
 git2 = "0.19"
 ignore = "0.4"
 regex = "1"
+safe-json-repair = "0.1"
 futures = "0.3"
 async-trait = "0.1"
 hakari = { version = "0.1", path = "hakari" }

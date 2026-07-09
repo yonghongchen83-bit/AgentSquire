@@ -111,13 +111,13 @@ appear in expanded_tokens so you can correlate bookmark names with token IDs.
 
 Create tokens and concept token and relationshiops to always track user's intention, logical relationshiops between the questions and your answers.
 
-Always chunk your own response, always create referential tokens to crtical arguments/evidences/logic paths.
+Always chunk your own response by creating your own bookmarks and always create referential tokens to crtical arguments/evidences/logic paths.
 
 Create concept tokens and use relationships and mark the logic flow of the conversation at all time.  Keep record of topic shift, goal, dispute, agreements.
 
 Critical --
 
-You must not repeatedly explore similiar concepts, and NEVER explore tokens of current round.
+You must NEVER repeatedly explore similiar concepts.
 
 you are ONLY allow to explorer when there is a high chance of new and useful information.
 

@@ -144,97 +144,18 @@ fn looks_like_path(s: &str) -> bool {
     false
 }
 
-// ── DeepSeek JSON cleanup ──
-
-/// Lazily-compiled regex set used by `clean_deepseek_json`.
-/// Compiled once, reused for the lifetime of the process.
-struct CleanRegex {
-    fence: regex::Regex,
-    squote: regex::Regex,
-    trail_comma_brace: regex::Regex,
-    trail_comma_bracket: regex::Regex,
-    line_comment: regex::Regex,
-    block_comment: regex::Regex,
-    undefined: regex::Regex,
-    nan: regex::Regex,
-    infinity: regex::Regex,
-}
-
-fn clean_regex() -> &'static CleanRegex {
-    static CACHE: std::sync::OnceLock<CleanRegex> = std::sync::OnceLock::new();
-    CACHE.get_or_init(|| CleanRegex {
-        fence: regex::Regex::new(r"(?m)^\s*```(?:json)?\s*$").unwrap(),
-        squote: regex::Regex::new(r"'([^']*)'").unwrap(),
-        trail_comma_brace: regex::Regex::new(r",\s*}").unwrap(),
-        trail_comma_bracket: regex::Regex::new(r",\s*]").unwrap(),
-        line_comment: regex::Regex::new(r"//[^\n]*($|\n)").unwrap(),
-        block_comment: regex::Regex::new(r"/\*.*?\*/").unwrap(),
-        undefined: regex::Regex::new(r"\bundefined\b").unwrap(),
-        nan: regex::Regex::new(r"\bNaN\b").unwrap(),
-        infinity: regex::Regex::new(r"\bInfinity\b").unwrap(),
-    })
-}
+// ── DeepSeek JSON cleanup via safe-json-repair ──
 
 /// Clean up malformed JSON text commonly produced by DeepSeek models.
 ///
-/// DeepSeek often wraps JSON in markdown code blocks, uses full-width
-/// punctuation, includes trailing commas, or emits `undefined`/`NaN`
-/// instead of `null`.  This function normalises all of those so that
-/// `serde_json::from_str` can parse the result.
+/// Delegates to the `safe-json-repair` crate, which uses a stack-aware
+/// tolerant parser that never throws, never silently drops data, and
+/// handles all the common DeepSeek failure modes: premature root close,
+/// markdown fences, trailing commas, JS keywords, single quotes,
+/// full-width punctuation, etc.
 pub fn clean_deepseek_json(raw: &str) -> String {
-    let mut s = raw.to_string();
-    let re = clean_regex();
-
-    // 1. Remove markdown code-block fences: ```json  …  ```
-    s = re.fence.replace_all(&s, "").to_string();
-
-    // 2. Replace Chinese / full-width brackets with ASCII equivalents
-    for (ch, replacement) in [
-        ('【', "{"),
-        ('】', "}"),
-        ('｛', "{"),
-        ('｝', "}"),
-        ('〔', "{"),
-        ('〕', "}"),
-        ('〈', "<"),
-        ('〉', ">"),
-    ] {
-        s = s.replace(ch, replacement);
-    }
-
-    // 3. Full-width punctuation → ASCII
-    s = s.replace('，', ",");
-    s = s.replace('：', ":");
-
-    // 4. Single-quoted strings → double-quoted (best-effort)
-    s = re.squote.replace_all(&s, r#""$1""#).to_string();
-
-    // 5. Remove trailing commas before } or ]
-    s = re.trail_comma_brace.replace_all(&s, "}").to_string();
-    s = re.trail_comma_bracket.replace_all(&s, "]").to_string();
-
-    // 6. Remove single-line (//) and block (/* */) comments
-    s = re.line_comment.replace_all(&s, "").to_string();
-    s = re.block_comment.replace_all(&s, "").to_string();
-
-    // 7. JS keywords → null
-    s = re.undefined.replace_all(&s, "null").to_string();
-    s = re.nan.replace_all(&s, "null").to_string();
-    s = re.infinity.replace_all(&s, "null").to_string();
-
-    // 8. Strip leading text before first `{`/`[`, and trailing text
-    //    after the matching last `}`/`]`
-    if let Some(start) = s.find(|c: char| c == '{' || c == '[') {
-        let open = s[start..].chars().next().unwrap();
-        let close = if open == '{' { '}' } else { ']' };
-        s = if let Some(end) = s[start..].rfind(close) {
-            s[start..start + end + 1].to_string()
-        } else {
-            s[start..].to_string()
-        };
-    }
-
-    s
+    let result = safe_json_repair::repair(raw, &safe_json_repair::Options::default());
+    result.json
 }
 
 /// Normalize a path, resolving `.` and `..` components.

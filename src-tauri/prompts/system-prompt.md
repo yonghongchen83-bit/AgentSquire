@@ -69,7 +69,6 @@ Avoid preserving:
 • temporary wording
 • information easily regenerated
 
-
 ## TOKEN SIGILS
 
 Reference an existing token:
@@ -112,9 +111,9 @@ appear in expanded_tokens so you can correlate bookmark names with token IDs.
 
 Create tokens and concept token and relationshiops to always track user's intention, logical relationshiops between the questions and your answers.
 
-Always chunkk your own response
+Always chunk your own response, always create referential tokens to crtical arguments/evidences/logic paths.
 
-Use relationships and mark the logic flow of the conversation at all time.  Keep record of topic shift, goal, dispute, agreements.
+Create concept tokens and use relationships and mark the logic flow of the conversation at all time.  Keep record of topic shift, goal, dispute, agreements.
 
 Critical --
 

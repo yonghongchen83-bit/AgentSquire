@@ -514,8 +514,20 @@ impl ContextManagerAdapter for SquireContextAdapter {
         for rel in &parsed.relationships {
             self.store.add_relationship(rel.clone()).await;
         }
+        // USR_T (user input) and RESP_T (model response) tokens are
+        // conversation history — they MUST survive across turns regardless
+        // of what the AI chooses to preserve.  Merge them unconditionally.
+        let mut always_preserve: Vec<String> = parsed.preserve.clone();
+        for id in self.store.list_token_ids_by_session(session_id).await {
+            if always_preserve.contains(&id) {
+                continue;
+            }
+            if id.starts_with("USR_") || id.starts_with("RESP_") {
+                always_preserve.push(id);
+            }
+        }
         self.store
-            .set_preserve_list(session_id, parsed.preserve.clone())
+            .set_preserve_list(session_id, always_preserve)
             .await;
         self.store.increment_turn(session_id).await;
 

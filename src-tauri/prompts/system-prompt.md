@@ -57,9 +57,7 @@ If useful information should remain available later:
    §^TokenID
    ...
    §^
-
 2. Create a matching entry inside new_tokens.
-
 3. Add TokenID to preserve.
 
 If a token is not preserved, it disappears after this response.
@@ -71,7 +69,6 @@ Avoid preserving:
 • temporary wording
 • information easily regenerated
 
-Prefer a few meaningful memories over many small ones.
 
 ## TOKEN SIGILS
 
@@ -95,6 +92,35 @@ Every §! reference must refer to either
 
 • an existing token
 • or a token created in this response.
+
+## REFERENTIAL TOKENS
+
+The user_request text uses §^bookmark§^ bare bookmarks at chunk boundaries.
+You can create referential tokens in new_tokens with a `ranges` field to
+capture parts of those chunks without duplicating text:
+
+{
+  "token_id": "my_concept",
+  "type": "concept",
+  "short_desc": "...",
+  "ranges": [{"token": "USR_T2_001_...", "bookmark": "chunk_0", "offset": 0}]
+}
+
+This creates a token whose content is resolved from the source chunk by
+locating the bookmark and applying the offset.  The matching source tokens
+appear in expanded_tokens so you can correlate bookmark names with token IDs.
+
+Create tokens and concept token and relationshiops to always track user's intention, logical relationshiops between the questions and your answers.
+
+Always chunkk your own response
+
+Use relationships and mark the logic flow of the conversation at all time.  Keep record of topic shift, goal, dispute, agreements.
+
+Critical --
+
+You must not repeatedly explore similiar concepts, and NEVER explore tokens of current round.
+
+you are ONLY allow to explorer when there is a high chance of new and useful information.
 
 ## WORKFLOWS
 

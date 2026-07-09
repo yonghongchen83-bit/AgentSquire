@@ -224,13 +224,20 @@ impl ContextManagerAdapter for SquireContextAdapter {
         // USR_T{turn}_{NNN} system_referential tokens before the bootstrap
         // vector search below, so this turn's own input is immediately
         // discoverable in the same turn it arrived (see decisions.md).
-        let user_token_ids =
-            ingest_user_input_chunks(&user_text, current_turn, self.store.as_ref(), session.session.id).await;
+        // Chunks now carry §^chunk_{i}§^ bookmark markers so the AI can
+        // create referential tokens via new_tokens with a `ranges` entry.
+        let _chunk_ids = ingest_user_input_chunks(&user_text, current_turn, self.store.as_ref(), session.session.id).await;
 
-        // Reconstruct the user request text with inline §!TokenID markers at
-        // each chunk boundary, so the AI can see exactly which token ID
-        // corresponds to which part of the input — giving it the visual cue
-        // it needs to cite §!USR_T* in its response.
+        // Reconstruct the user request text with §^bookmark§^ bare bookmarks
+        // at each chunk boundary, so the AI can see which spans it can
+        // reference via new_tokens with a `ranges` entry.  The matching
+        // USR_T tokens in expanded_tokens carry the same bookmark markers
+        // in their full_desc, so the bookmark names are correlated.
+        //
+        // NOTE: No §! references here — those are for tokens the AI itself
+        // created.  USR_T tokens are system-manufactured; the AI should
+        // create its own referential tokens using ranges pointing to the
+        // bookmarks it sees in this text.
         let inline_sigil_text: String = {
             let chunks = crate::agent::squire::ingestion::chunk_user_input(&user_text);
             if chunks.is_empty() {
@@ -238,8 +245,8 @@ impl ContextManagerAdapter for SquireContextAdapter {
             } else {
                 chunks
                     .into_iter()
-                    .zip(user_token_ids.iter())
-                    .map(|(chunk, tid)| format!("§!{} {}", tid, chunk))
+                    .enumerate()
+                    .map(|(i, chunk)| format!("§^chunk_{}§^{}", i, chunk))
                     .collect::<Vec<_>>()
                     .join("\n")
             }

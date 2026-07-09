@@ -221,13 +221,19 @@ pub async fn ingest_text_chunks(
     let mut ids = Vec::new();
     for (i, chunk) in chunk_user_input(text).into_iter().enumerate() {
         let id = format!("{}_T{}_{:03}_{}", prefix, turn, i + 1, session_short);
+        // Embed a bare bookmark at the start of each chunk so the AI can
+        // create referential tokens via new_tokens with a `ranges` entry
+        // pointing to this bookmark (spec §5.2, ADR 0012).  The chunk
+        // content after the bookmark IS the token's text — the AI sees
+        // the same bookmark in user_request and can correlate.
+        let bookmarked = format!("§^chunk_{}§^{}", i, chunk);
         store
             .upsert_token(
                 NewTokenSpec {
                     id: id.clone(),
                     token_type: "system_referential".to_string(),
                     short_desc: first_sentence(&chunk),
-                    full_desc: Some(chunk),
+                    full_desc: Some(bookmarked),
                     endpoint: None,
                     ranges: vec![],
                 },

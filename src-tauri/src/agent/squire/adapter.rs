@@ -20,6 +20,7 @@ use super::tools::built_in_tool_definitions;
 use super::types::{ComplianceFailureRecord, SquireResponse};
 use crate::agent::context_adapter::{ContextManagerAdapter, TurnInput, TurnOutcome};
 use crate::agent::ToolResult;
+use crate::commands::utils::clean_deepseek_json;
 use crate::llm::provider::{ChatMessage, ChatRole, ToolCall, ToolDefinition};
 use crate::state::config::SquirePrefetchConfig;
 use crate::storage::conversation_store::{
@@ -391,7 +392,8 @@ impl ContextManagerAdapter for SquireContextAdapter {
         messages: &mut Vec<ChatMessage>,
         store: &dyn ConversationStore,
     ) -> Result<TurnOutcome, String> {
-        let parsed: SquireResponse = match serde_json::from_str(assistant_content.trim()) {
+        let cleaned = clean_deepseek_json(assistant_content.trim());
+        let parsed: SquireResponse = match serde_json::from_str(&cleaned) {
             Ok(r) => r,
             Err(e) => {
                 return self

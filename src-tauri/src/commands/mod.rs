@@ -196,25 +196,14 @@ pub async fn bind_workspace(path: String, state: State<'_, AppState>, app: AppHa
     // Clear stale preserve lists on the new store
     squire_store.clear_all_preserve_lists().await;
 
-    // Seed workflows and skills from the workspace (async variant — we are
-    // already on the Tokio runtime inside a #[tauri::command])
-    let config_dir = crate::state::config::config_dir();
-    let project_path_ref = std::path::Path::new(&path);
-    crate::agent::squire_workflows::seed_all_workflows_async(
-        squire_store.clone(),
-        &config_dir,
-        Some(project_path_ref),
-    ).await;
-    crate::agent::squire_skills::seed_all_skills_async(
-        squire_store.clone(),
-        &config_dir,
-        Some(project_path_ref),
-    ).await;
-
-    // Swap stores in AppState
+    // ── Swap stores NOW so the frontend is usable immediately ──────────
+    // Do NOT block the response on seeding workflows/skills — those
+    // involve ONNX model loading + per-token embedding computation
+    // (fastembed, first-call ~1-2s), and the user should see the
+    // session panel refresh right away.
     *state.store.write().map_err(|e| e.to_string())? = Arc::new(db);
-    *state.squire_store.write().map_err(|e| e.to_string())? = squire_store;
-    *state.project_path.write().map_err(|e| e.to_string())? = path;
+    *state.squire_store.write().map_err(|e| e.to_string())? = squire_store.clone();
+    *state.project_path.write().map_err(|e| e.to_string())? = path.clone();
 
     // Redirect the provider wire log and Squire trace log under the
     // workspace's .squire/ directory
@@ -224,8 +213,28 @@ pub async fn bind_workspace(path: String, state: State<'_, AppState>, app: AppHa
     let new_registry = from_app_config_with_wire_log(&config, wire_log_path);
     *state.registry.write().map_err(|e| e.to_string())? = new_registry;
 
-    // Notify frontend to refresh session panel
+    // Notify frontend to refresh session panel — this comes BEFORE the
+    // expensive background seeding so the UI is responsive immediately.
     let _ = app.emit("workspace-changed", ());
+
+    // ── Background seeding (workflows + skills) ────────────────────────
+    // Seed in a fire-and-forget task so the Tauri command returns fast.
+    // The Arc<dyn SquireStore> is shared, so background writes land in
+    // the same store the active session reads from.
+    let config_dir = crate::state::config::config_dir();
+    let project_path = std::path::Path::new(&path).to_path_buf();
+    tauri::async_runtime::spawn(async move {
+        crate::agent::squire_workflows::seed_all_workflows_async(
+            squire_store.clone(),
+            &config_dir,
+            Some(&project_path),
+        ).await;
+        crate::agent::squire_skills::seed_all_skills_async(
+            squire_store.clone(),
+            &config_dir,
+            Some(&project_path),
+        ).await;
+    });
 
     Ok(())
 }

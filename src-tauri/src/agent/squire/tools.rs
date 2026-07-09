@@ -115,6 +115,28 @@ impl Tool for SquireExploreTool {
             .unwrap_or(10) as u32;
         let current_turn = self.store.current_turn(self.session_id).await;
 
+        // ── Token-ID resolution fallback ──────────────────────────────────
+        // If the AI passes a raw token_id as the query (e.g. it sees §!Foo
+        // and calls explore("Foo")), resolve the token first and use its
+        // content for semantic search.  A random token_id string has no
+        // semantic relation to the actual content, so embedding search
+        // against the raw key would always miss.
+        //
+        // CRITICAL: Only reach for token_detail() when the query actually
+        // LOOKS like a token_id (contains _T\d).  This avoids an expensive
+        // LanceDB query on every natural-language explore() — the common
+        // case by far.
+        let looks_like_token_id = query.contains("_T") && query.bytes().any(|b| b.is_ascii_digit());
+        let effective_query = if looks_like_token_id && resource_type != "tool" {
+            self.store
+                .token_detail(&query)
+                .await
+                .map(|d| d.full_desc.unwrap_or(d.short_desc))
+                .unwrap_or(query.clone())
+        } else {
+            query.clone()
+        };
+
         // "tool"/"tool_skill" are served from the real (full) tool registry —
         // this is the Squire-as-gateway discovery surface, not memory search.
         let results = if matches!(resource_type.as_str(), "tool" | "tool_skill") {
@@ -155,7 +177,7 @@ impl Tool for SquireExploreTool {
             if resource_type == "tool_skill" {
                 let skills = self
                     .store
-                    .explore_memory("skill", &query, num_hops, max_results, current_turn, self.session_id)
+                    .explore_memory("skill", &effective_query, num_hops, max_results, current_turn, self.session_id)
                     .await;
                 tool_results.extend(skills);
             }
@@ -195,7 +217,7 @@ impl Tool for SquireExploreTool {
             tool_results
         } else {
             self.store
-                .explore_memory(&resource_type, &query, num_hops, max_results, current_turn, self.session_id)
+                .explore_memory(&resource_type, &effective_query, num_hops, max_results, current_turn, self.session_id)
                 .await
         };
 

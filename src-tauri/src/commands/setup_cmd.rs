@@ -73,7 +73,15 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
     // ─────────────────────────────────────────────────────────────
 
     // ── Seed prompts from built-in, user, and project sources ──
-    crate::agent::squire_prompts::seed_all_prompts(&config_dir, project_path_for_wf);
+    // Pass the project root as `builtin_dir` so `system-prompt.md` is read
+    // from `src-tauri/prompts/` at runtime, avoiding Rust recompilation
+    // when the prompt file is edited.
+    let builtin_dir = project_path_for_wf.map(|p| p.to_path_buf());
+    crate::agent::squire_prompts::seed_all_prompts(
+        builtin_dir.as_deref(),
+        &config_dir,
+        project_path_for_wf,
+    );
     // ─────────────────────────────────────────────────────────────
 
     let registry = crate::llm::registry::from_app_config(&config);

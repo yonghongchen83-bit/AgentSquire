@@ -1,15 +1,17 @@
-//! External system prompt loading with three-tier override:
-//!   1. Built-in (embedded via include_str!)
-//!   2. User   ({config_dir}/prompts/system-prompt.md)
-//!   3. Project ({project_path}/.squire/prompts/system-prompt.md)
+//! External system prompt loading with four-tier override:
+//!   1. Built-in  (loaded from `<builtin_root>/prompts/` at runtime)
+//!   2. Embedded  (via `include_str!`, fallback if disk read fails)
+//!   3. User      ({config_dir}/prompts/system-prompt.md)
+//!   4. Project   ({project_path}/.squire/prompts/system-prompt.md)
 //!
-//! Later sources override earlier ones: project > user > built-in.
+//! Later sources override earlier ones: project > user > embedded > builtin-disk.
 //! Individual files override independently — you can override just the
 //! system prompt without touching the others.
 //!
-//! If seed_all_prompts has not been called (e.g. during early startup or
-//! in unit tests), get_prompt falls back to the built-in content so that
-//! code does not panic.
+//! The built-in file is read from disk at runtime (not at compile time),
+//! so editing `prompts/system-prompt.md` does **not** trigger a Rust
+//! recompilation.  The `include_str!` fallback is only used when the disk
+//! read fails (e.g. running the binary outside the source tree).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -21,13 +23,16 @@ use std::sync::Mutex;
 /// prompt that you want to make externally overridable.
 static PROMPT_FILES: &[PromptFile] = &[PromptFile {
     name: "system-prompt.md",
+    // Built-in content embedded at compile time as a fallback.
+    // This is used when the disk-based builtin file cannot be read
+    // (e.g. running a release binary outside the source tree).
     builtin: include_str!("../../prompts/system-prompt.md"),
 }];
 
 struct PromptFile {
     /// Filename used in all three tiers (e.g. "system-prompt.md").
     name: &'static str,
-    /// Built-in content embedded at compile time.
+    /// Built-in content embedded at compile time (emergency fallback).
     builtin: &'static str,
 }
 
@@ -35,15 +40,31 @@ struct PromptFile {
 
 static MERGED: Mutex<Option<HashMap<&'static str, String>>> = Mutex::new(None);
 
-/// (Re)load all prompts from all three tiers and merge them.
+/// (Re)load all prompts from all four tiers and merge them.
+///
+/// `builtin_dir` is the source-tree root where `prompts/<name>` lives
+/// (e.g. the Tauri project root containing `src-tauri/prompts/`).  Pass
+/// `std::env::current_dir()` or the project root; during development this
+/// should be the repo root.
+///
 /// Call once at startup from `setup_cmd.rs`, and again whenever you want
 /// to hot-reload (e.g. on file watcher event).
-pub fn seed_all_prompts(config_dir: &Path, project_path: Option<&Path>) {
+pub fn seed_all_prompts(
+    builtin_dir: Option<&Path>,
+    config_dir: &Path,
+    project_path: Option<&Path>,
+) {
     let mut merged: HashMap<&'static str, String> = HashMap::new();
 
     for pf in PROMPT_FILES {
-        // 1. Built-in (lowest priority)
-        let mut content = pf.builtin.to_string();
+        // 1. Built-in from disk (lowest priority — avoids recompilation).
+        //    Falls back to the compile-time `include_str!` content.
+        let mut content = if let Some(root) = builtin_dir {
+            let builtin_path = root.join("src-tauri").join("prompts").join(pf.name);
+            std::fs::read_to_string(&builtin_path).unwrap_or_else(|_| pf.builtin.to_string())
+        } else {
+            pf.builtin.to_string()
+        };
 
         // 2. User override at {config_dir}/prompts/{name}
         let user_path = config_dir.join("prompts").join(pf.name);
@@ -109,7 +130,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        seed_all_prompts(&dir, None);
+        seed_all_prompts(None, &dir, None);
         let prompt = get_prompt("system-prompt.md");
         assert!(prompt.contains("Context Squire"));
         assert!(!prompt.is_empty());
@@ -131,7 +152,7 @@ mod tests {
 
         // Re-seed with NO project path — should get user override
         let _ = std::fs::remove_dir_all(&dir.join("..").join("squire_prompts_empty_test"));
-        seed_all_prompts(&dir, None);
+        seed_all_prompts(None, &dir, None);
         assert_eq!(get_prompt("system-prompt.md"), "USER OVERRIDE");
     }
 
@@ -157,7 +178,7 @@ mod tests {
         )
         .unwrap();
 
-        seed_all_prompts(&dir, Some(&proj_dir));
+        seed_all_prompts(None, &dir, Some(&proj_dir));
         assert_eq!(get_prompt("system-prompt.md"), "PROJECT PROMPT");
     }
 }

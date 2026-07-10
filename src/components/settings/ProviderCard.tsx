@@ -5,8 +5,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import type { LlmProviderConfig } from '@/types/ipc'
-import { ChevronDown, ChevronRight, Check, RefreshCw, Trash2, Wifi, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Check, Trash2, Wifi, X } from 'lucide-react'
 import { PROVIDERS, type ProviderCategory } from '@/components/settings/provider-catalog'
+import { SearchableModelSelect } from '@/components/settings/SearchableModelSelect'
 
 export function ProviderCard({
   index,
@@ -17,7 +18,6 @@ export function ProviderCard({
   providerCategory,
   fetched,
   fetching,
-  showCustom,
   isCollapsed,
   providerHeading,
   onToggleCollapse,
@@ -26,8 +26,6 @@ export function ProviderCard({
   onUpdateProvider,
   onAddModel,
   onRemoveModel,
-  onCustomModelAdd,
-  onCancelCustomModel,
   onRefreshModels,
   onTestConnection,
   onTestModel,
@@ -40,7 +38,6 @@ export function ProviderCard({
   providerCategory?: ProviderCategory
   fetched: string[]
   fetching: boolean
-  showCustom: boolean
   isCollapsed: boolean
   providerHeading: string
   onToggleCollapse: (index: number) => void
@@ -49,8 +46,6 @@ export function ProviderCard({
   onUpdateProvider: (index: number, patch: Partial<LlmProviderConfig>) => void
   onAddModel: (index: number, modelId: string) => void
   onRemoveModel: (index: number, modelId: string) => void
-  onCustomModelAdd: (index: number, inputEl: HTMLInputElement | null) => void
-  onCancelCustomModel: (index: number) => void
   onRefreshModels: (index: number, provider: LlmProviderConfig) => void
   onTestConnection: (index: number, provider: LlmProviderConfig) => void
   onTestModel: (index: number, provider: LlmProviderConfig, modelToTest: string) => void
@@ -139,58 +134,17 @@ export function ProviderCard({
                 })}
               </div>
               <div className="flex gap-2">
-                <div className="flex-1">
-                  {!showCustom ? (
-                    <Select value="" onValueChange={(v) => onAddModel(index, v)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Add model..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {knownModels.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>{m.label ?? m.id}</SelectItem>
-                        ))}
-                        {fetched.length > 0 && knownModels.length > 0 && (
-                          <SelectItem value="__sep__" disabled>--- fetched ---</SelectItem>
-                        )}
-                        {fetched.map((m) => (
-                          <SelectItem key={m} value={m}>{m}</SelectItem>
-                        ))}
-                        <SelectItem value="__custom__">Custom model...</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <div className="flex gap-2">
-                      <Input
-                        ref={(el) => {
-                          if (el) el.focus()
-                        }}
-                        placeholder="Enter model name and press Enter..."
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') onCustomModelAdd(index, e.currentTarget)
-                        }}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onCancelCustomModel(index)}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  )}
-                </div>
-                {providerCategory?.canFetchModels && provider.endpoint && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onRefreshModels(index, provider)}
-                    disabled={fetching}
-                    className="shrink-0"
-                    title="Refresh models from server"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${fetching ? 'animate-spin' : ''}`} />
-                  </Button>
-                )}
+                <SearchableModelSelect
+                  knownModels={knownModels}
+                  fetched={fetched}
+                  onSelect={(modelId) => onAddModel(index, modelId)}
+                  onRefresh={
+                    providerCategory?.canFetchModels && provider.endpoint
+                      ? () => onRefreshModels(index, provider)
+                      : undefined
+                  }
+                  fetching={fetching}
+                />
               </div>
               <p className="text-xs text-muted-foreground">
                 Primary model highlighted. Add multiple models from the same provider to group them in the chat selector

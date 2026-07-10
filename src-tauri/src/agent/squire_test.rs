@@ -1167,7 +1167,9 @@ async fn finalize_turn_credits_a_hit_for_a_preexisting_token_cited_via_sigil_wit
         .finalize_turn(sid, response, None, &mut messages, &conv_store)
         .await
         .unwrap();
-    assert!(matches!(outcome, TurnOutcome::Done));
+    // Content-only response goes through Phase 1 and returns Phase2
+    // (hit was credited during Phase 1 processing).
+    assert!(matches!(outcome, TurnOutcome::Phase2 { .. }));
 
     let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
     let after = results
@@ -1246,7 +1248,9 @@ async fn finalize_turn_credits_exactly_one_hit_for_repeated_citations_of_the_sam
         .finalize_turn(sid, response, None, &mut messages, &conv_store)
         .await
         .unwrap();
-    assert!(matches!(outcome, TurnOutcome::Done));
+    // Content-only response goes through Phase 1 and returns Phase2
+    // (hit was credited during Phase 1 processing, deduplicated counts).
+    assert!(matches!(outcome, TurnOutcome::Phase2 { .. }));
 
     let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
     let after = results

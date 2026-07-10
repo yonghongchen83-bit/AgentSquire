@@ -74,7 +74,7 @@ impl ProviderRegistry {
             let provider_type = cfg.provider_type.to_lowercase();
 
             let provider: Arc<dyn LlmProvider> = match provider_type.as_str() {
-                "openai" => {
+                "openai" | "openrouter" => {
                     let mut p = OpenAIProvider::new(
                         cfg.api_key.clone(),
                         default_model.clone(),

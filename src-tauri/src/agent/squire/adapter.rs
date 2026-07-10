@@ -12,8 +12,9 @@ use async_trait::async_trait;
 
 use super::ingestion::{ingest_response_chunks, ingest_user_input_chunks};
 use super::protocol::{
-    extract_inline_refs, extract_spans, resolve_all_range_specs, resolve_ranges,
-    strip_span_markers, take_token_id, unmarked_residual, validate_squire_response,
+    check_malformed_sigils, extract_inline_refs, extract_spans, is_range_spec, parse_range_spec,
+    resolve_range_spec, resolve_ranges, strip_span_markers, take_token_id,
+    unmarked_residual,
 };
 use super::SquireStore;
 use super::tools::built_in_tool_definitions;
@@ -33,6 +34,24 @@ use crate::storage::conversation_store::{
 // without recompiling.
 
 // ═══════════════════════════════════════════════════════════════════════
+// Two-phase protocol
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Which phase of the two-turn Squire protocol the adapter is in.
+///
+/// Phase 1: the model generates response content with bookmarks and spans
+/// (sigils + explorer tools). No token/relationship sections are required.
+///
+/// Phase 2: the model receives the Phase 1 response + original user request
+/// and generates referential tokens, concept tokens, and relationships only
+/// (no tools, no content text).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SquirePhase {
+    Phase1,
+    Phase2,
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Adapter struct
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -41,6 +60,10 @@ pub struct SquireContextAdapter {
     prefetch: SquirePrefetchConfig,
     max_retries: u32,
     retry_count: u32,
+    phase: SquirePhase,
+    /// The original user request text with §^chunk_N§^ bookmark markers,
+    /// captured during build_turn_input for use in Phase 2.
+    user_request_text: String,
 }
 
 impl SquireContextAdapter {
@@ -54,7 +77,17 @@ impl SquireContextAdapter {
             prefetch,
             max_retries: 3,
             retry_count: 0,
+            phase: SquirePhase::Phase1,
+            user_request_text: String::new(),
         }
+    }
+
+    /// Switch the adapter into Phase 2 (token generation) mode.
+    /// Called by the orchestrator after receiving `TurnOutcome::Phase2`.
+    pub fn set_phase2(&mut self, user_request_text: String) {
+        self.phase = SquirePhase::Phase2;
+        self.user_request_text = user_request_text;
+        self.retry_count = 0;
     }
 
     async fn expand_for_display(&self, content: &str) -> String {
@@ -261,6 +294,11 @@ impl ContextManagerAdapter for SquireContextAdapter {
             }
         };
 
+        // Save the user request text for Phase 2 token generation.
+        // The orchestrator uses this to feed the original request together
+        // with the Phase 1 response into the Phase 2 LLM call.
+        self.user_request_text = inline_sigil_text.clone();
+
         let preserved = self.store.preserved_tokens(session.session.id).await;
 
         // User-request semantic bootstrap prefetch (global configurable):
@@ -408,33 +446,17 @@ impl ContextManagerAdapter for SquireContextAdapter {
         messages: &mut Vec<ChatMessage>,
         store: &dyn ConversationStore,
     ) -> Result<TurnOutcome, String> {
-        let mut parsed = match detect_and_parse(&assistant_content) {
+        let parsed = match detect_and_parse(&assistant_content) {
             Ok(r) => r,
             Err(e) => {
                 return self
-                    .reject_and_record(
-                        session_id,
-                        messages,
-                        assistant_content,
-                        e,
-                        store,
-                    )
+                    .reject_and_record(session_id, messages, assistant_content, e, store)
                     .await;
             }
         };
 
+        // ── ask_user handling (common to both phases) ──
         if !parsed.ask_user.is_empty() {
-            // Spec §9.3's response-field AskUser loop: a populated `ask_user`
-            // with no `content` is a valid, expected turn state, not a
-            // protocol violation — surface it to orchestration as
-            // `TurnOutcome::AskUser` so it can pause the turn, round-trip the
-            // question to the user via IPC, and resume with the answer
-            // appended to `messages` (see `ask-user-loop/decisions.md`).
-            // `content` is guaranteed empty here since `ask_user`+`content`
-            // mutual exclusion would otherwise apply — but this branch runs
-            // before `validate_squire_response`, so a model that populates
-            // both isn't rejected via this path; it still needs to fail per
-            // spec §8.3. Check for that malformed combination explicitly.
             if !parsed.content.is_empty() {
                 return self
                     .reject_and_record(
@@ -451,28 +473,180 @@ impl ContextManagerAdapter for SquireContextAdapter {
             });
         }
 
-        let known: HashSet<String> = {
-            let mut set = HashSet::new();
-            for token_id in extract_inline_refs(&parsed.content) {
-                if self.store.token_exists(&token_id).await {
-                    set.insert(token_id);
+        match self.phase {
+            SquirePhase::Phase1 => {
+                // If the response already has §# sections (new_tokens,
+                // relationships, preserve), it's a combined single-pass
+                // response — process content via Phase 1 logic, then
+                // immediately feed into Phase 2 token logic in the same
+                // call. This keeps backwards compatibility with test
+                // harnesses and bootstrapping scenarios.
+                let has_phase2_sections = !parsed.new_tokens.is_empty()
+                    || !parsed.relationships.is_empty()
+                    || !parsed.preserve.is_empty();
+                if has_phase2_sections {
+                    self.finalize_combined(session_id, parsed, assistant_content, _thinking, messages, store).await
+                } else {
+                    self.finalize_phase1(session_id, parsed, assistant_content, _thinking, messages, store).await
                 }
             }
-            set
-        };
+            SquirePhase::Phase2 => self.finalize_phase2(session_id, parsed, assistant_content, _thinking, messages, store).await,
+        }
+    }
+}
 
-        // Validation needs to check against ALL tokens the model knows
-        // about: store tokens (§!-referenced + existing) plus tokens
-        // defined in this turn's new_tokens.  A relationship or preserve
-        // entry may reference a brand-new token that doesn't exist in the
-        // store yet — that is valid as long as it is defined inline.
-        let token_known = |id: &str| -> bool {
-            known.contains(id) || parsed.new_tokens.iter().any(|t| t.id == id)
-        };
+// ═══════════════════════════════════════════════════════════════════════
+// Phase 1 — explore + generate response (lightweight)
+// ═══════════════════════════════════════════════════════════════════════
 
-        if let Err(failure) = validate_squire_response(&parsed, token_known) {
+impl SquireContextAdapter {
+    async fn finalize_phase1(
+        &mut self,
+        session_id: SessionId,
+        parsed: super::types::SquireResponse,
+        assistant_content: String,
+        _thinking: Option<String>,
+        messages: &mut Vec<ChatMessage>,
+        store: &dyn ConversationStore,
+    ) -> Result<TurnOutcome, String> {
+        // Lightweight validation: Phase 1 only generates content with sigils,
+        // not §# sections (those are for Phase 2).
+        if parsed.content.is_empty() {
             return self
-                .reject_and_record(session_id, messages, assistant_content, failure.reason, store)
+                .reject_and_record(
+                    session_id,
+                    messages,
+                    assistant_content,
+                    "empty close response".to_string(),
+                    store,
+                )
+                .await;
+        }
+        if let Err(e) = check_malformed_sigils(&parsed.content) {
+            return self
+                .reject_and_record(
+                    session_id,
+                    messages,
+                    assistant_content,
+                    e.reason,
+                    store,
+                )
+                .await;
+        }
+        let (_, unclosed) = extract_spans(&parsed.content);
+        if let Some(token_id) = unclosed {
+            return self
+                .reject_and_record(
+                    session_id,
+                    messages,
+                    assistant_content,
+                    format!("unclosed §^ span {}", token_id),
+                    store,
+                )
+                .await;
+        }
+        // §! inline refs must resolve against the store (Phase 1 has no
+        // new_tokens to define them inline).
+        for token_id in extract_inline_refs(&parsed.content) {
+            if !self.store.token_exists(&token_id).await {
+                return self
+                    .reject_and_record(
+                        session_id,
+                        messages,
+                        assistant_content,
+                        format!("undisplayable token §!{}", token_id),
+                        store,
+                    )
+                    .await;
+            }
+        }
+
+        self.retry_count = 0;
+        let turn = self.store.current_turn(session_id).await;
+
+        // Hit-count fidelity: every unique §!-referenced token that already
+        // exists in the store gets exactly one hit credited (deduplicated).
+        let mut deduped = HashSet::new();
+        for token_id in extract_inline_refs(&parsed.content) {
+            deduped.insert(token_id);
+        }
+        for token_id in &deduped {
+            if self.store.token_exists(token_id).await {
+                self.store.record_hit(token_id).await;
+            }
+        }
+
+        // Raw partition: persist the text outside every closed §^ span.
+        let residual = unmarked_residual(&parsed.content);
+        if !residual.is_empty() {
+            self.store.record_raw_output(session_id, turn, residual).await;
+        }
+
+        self.store.increment_turn(session_id).await;
+
+        // Chunk the Phase 1 response into RESP_T tokens for bookmark
+        // resolution in Phase 2.
+        ingest_response_chunks(&parsed.content, turn, self.store.as_ref(), session_id).await;
+
+        let display_content = self.expand_for_display(&parsed.content).await;
+        if !display_content.is_empty() {
+            store
+                .append_message(NewMessage {
+                    session_id,
+                    role: MessageRole::Assistant,
+                    content: display_content,
+                    thinking_content: _thinking,
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        Ok(TurnOutcome::Phase2 {
+            phase1_content: assistant_content,
+            user_request: self.user_request_text.clone(),
+        })
+    }
+
+    /// Combined single-pass: process Phase 1 content logic (hit counts,
+    /// raw partition, ingest chunks, display), then Phase 2 token/rel
+    /// logic in the same call. Used when a single response has both
+    /// content text AND §# token sections (backwards-compatible mode).
+    async fn finalize_combined(
+        &mut self,
+        session_id: SessionId,
+        mut parsed: super::types::SquireResponse,
+        assistant_content: String,
+        _thinking: Option<String>,
+        messages: &mut Vec<ChatMessage>,
+        store: &dyn ConversationStore,
+    ) -> Result<TurnOutcome, String> {
+        // ── Phase 1 content pass ──
+        if parsed.content.is_empty() {
+            return self
+                .reject_and_record(
+                    session_id,
+                    messages,
+                    assistant_content,
+                    "empty close response".to_string(),
+                    store,
+                )
+                .await;
+        }
+        if let Err(e) = check_malformed_sigils(&parsed.content) {
+            return self
+                .reject_and_record(session_id, messages, assistant_content, e.reason, store)
+                .await;
+        }
+        let (_, unclosed) = extract_spans(&parsed.content);
+        if let Some(token_id) = unclosed {
+            return self
+                .reject_and_record(
+                    session_id,
+                    messages,
+                    assistant_content,
+                    format!("unclosed §^ span {}", token_id),
+                    store,
+                )
                 .await;
         }
 
@@ -480,66 +654,51 @@ impl ContextManagerAdapter for SquireContextAdapter {
         let turn = self.store.current_turn(session_id).await;
         let (spans, _) = extract_spans(&parsed.content);
 
-        // Hit-count fidelity (spec §3.3, events "Token appears in explore()
-        // results that AI acts on" [second disjunct: "...or references in
-        // output", per §6.1's gloss] and "§! reference found in a chunk
-        // loaded into context"): every token in `known` already existed in
-        // the store *before* this turn's new_tokens upsert loop below runs
-        // (that's exactly what `token_exists`-filtering computed `known`
-        // means) and is `§!`-referenced in this compliant response's
-        // content, which is unambiguously "loaded into context" via
-        // `expand_for_display` immediately below. A token that is instead
-        // newly defined *and* cited in this same turn is deliberately
-        // excluded here — it already receives its one hit from
-        // `upsert_token`'s "regardless" +1 (event 4) below, so crediting it
-        // again here would double-count a single citation. See
-        // decisions.md for the full operationalization and the deliberately
-        // deferred nested chunk-citing-chunk case.
-        for token_id in &known {
-            self.store.record_hit(token_id).await;
+        for token_id in extract_inline_refs(&parsed.content) {
+            if self.store.token_exists(&token_id).await {
+                self.store.record_hit(&token_id).await;
+            }
         }
 
-        // Raw partition (spec §4.1/§4.3/§9.4 step 4): persist the unmarked
-        // residual of this compliant response — the text outside every
-        // closed §^ span, i.e. content the AI produced but did not promote
-        // into a structured memory token. Only on the compliant path (a
-        // rejected response never reaches this point; reject_and_record
-        // already gives it a complete structured audit trail via
-        // record_compliance_failure) and only when there's something left
-        // to store (a fully §^-spanned response has nothing outside its
-        // spans — see raw-partition-storage/decisions.md).
         let residual = unmarked_residual(&parsed.content);
         if !residual.is_empty() {
             self.store.record_raw_output(session_id, turn, residual).await;
         }
 
-        // Resolve range specs: when a new_token's full_desc is a
-        // `token:bookmark[:offset]→token:bookmark[:offset]` range spec,
-        // load the source chunk, compute byte-level offset+length, and
-        // populate the token's `ranges` field (spec §5.2, ADR 0012).
-        resolve_all_range_specs(&mut parsed.new_tokens, self.store.as_ref()).await?;
+        // ── Phase 2 token/rel pass ──
+        let _defining_now: HashSet<String> =
+            parsed.new_tokens.iter().map(|t| t.id.clone()).collect();
 
-        for token in &parsed.new_tokens {
-            let mut token = token.clone();
-            // Default-typing (spec v3): tokens from §^ spans are
-            // "referential"; all others without an explicit type remain
-            // "concept" (handled by serde default on NewTokenSpec).
-            if spans.iter().any(|(id, _)| id == &token.id) {
-                token.token_type = "referential".to_string();
-            }
-            if token.full_desc.is_none() {
-                if let Some((_, span_text)) = spans.iter().find(|(id, _)| id == &token.id) {
-                    token.full_desc = Some(span_text.clone());
+        // Resolve range specs with soft-fail.
+        for token in parsed.new_tokens.iter_mut() {
+            if let Some(ref desc) = token.full_desc {
+                if is_range_spec(desc) {
+                    if let Some(spec) = parse_range_spec(desc) {
+                        if let Ok(ranges) = resolve_range_spec(&spec, self.store.as_ref()).await {
+                            token.ranges = ranges;
+                            token.full_desc = None;
+                        } else {
+                            token.full_desc = None; // unresolvable, store without ranges
+                        }
+                    }
                 }
             }
-            self.store.upsert_token(token, turn, session_id).await;
+            let mut to_upsert = token.clone();
+            if spans.iter().any(|(id, _)| id == &to_upsert.id) {
+                to_upsert.token_type = "referential".to_string();
+            }
+            if to_upsert.full_desc.is_none() {
+                if let Some((_, span_text)) = spans.iter().find(|(id, _)| id == &to_upsert.id) {
+                    to_upsert.full_desc = Some(span_text.clone());
+                }
+            }
+            self.store.upsert_token(to_upsert, turn, session_id).await;
         }
+
         for rel in &parsed.relationships {
             self.store.add_relationship(rel.clone()).await;
         }
-        // USR_T (user input) and RESP_T (model response) tokens are
-        // conversation history — they MUST survive across turns regardless
-        // of what the AI chooses to preserve.  Merge them unconditionally.
+
         let mut always_preserve: Vec<String> = parsed.preserve.clone();
         for id in self.store.list_token_ids_by_session(session_id).await {
             if always_preserve.contains(&id) {
@@ -554,8 +713,241 @@ impl ContextManagerAdapter for SquireContextAdapter {
             .await;
         self.store.increment_turn(session_id).await;
 
-        // Chunk the model's response into RESP_T{turn}_{NNN} tokens for
-        // future bookmark/referential-token resolution.
+        ingest_response_chunks(&parsed.content, turn, self.store.as_ref(), session_id).await;
+
+        let display_content = self.expand_for_display(&parsed.content).await;
+        if !display_content.is_empty() {
+            store
+                .append_message(NewMessage {
+                    session_id,
+                    role: MessageRole::Assistant,
+                    content: display_content,
+                    thinking_content: _thinking,
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        Ok(TurnOutcome::Done)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Phase 2 — token/relationship generation (full processing)
+// ═══════════════════════════════════════════════════════════════════════
+
+impl SquireContextAdapter {
+    async fn finalize_phase2(
+        &mut self,
+        session_id: SessionId,
+        mut parsed: super::types::SquireResponse,
+        assistant_content: String,
+        _thinking: Option<String>,
+        messages: &mut Vec<ChatMessage>,
+        store: &dyn ConversationStore,
+    ) -> Result<TurnOutcome, String> {
+        // ═══════════════════════════════════════════════════════════════
+        // Hard validation gates — fundamental protocol violations that
+        // always reject the entire response.
+        // ═══════════════════════════════════════════════════════════════
+
+        // Phase 2 must not produce content text (only §# sections).
+        if !parsed.content.is_empty() {
+            return self
+                .reject_and_record(
+                    session_id,
+                    messages,
+                    assistant_content,
+                    "Phase 2 must not produce content text".to_string(),
+                    store,
+                )
+                .await;
+        }
+        if let Err(e) = check_malformed_sigils(&parsed.content) {
+            return self
+                .reject_and_record(session_id, messages, assistant_content, e.reason, store)
+                .await;
+        }
+        let (_, unclosed) = extract_spans(&parsed.content);
+        if let Some(tid) = unclosed {
+            return self
+                .reject_and_record(
+                    session_id,
+                    messages,
+                    assistant_content,
+                    format!("unclosed §^ span {}", tid),
+                    store,
+                )
+                .await;
+        }
+
+        self.retry_count = 0;
+        let turn = self.store.current_turn(session_id).await;
+        let (spans, _) = extract_spans(&parsed.content);
+
+        // ═══════════════════════════════════════════════════════════════
+        // Build known-token set — tokens being defined in THIS response
+        // plus all tokens already in the store (Phase 1 RESP_T chunks,
+        // context tokens, memories, etc.).
+        // ═══════════════════════════════════════════════════════════════
+        let mut defining_now: HashSet<String> = HashSet::new();
+        for token in &parsed.new_tokens {
+            defining_now.insert(token.id.clone());
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // Upsert new tokens — always valid. These are self-contained
+        // definitions that don't depend on other tokens' existence.
+        // Range-spec resolution is soft-fail per token: if the source
+        // chunk or bookmark doesn't exist yet, the token is still stored
+        // (without resolved ranges) and the issue is noted for retry.
+        // ═══════════════════════════════════════════════════════════════
+        let mut range_issues: Vec<String> = Vec::new();
+        for token in parsed.new_tokens.iter_mut() {
+            // Soft-fail range resolution (if full_desc is a range spec)
+            if let Some(ref desc) = token.full_desc {
+                if is_range_spec(desc) {
+                    match parse_range_spec(desc) {
+                        Some(spec) => match resolve_range_spec(&spec, self.store.as_ref()).await {
+                            Ok(ranges) => {
+                                token.ranges = ranges;
+                                token.full_desc = None;
+                            }
+                            Err(e) => {
+                                range_issues.push(format!("{}: {}", token.id, e));
+                                // Token still stored, just without resolved ranges.
+                                token.full_desc = None; // clear the range spec from full_desc
+                            }
+                        },
+                        None => {
+                            range_issues.push(format!("{}: invalid range spec syntax", token.id));
+                            // Keep full_desc as-is; the model can fix syntax next retry.
+                        }
+                    }
+                }
+            }
+
+            // Default-typing and span-content fill
+            let mut to_upsert = token.clone();
+            if spans.iter().any(|(id, _)| id == &to_upsert.id) {
+                to_upsert.token_type = "referential".to_string();
+            }
+            if to_upsert.full_desc.is_none() {
+                if let Some((_, span_text)) = spans.iter().find(|(id, _)| id == &to_upsert.id) {
+                    to_upsert.full_desc = Some(span_text.clone());
+                }
+            }
+            self.store.upsert_token(to_upsert, turn, session_id).await;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // Classify relationships — valid ones are saved immediately.
+        // Invalid ones (unknown subject/object) are collected for retry.
+        // ═══════════════════════════════════════════════════════════════
+        let mut valid_rels: Vec<super::types::Relationship> = Vec::new();
+        let mut invalid_rels: Vec<String> = Vec::new();
+        for rel in &parsed.relationships {
+            let subj_known = defining_now.contains(&rel.subject)
+                || self.store.token_exists(&rel.subject).await;
+            let obj_known = defining_now.contains(&rel.object)
+                || self.store.token_exists(&rel.object).await;
+            if subj_known && obj_known {
+                valid_rels.push(rel.clone());
+            } else {
+                let mut details = Vec::new();
+                if !subj_known {
+                    details.push(format!("subject '{}' unknown", rel.subject));
+                }
+                if !obj_known {
+                    details.push(format!("object '{}' unknown", rel.object));
+                }
+                invalid_rels.push(format!(
+                    "{}|{}|{} ({})",
+                    rel.subject,
+                    rel.predicate,
+                    rel.object,
+                    details.join(", ")
+                ));
+            }
+        }
+        for rel in &valid_rels {
+            self.store.add_relationship(rel.clone()).await;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // Classify preserve entries — save valid ones, skip invalid.
+        // ═══════════════════════════════════════════════════════════════
+        let mut valid_preserve: Vec<String> = Vec::new();
+        let mut invalid_preserve: Vec<String> = Vec::new();
+        for id in &parsed.preserve {
+            let exists = defining_now.contains(id) || self.store.token_exists(id).await;
+            if exists {
+                valid_preserve.push(id.clone());
+            } else {
+                invalid_preserve.push(id.clone());
+            }
+        }
+
+        // Merge preserved + mandatory USR_/RESP_ tokens.
+        let mut always_preserve: Vec<String> = valid_preserve.clone();
+        for id in self.store.list_token_ids_by_session(session_id).await {
+            if always_preserve.contains(&id) {
+                continue;
+            }
+            if id.starts_with("USR_") || id.starts_with("RESP_") {
+                always_preserve.push(id);
+            }
+        }
+        self.store
+            .set_preserve_list(session_id, always_preserve)
+            .await;
+        self.store.increment_turn(session_id).await;
+
+        // ═══════════════════════════════════════════════════════════════
+        // If any issues remain, return Retry with a focused message.
+        // Valid tokens/relationships have already been saved — the model
+        // only needs to fix what's left.
+        // ═══════════════════════════════════════════════════════════════
+        let mut issues: Vec<String> = Vec::new();
+        if !range_issues.is_empty() {
+            issues.push(format!(
+                "Range resolution failed for these tokens (stored without ranges, \
+                 fix or remove the range specs): {}",
+                range_issues.join("; ")
+            ));
+        }
+        if !invalid_rels.is_empty() {
+            issues.push(format!(
+                "Invalid relationships (already saved valid ones; fix or remove these): {}",
+                invalid_rels.join("; ")
+            ));
+        }
+        if !invalid_preserve.is_empty() {
+            issues.push(format!(
+                "Unknown preserved tokens (already saved valid ones; fix or remove these): {}",
+                invalid_preserve.join(", ")
+            ));
+        }
+
+        if !issues.is_empty() {
+            let retry_msg = format!(
+                "Partial acceptance: valid tokens and relationships were saved. \
+                 Fix these remaining issues:\n{}",
+                issues.join("\n")
+            );
+            messages.push(ChatMessage {
+                role: ChatRole::User,
+                content: retry_msg,
+                tool_call_id: None,
+                tool_calls: None,
+                reasoning_content: None,
+            });
+            return Ok(TurnOutcome::Retry);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // Everything valid — finalize normally.
+        // ═══════════════════════════════════════════════════════════════
         ingest_response_chunks(&parsed.content, turn, self.store.as_ref(), session_id).await;
 
         let display_content = self.expand_for_display(&parsed.content).await;

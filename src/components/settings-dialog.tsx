@@ -40,7 +40,6 @@ export function SettingsDialog() {
   const [modelTestResults, setModelTestResults] = useState<Record<string, { status: 'idle' | 'testing' | 'ok' | 'error'; message?: string }>>({})
   const [fetchedModels, setFetchedModels] = useState<Record<number, string[]>>({})
   const [fetchingModels, setFetchingModels] = useState<Record<number, boolean>>({})
-  const [showCustomModel, setShowCustomModel] = useState<Record<number, boolean>>({})
   const [selectedProviderId, setSelectedProviderId] = useState<Record<number, string>>({})
   const [collapsedProviders, setCollapsedProviders] = useState<Record<number, boolean>>({})
   const queryClient = useQueryClient()
@@ -169,10 +168,6 @@ export function SettingsDialog() {
   }
 
   const handleAddModel = (index: number, modelId: string) => {
-    if (modelId === '__custom__') {
-      setShowCustomModel((prev) => ({ ...prev, [index]: true }))
-      return
-    }
     const config = useSettingsStore.getState().config
     if (!config) return
     const provider = config.llmProviders[index]
@@ -193,13 +188,6 @@ export function SettingsDialog() {
       models: newModels,
       model: provider.model === modelId ? (newModels[0] ?? '') : provider.model,
     })
-  }
-
-  const handleCustomModelAdd = (index: number, inputEl: HTMLInputElement | null) => {
-    if (!inputEl || !inputEl.value.trim()) return
-    handleAddModel(index, inputEl.value.trim())
-    inputEl.value = ''
-    setShowCustomModel((prev) => ({ ...prev, [index]: false }))
   }
 
   const handleRefreshModels = async (index: number, provider: LlmProviderConfig) => {
@@ -299,7 +287,6 @@ export function SettingsDialog() {
               modelTestResults={modelTestResults}
               fetchedModels={fetchedModels}
               fetchingModels={fetchingModels}
-              showCustomModel={showCustomModel}
               selectedProviderId={selectedProviderId}
               collapsedProviders={collapsedProviders}
               onToggleCollapse={(index) => setCollapsedProviders((prev) => ({ ...prev, [index]: !prev[index] }))}
@@ -308,8 +295,6 @@ export function SettingsDialog() {
               onUpdateProvider={updateLlmProvider}
               onAddModel={handleAddModel}
               onRemoveModel={handleRemoveModel}
-              onCustomModelAdd={handleCustomModelAdd}
-              onCancelCustomModel={(index) => setShowCustomModel((prev) => ({ ...prev, [index]: false }))}
               onRefreshModels={handleRefreshModels}
               onTestConnection={handleTestConnection}
               onTestModel={handleTestModel}

@@ -21,13 +21,19 @@ use std::sync::Mutex;
 
 /// All editable prompt files. Add new entries here when introducing a new
 /// prompt that you want to make externally overridable.
-static PROMPT_FILES: &[PromptFile] = &[PromptFile {
-    name: "system-prompt.md",
-    // Built-in content embedded at compile time as a fallback.
-    // This is used when the disk-based builtin file cannot be read
-    // (e.g. running a release binary outside the source tree).
-    builtin: include_str!("../../prompts/system-prompt.md"),
-}];
+static PROMPT_FILES: &[PromptFile] = &[
+    PromptFile {
+        name: "system-prompt.md",
+        // Built-in content embedded at compile time as a fallback.
+        // This is used when the disk-based builtin file cannot be read
+        // (e.g. running a release binary outside the source tree).
+        builtin: include_str!("../../prompts/system-prompt.md"),
+    },
+    PromptFile {
+        name: "system-prompt-phase2.md",
+        builtin: include_str!("../../prompts/system-prompt-phase2.md"),
+    },
+];
 
 struct PromptFile {
     /// Filename used in all three tiers (e.g. "system-prompt.md").
@@ -89,6 +95,9 @@ pub fn seed_all_prompts(
 /// Retrieve a merged prompt by its filename.
 /// Falls back to the built-in content if seeding has not happened yet,
 /// so code (including tests) can work without calling seed_all_prompts.
+///
+/// Use `"system-prompt.md"` for Phase 1 (explore + respond) and
+/// `"system-prompt-phase2.md"` for Phase 2 (token generation only).
 pub fn get_prompt(name: &str) -> String {
     let guard = MERGED.lock().unwrap();
     if let Some(map) = guard.as_ref() {
@@ -104,9 +113,14 @@ pub fn get_prompt(name: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Convenience accessor for the main system prompt.
+/// Convenience accessor for the main system prompt (Phase 1).
 pub fn system_prompt() -> String {
     get_prompt("system-prompt.md")
+}
+
+/// Convenience accessor for the Phase 2 token-generation prompt.
+pub fn system_prompt_phase2() -> String {
+    get_prompt("system-prompt-phase2.md")
 }
 
 // ── Tests ────────────────────────────────────────────────────────────

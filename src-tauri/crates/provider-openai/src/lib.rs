@@ -174,7 +174,14 @@ impl LlmProvider for OpenAIProvider {
     }
 
     fn supports_model(&self, model: &str) -> bool {
-        model.starts_with("gpt-") || model.starts_with("o1") || model.starts_with("o3")
+        // OpenAI-native models
+        if model.starts_with("gpt-") || model.starts_with("o1") || model.starts_with("o3") {
+            return true;
+        }
+        // OpenRouter hosts models from many providers — accept anything
+        // that looks like a model name (non-empty, no spaces).
+        let m = model.trim();
+        !m.is_empty() && !m.contains(' ')
     }
 
     async fn chat(&self, request: ChatRequest) -> Result<mpsc::Receiver<StreamEvent>, LlmError> {

@@ -59,7 +59,7 @@ pub async fn test_connection_impl(
         .map_err(|_| "Connection failed: unable to create HTTP client".to_string())?;
 
     match provider_type.to_lowercase().as_str() {
-        "openai" => {
+        "openai" | "openrouter" => {
             let base = endpoint.unwrap_or_else(|| "https://api.openai.com/v1".to_string());
             let url = openai_chat_url(base);
 
@@ -183,7 +183,7 @@ pub async fn fetch_models_impl(
     let models_url = derive_models_base_url(&endpoint);
 
     match provider_type.to_lowercase().as_str() {
-        "openai" | "custom" => {
+        "openai" | "openrouter" | "custom" => {
             let url = format!("{}/models", models_url);
             let mut req = client.get(&url);
             if let Some(key) = &api_key {

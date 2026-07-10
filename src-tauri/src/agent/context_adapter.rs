@@ -37,6 +37,17 @@ pub enum TurnOutcome {
     /// `commands::streaming_cmd`'s `TurnOutcome::AskUser` handling and
     /// `.AiControl/root/Squire/ask-user-loop/decisions.md`).
     AskUser { question: String },
+    /// Phase 1 response received — orchestrator should make a Phase 2 LLM
+    /// call with the Phase 2 system prompt, feeding it the original user
+    /// request and Phase 1 response text so the model can generate
+    /// referential tokens, concept tokens, and relationships in a separate
+    /// no-tools pass (two-phase Squire protocol).
+    Phase2 {
+        /// The Phase 1 response text containing bookmarks and spans.
+        phase1_content: String,
+        /// The original user request text with chunk bookmark markers.
+        user_request: String,
+    },
 }
 
 /// Pluggable per-session context strategy. Orchestration (provider calls,
@@ -76,6 +87,12 @@ pub trait ContextManagerAdapter: Send + Sync {
         messages: &mut Vec<ChatMessage>,
         store: &dyn ConversationStore,
     ) -> Result<TurnOutcome, String>;
+
+    /// Optional hook for Phase 2 initialization. Called by the orchestrator
+    /// when `TurnOutcome::Phase2` is returned. Default is a no-op.
+    /// `SquireContextAdapter` overrides this to switch to Phase 2 mode
+    /// with the given user request text.
+    fn set_phase2(&mut self, _user_request: String) {}
 }
 
 fn to_chat_role(role: &MessageRole) -> ChatRole {

@@ -12,7 +12,6 @@ export function LlmTab({
   modelTestResults,
   fetchedModels,
   fetchingModels,
-  showCustomModel,
   selectedProviderId,
   collapsedProviders,
   onToggleCollapse,
@@ -21,8 +20,6 @@ export function LlmTab({
   onUpdateProvider,
   onAddModel,
   onRemoveModel,
-  onCustomModelAdd,
-  onCancelCustomModel,
   onRefreshModels,
   onTestConnection,
   onTestModel,
@@ -34,7 +31,6 @@ export function LlmTab({
   modelTestResults: Record<string, { status: 'idle' | 'testing' | 'ok' | 'error'; message?: string }>
   fetchedModels: Record<number, string[]>
   fetchingModels: Record<number, boolean>
-  showCustomModel: Record<number, boolean>
   selectedProviderId: Record<number, string>
   collapsedProviders: Record<number, boolean>
   onToggleCollapse: (index: number) => void
@@ -43,8 +39,6 @@ export function LlmTab({
   onUpdateProvider: (index: number, patch: Partial<LlmProviderConfig>) => void
   onAddModel: (index: number, modelId: string) => void
   onRemoveModel: (index: number, modelId: string) => void
-  onCustomModelAdd: (index: number, inputEl: HTMLInputElement | null) => void
-  onCancelCustomModel: (index: number) => void
   onRefreshModels: (index: number, provider: LlmProviderConfig) => void
   onTestConnection: (index: number, provider: LlmProviderConfig) => void
   onTestModel: (index: number, provider: LlmProviderConfig, modelToTest: string) => void
@@ -88,7 +82,6 @@ export function LlmTab({
             providerCategory={providerCategory}
             fetched={fetchedModels[i] ?? []}
             fetching={!!fetchingModels[i]}
-            showCustom={!!showCustomModel[i]}
             isCollapsed={!!collapsedProviders[i]}
             providerHeading={providerHeading}
             onToggleCollapse={onToggleCollapse}
@@ -97,8 +90,6 @@ export function LlmTab({
             onUpdateProvider={onUpdateProvider}
             onAddModel={onAddModel}
             onRemoveModel={onRemoveModel}
-            onCustomModelAdd={onCustomModelAdd}
-            onCancelCustomModel={onCancelCustomModel}
             onRefreshModels={onRefreshModels}
             onTestConnection={onTestConnection}
             onTestModel={onTestModel}

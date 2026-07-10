@@ -418,7 +418,7 @@ pub async fn send_message_impl(
                 }
             };
             let mut messages: Vec<ChatMessage> = turn_input.messages;
-            let turn_tools = turn_input.tools;
+            let mut turn_tools = turn_input.tools;
 
             loop {
                 emit_stream_status(&app_clone, "Contacting model...");
@@ -875,6 +875,48 @@ pub async fn send_message_impl(
                                         return;
                                     }
                                 }
+                            }
+                            Ok(TurnOutcome::Phase2 {
+                                phase1_content,
+                                user_request,
+                            }) => {
+                                // Two-phase Squire protocol: the Phase 1 response
+                                // (content with bookmarks/spans) is complete. Now
+                                // run Phase 2 — a pure token/relationship generation
+                                // pass with no tools.
+                                emit_stream_status(
+                                    &app_clone,
+                                    "Phase 1 complete, running Phase 2 (token generation)...",
+                                );
+                                let phase2_prompt = crate::agent::squire_prompts::get_prompt(
+                                    "system-prompt-phase2.md",
+                                );
+                                // Rebuild messages for Phase 2: system prompt + user
+                                // content combining original request and Phase 1 response.
+                                messages = vec![
+                                    ChatMessage {
+                                        role: ChatRole::System,
+                                        content: phase2_prompt,
+                                        tool_call_id: None,
+                                        tool_calls: None,
+                                        reasoning_content: None,
+                                    },
+                                    ChatMessage {
+                                        role: ChatRole::User,
+                                        content: format!(
+                                            "Original user request:\n{}\n\nAssistant Phase 1 response:\n{}",
+                                            user_request, phase1_content
+                                        ),
+                                        tool_call_id: None,
+                                        tool_calls: None,
+                                        reasoning_content: None,
+                                    },
+                                ];
+                                // No tools in Phase 2 — purely generative.
+                                turn_tools = vec![];
+                                // Switch adapter into Phase 2 mode.
+                                adapter.set_phase2(user_request);
+                                continue;
                             }
                             Ok(TurnOutcome::Failed { reason, failed_content }) => {
                                 // The real Q6 UX lives in `SquireContextAdapter::

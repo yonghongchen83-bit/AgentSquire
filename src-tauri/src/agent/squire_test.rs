@@ -193,9 +193,36 @@ fn validate_rejects_empty_close_response() {
 }
 
 #[test]
-fn validate_allows_close_with_only_preserve_no_content() {
+fn validate_rejects_preserve_with_unknown_token() {
     let resp = SquireResponse {
         preserve: vec!["CONCEPT_X".to_string()],
+        ..Default::default()
+    };
+    let err = validate_squire_response(&resp, |_| false).unwrap_err();
+    assert_eq!(err.reason, "preserved token does not exist: CONCEPT_X");
+}
+
+#[test]
+fn validate_allows_preserve_known_to_store() {
+    let resp = SquireResponse {
+        preserve: vec!["CONCEPT_X".to_string()],
+        ..Default::default()
+    };
+    assert!(validate_squire_response(&resp, |id| id == "CONCEPT_X").is_ok());
+}
+
+#[test]
+fn validate_allows_preserve_defined_in_new_tokens() {
+    let resp = SquireResponse {
+        preserve: vec!["CONCEPT_New".to_string()],
+        new_tokens: vec![NewTokenSpec {
+            id: "CONCEPT_New".to_string(),
+            token_type: "concept".to_string(),
+            short_desc: "new".to_string(),
+            full_desc: None,
+            endpoint: None,
+            ranges: vec![],
+        }],
         ..Default::default()
     };
     assert!(validate_squire_response(&resp, |_| false).is_ok());
@@ -245,6 +272,134 @@ fn validate_rejects_unclosed_span() {
     };
     let err = validate_squire_response(&resp, |_| false).unwrap_err();
     assert_eq!(err.reason, "unclosed §^ span TRT_A");
+}
+
+#[test]
+fn validate_rejects_undisplayable_span_reference() {
+    let resp = SquireResponse {
+        content: "§^TRT_Ghost some text §^".to_string(),
+        ..Default::default()
+    };
+    let err = validate_squire_response(&resp, |_| false).unwrap_err();
+    assert_eq!(err.reason, "undisplayable span reference §^TRT_Ghost");
+}
+
+#[test]
+fn validate_allows_span_ref_defined_in_new_tokens() {
+    let resp = SquireResponse {
+        content: "§^REF_New key content §^".to_string(),
+        new_tokens: vec![NewTokenSpec {
+            id: "REF_New".to_string(),
+            token_type: "referential".to_string(),
+            short_desc: "new ref".to_string(),
+            full_desc: None,
+            endpoint: None,
+            ranges: vec![],
+        }],
+        ..Default::default()
+    };
+    assert!(validate_squire_response(&resp, |_| false).is_ok());
+}
+
+#[test]
+fn validate_allows_span_ref_known_to_store() {
+    let resp = SquireResponse {
+        content: "§^TRT_Old text §^".to_string(),
+        ..Default::default()
+    };
+    assert!(validate_squire_response(&resp, |id| id == "TRT_Old").is_ok());
+}
+
+#[test]
+fn validate_rejects_relationship_unknown_token() {
+    let resp = SquireResponse {
+        relationships: vec![Relationship {
+            subject: "NONEXISTENT".to_string(),
+            predicate: "respondsTo".to_string(),
+            object: "ALSO_MISSING".to_string(),
+        }],
+        ..Default::default()
+    };
+    let err = validate_squire_response(&resp, |_| false).unwrap_err();
+    assert_eq!(
+        err.reason,
+        "relationship references unknown token: NONEXISTENT"
+    );
+}
+
+#[test]
+fn validate_allows_relationship_with_known_tokens() {
+    let resp = SquireResponse {
+        relationships: vec![Relationship {
+            subject: "CONCEPT_Fish".to_string(),
+            predicate: "respondsTo".to_string(),
+            object: "USR_Q1".to_string(),
+        }],
+        ..Default::default()
+    };
+    assert!(
+        validate_squire_response(&resp, |id| id == "CONCEPT_Fish" || id == "USR_Q1").is_ok()
+    );
+}
+
+#[test]
+fn validate_allows_relationship_with_new_token() {
+    let resp = SquireResponse {
+        relationships: vec![Relationship {
+            subject: "CONCEPT_Fresh".to_string(),
+            predicate: "respondsTo".to_string(),
+            object: "USR_Q1".to_string(),
+        }],
+        new_tokens: vec![NewTokenSpec {
+            id: "CONCEPT_Fresh".to_string(),
+            token_type: "concept".to_string(),
+            short_desc: "fresh concept".to_string(),
+            full_desc: None,
+            endpoint: None,
+            ranges: vec![],
+        }],
+        ..Default::default()
+    };
+    assert!(validate_squire_response(&resp, |id| id == "USR_Q1").is_ok());
+}
+
+#[test]
+fn validate_rejects_malformed_sigil_bare_section() {
+    // § followed by non-sigil character
+    let resp = SquireResponse {
+        content: "some §a bad sigil".to_string(),
+        ..Default::default()
+    };
+    let err = validate_squire_response(&resp, |_| false).unwrap_err();
+    assert!(err.reason.starts_with("malformed sigil"));
+}
+
+#[test]
+fn validate_allows_valid_sigils() {
+    // All valid sigil forms with resolvable references should pass
+    let resp = SquireResponse {
+        content: "§!CONCEPT_X and §^REF_A span text §^ and bare §^bookmark§^".to_string(),
+        new_tokens: vec![
+            NewTokenSpec {
+                id: "REF_A".to_string(),
+                token_type: "referential".to_string(),
+                short_desc: "test span".to_string(),
+                full_desc: None,
+                endpoint: None,
+                ranges: vec![],
+            },
+            NewTokenSpec {
+                id: "bookmark".to_string(),
+                token_type: "referential".to_string(),
+                short_desc: "bare bookmark".to_string(),
+                full_desc: None,
+                endpoint: None,
+                ranges: vec![],
+            },
+        ],
+        ..Default::default()
+    };
+    assert!(validate_squire_response(&resp, |id| id == "CONCEPT_X").is_ok());
 }
 
 // ---- InMemorySquireStore ----
@@ -373,6 +528,22 @@ fn classify_rejection_rule_maps_known_reasons() {
     assert_eq!(
         classify_rejection_rule("non-invocable token TOOL_X"),
         "non_invocable_token"
+    );
+    assert_eq!(
+        classify_rejection_rule("undisplayable span reference §^TRT_Ghost"),
+        "undisplayable_span_reference"
+    );
+    assert_eq!(
+        classify_rejection_rule("malformed sigil: §a at position 42 — expected §!/§^/§#"),
+        "malformed_sigil"
+    );
+    assert_eq!(
+        classify_rejection_rule("preserved token does not exist: GHOST"),
+        "preserve_token_unknown"
+    );
+    assert_eq!(
+        classify_rejection_rule("relationship references unknown token: FAKE"),
+        "relationship_unknown_token"
     );
     assert_eq!(classify_rejection_rule("something new"), "other");
 }
@@ -1157,7 +1328,7 @@ async fn finalize_turn_writes_nothing_to_raw_partition_on_rejection() {
     let mut messages = Vec::new();
 
     let outcome = adapter
-        .finalize_turn(sid, "not json".to_string(), None, &mut messages, &conv_store)
+        .finalize_turn(sid, "See §!CONCEPT_Ghost".to_string(), None, &mut messages, &conv_store)
         .await
         .unwrap();
     assert!(matches!(outcome, TurnOutcome::Retry));
@@ -1225,7 +1396,13 @@ async fn finalize_turn_retries_on_malformed_json_then_fails_after_max_retries() 
     for _ in 0..3 {
         let mut messages = Vec::new();
         let outcome = adapter
-            .finalize_turn(sid, "not json".to_string(), None, &mut messages, &conv_store)
+            .finalize_turn(
+                sid,
+                "See §!CONCEPT_Ghost".to_string(),
+                None,
+                &mut messages,
+                &conv_store,
+            )
             .await
             .unwrap();
         assert!(matches!(outcome, TurnOutcome::Retry));
@@ -1234,13 +1411,19 @@ async fn finalize_turn_retries_on_malformed_json_then_fails_after_max_retries() 
 
     let mut messages = Vec::new();
     let outcome = adapter
-        .finalize_turn(sid, "not json".to_string(), None, &mut messages, &conv_store)
+        .finalize_turn(
+            sid,
+            "See §!CONCEPT_Ghost".to_string(),
+            None,
+            &mut messages,
+            &conv_store,
+        )
         .await
         .unwrap();
     match outcome {
         TurnOutcome::Failed { reason, failed_content } => {
-            assert!(reason.contains("not valid Squire protocol JSON"));
-            assert_eq!(failed_content, "not json");
+            assert!(reason.contains("undisplayable token"));
+            assert_eq!(failed_content, "See §!CONCEPT_Ghost");
         }
         _ => panic!("expected Failed after exhausting retries"),
     }
@@ -1249,8 +1432,8 @@ async fn finalize_turn_retries_on_malformed_json_then_fails_after_max_retries() 
     assert_eq!(appended.len(), 1);
     assert!(matches!(appended[0].role, MessageRole::Assistant));
     assert!(appended[0].content.contains("compliance failure"));
-    assert!(appended[0].content.contains("not valid Squire protocol JSON"));
-    assert!(appended[0].content.contains("not json"));
+    assert!(appended[0].content.contains("undisplayable token"));
+    assert!(appended[0].content.contains("See §!CONCEPT_Ghost"));
 }
 
 #[tokio::test]
@@ -1265,7 +1448,13 @@ async fn finalize_turn_records_structured_failure_metadata_on_final_failure() {
     for _ in 0..4 {
         let mut messages = Vec::new();
         let _ = adapter
-            .finalize_turn(sid, "not json".to_string(), None, &mut messages, &conv_store)
+            .finalize_turn(
+                sid,
+                "See §!CONCEPT_Ghost".to_string(),
+                None,
+                &mut messages,
+                &conv_store,
+            )
             .await
             .unwrap();
     }
@@ -1274,10 +1463,10 @@ async fn finalize_turn_records_structured_failure_metadata_on_final_failure() {
     assert_eq!(failures.len(), 1);
     let record = &failures[0];
     assert_eq!(record.session_id, sid);
-    assert_eq!(record.rule, "malformed_json");
-    assert!(record.reason.contains("not valid Squire protocol JSON"));
+    assert_eq!(record.rule, "undisplayable_token");
+    assert!(record.reason.contains("undisplayable token"));
     assert_eq!(record.retry_count, 4);
-    assert_eq!(record.failed_content, "not json");
+    assert_eq!(record.failed_content, "See §!CONCEPT_Ghost");
 }
 
 #[tokio::test]
@@ -1382,14 +1571,7 @@ async fn finalize_turn_ask_user_does_not_reset_retry_count() {
     };
     let sid = Uuid::new_v4();
 
-    let ask_response = serde_json::json!({
-        "ask_user": "Which city?",
-        "content": "",
-        "preserve": [],
-        "new_tokens": [],
-        "relationships": []
-    })
-    .to_string();
+    let ask_response = "§#ask_user\nWhich city?".to_string();
     let mut messages = Vec::new();
     let outcome = adapter
         .finalize_turn(sid, ask_response, None, &mut messages, &conv_store)
@@ -1400,14 +1582,26 @@ async fn finalize_turn_ask_user_does_not_reset_retry_count() {
     for _ in 0..3 {
         let mut messages = Vec::new();
         let outcome = adapter
-            .finalize_turn(sid, "not json".to_string(), None, &mut messages, &conv_store)
+            .finalize_turn(
+                sid,
+                "See §!CONCEPT_Ghost".to_string(),
+                None,
+                &mut messages,
+                &conv_store,
+            )
             .await
             .unwrap();
         assert!(matches!(outcome, TurnOutcome::Retry));
     }
     let mut messages = Vec::new();
     let outcome = adapter
-        .finalize_turn(sid, "not json".to_string(), None, &mut messages, &conv_store)
+        .finalize_turn(
+            sid,
+            "See §!CONCEPT_Ghost".to_string(),
+            None,
+            &mut messages,
+            &conv_store,
+        )
         .await
         .unwrap();
     assert!(matches!(outcome, TurnOutcome::Failed { .. }));

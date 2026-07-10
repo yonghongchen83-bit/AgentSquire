@@ -645,120 +645,130 @@ pub async fn send_message_impl(
                                 .await;
                         }
 
-                        for tc in &tool_calls {
-                            emit_stream_status(&app_clone, &format!("Invoking tool {}", tc.name));
-                            let tool = dispatch_registry.get(&tc.name);
-                            let result = if let Some(tool) = tool {
-                                if tool.danger() == ToolDanger::Destructive {
-                                    let (tx, rx) = tokio::sync::oneshot::channel();
-                                    {
-                                        let mut p = pending.lock().await;
-                                        p.insert(tc.id.clone(), tx);
-                                    }
-
-                                    let mut approval_event = serde_json::json!({
-                                        "call_id": tc.id,
-                                        "tool_name": tc.name,
-                                        "arguments": tc.arguments,
-                                    });
-
-                                    // Enrich with command analysis for terminal tools
-                                    if tc.name == "run_terminal" {
-                                        let cmd = tc.arguments.get("command").and_then(|v| v.as_str()).unwrap_or("");
-                                        let args: Vec<String> = tc.arguments
-                                            .get("args")
-                                            .and_then(|v| v.as_array())
-                                            .map(|a| {
-                                                a.iter().filter_map(|v| v.as_str().map(String::from)).collect()
-                                            })
-                                            .unwrap_or_default();
-                                        let workdir = tc.arguments.get("workdir").and_then(|v| v.as_str());
-
-                                        if !project_path.is_empty() {
-                                            let analysis = crate::commands::utils::analyze_terminal_command(
-                                                cmd, &args, workdir, &project_path,
-                                            );
-                                            approval_event["commandAnalysis"] =
-                                                serde_json::to_value(&analysis).unwrap_or_default();
+                        // ── Phase 1: Collect approvals for destructive tools (parallel wait) ──
+                        let mut approval_map: HashMap<String, bool> = HashMap::new();
+                        {
+                            let mut approval_futs: Vec<std::pin::Pin<Box<dyn futures::Future<Output = (String, bool)> + Send>>> = Vec::new();
+                            for tc in &tool_calls {
+                                if let Some(tool) = dispatch_registry.get(&tc.name) {
+                                    if tool.danger() == ToolDanger::Destructive {
+                                        let (tx, rx) = tokio::sync::oneshot::channel();
+                                        {
+                                            let mut p = pending.lock().await;
+                                            p.insert(tc.id.clone(), tx);
                                         }
-                                    }
-                                    let _ = app_clone
-                                        .emit("stream-tool-pending", approval_event.to_string());
-                                    emit_stream_status(
-                                        &app_clone,
-                                        &format!("Waiting for approval: {}", tc.name),
-                                    );
 
-                                    match await_approval_with_watchdog(&app_clone, &tc.name, rx)
-                                        .await
-                                    {
-                                        true => {
-                                            emit_stream_status(
-                                                &app_clone,
-                                                &format!("Approval granted, running {}", tc.name),
-                                            );
-                                            if stream_live_chunks {
-                                                let _ = app_clone.emit(
-                                                    "stream-chunk",
-                                                    format!("[Executing {}...]\n", tc.name),
+                                        let mut approval_event = serde_json::json!({
+                                            "call_id": tc.id,
+                                            "tool_name": tc.name,
+                                            "arguments": tc.arguments,
+                                        });
+
+                                        // Enrich with command analysis for terminal tools
+                                        if tc.name == "run_terminal" {
+                                            let cmd = tc.arguments.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                                            let args: Vec<String> = tc.arguments
+                                                .get("args")
+                                                .and_then(|v| v.as_array())
+                                                .map(|a| {
+                                                    a.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+                                                })
+                                                .unwrap_or_default();
+                                            let workdir = tc.arguments.get("workdir").and_then(|v| v.as_str());
+
+                                            if !project_path.is_empty() {
+                                                let analysis = crate::commands::utils::analyze_terminal_command(
+                                                    cmd, &args, workdir, &project_path,
                                                 );
-                                            }
-                                            execute_tool_with_watchdog(
-                                                &app_clone,
-                                                &tc.name,
-                                                &tc.id,
-                                                tool.execute(&tc.id, tc.arguments.clone()),
-                                            )
-                                            .await
-                                        }
-                                        _ => {
-                                            emit_stream_status(
-                                                &app_clone,
-                                                &format!("Approval denied: {}", tc.name),
-                                            );
-                                            agent::ToolResult {
-                                                call_id: tc.id.clone(),
-                                                output: format!(
-                                                    "Tool call '{}' was rejected by user",
-                                                    tc.name
-                                                ),
-                                                is_error: true,
+                                                approval_event["commandAnalysis"] =
+                                                    serde_json::to_value(&analysis).unwrap_or_default();
                                             }
                                         }
-                                    }
-                                } else {
-                                    execute_tool_with_watchdog(
-                                        &app_clone,
-                                        &tc.name,
-                                        &tc.id,
-                                        tool.execute(&tc.id, tc.arguments.clone()),
-                                    )
-                                    .await
-                                }
-                            } else {
-                                agent::ToolResult {
-                                    call_id: tc.id.clone(),
-                                    output: format!("Unknown tool: {}", tc.name),
-                                    is_error: true,
-                                }
-                            };
+                                        let _ = app_clone
+                                            .emit("stream-tool-pending", approval_event.to_string());
+                                        emit_stream_status(
+                                            &app_clone,
+                                            &format!("Waiting for approval: {}", tc.name),
+                                        );
 
-                            let _ = app_clone.emit("stream-tool-result", &result);
-                            if result.is_error {
-                                emit_stream_status(&app_clone, &format!("Tool {} failed", tc.name));
-                            } else {
-                                emit_stream_status(&app_clone, &format!("Tool {} completed", tc.name));
+                                        let call_id = tc.id.clone();
+                                        let tool_name = tc.name.clone();
+                                        let ac = app_clone.clone();
+                                        approval_futs.push(Box::pin(async move {
+                                            let approved = await_approval_with_watchdog(&ac, &tool_name, rx).await;
+                                            (call_id, approved)
+                                        }));
+                                    }
+                                }
+                            }
+                            for (call_id, approved) in futures::future::join_all(approval_futs).await {
+                                approval_map.insert(call_id, approved);
+                            }
+                        }
+
+                        // ── Phase 2: Execute ALL tools in parallel ──
+                        let dr = dispatch_registry.clone();
+                        let ac = app_clone.clone();
+                        let stream_live = stream_live_chunks;
+                        let mut exec_futs: Vec<std::pin::Pin<Box<dyn futures::Future<Output = (usize, agent::ToolResult)> + Send>>> = Vec::new();
+                        for (i, tc) in tool_calls.iter().enumerate() {
+                            let name = tc.name.clone();
+                            let call_id = tc.id.clone();
+                            let args = tc.arguments.clone();
+                            let approved = approval_map.get(&call_id).copied().unwrap_or(true);
+                            let dr = dr.clone();
+                            let ac = ac.clone();
+
+                            emit_stream_status(&ac, &format!("Invoking tool {}", name));
+                            if stream_live && approved {
+                                let _ = ac.emit("stream-chunk", format!("[Executing {}...]\n", name));
                             }
 
-                            // reasoning_content is already on the assistant message pushed
-                            // above — not needed on individual tool result messages.
-                            if let Err(e) = adapter
-                                .handle_tool_loop_step(tc, &result, &mut messages)
-                                .await
-                            {
-                                emit_stream_status(&app_clone, "Failed to update turn context");
-                                let _ = app_clone.emit("stream-error", e);
-                                return;
+                            exec_futs.push(Box::pin(async move {
+                                let result = if !approved {
+                                    emit_stream_status(&ac, &format!("Approval denied: {}", name));
+                                    agent::ToolResult {
+                                        call_id,
+                                        output: format!("Tool call '{}' was rejected by user", name),
+                                        is_error: true,
+                                    }
+                                } else if let Some(tool) = dr.get(&name) {
+                                    execute_tool_with_watchdog(
+                                        &ac, &name, &call_id,
+                                        tool.execute(&call_id, args),
+                                    )
+                                    .await
+                                } else {
+                                    agent::ToolResult {
+                                        call_id,
+                                        output: format!("Unknown tool: {}", name),
+                                        is_error: true,
+                                    }
+                                };
+                                (i, result)
+                            }));
+                        }
+                        let exec_results: Vec<(usize, agent::ToolResult)> = futures::future::join_all(exec_futs).await;
+
+                        // ── Phase 3: Process results in original order ──
+                        let mut results_by_idx: HashMap<usize, agent::ToolResult> = exec_results.into_iter().collect();
+                        for (i, tc) in tool_calls.iter().enumerate() {
+                            if let Some(result) = results_by_idx.remove(&i) {
+                                let _ = app_clone.emit("stream-tool-result", &result);
+                                if result.is_error {
+                                    emit_stream_status(&app_clone, &format!("Tool {} failed", tc.name));
+                                } else {
+                                    emit_stream_status(&app_clone, &format!("Tool {} completed", tc.name));
+                                }
+
+                                if let Err(e) = adapter
+                                    .handle_tool_loop_step(tc, &result, &mut messages)
+                                    .await
+                                {
+                                    emit_stream_status(&app_clone, "Failed to update turn context");
+                                    let _ = app_clone.emit("stream-error", e);
+                                    return;
+                                }
                             }
                         }
 

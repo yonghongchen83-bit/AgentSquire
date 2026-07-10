@@ -6,13 +6,32 @@
 
 use super::types::{ComplianceFailure, SquireResponse};
 use crate::agent::squire::SquireStore;
-use squire_store::TokenRange;
+use squire_store::{NewTokenSpec, TokenRange};
+
+/// The character used to separate start and end positions in a range spec.
+const RANGE_ARROW: char = '→';
 
 // ─────────────────────────── Sigil parsing ───────────────────────────
 
-/// Terminated by whitespace or the next `§`, per spec §5.1/§5.2.
+/// Valid characters in a token ID: ASCII alphanumeric, underscore, hyphen.
+/// Using constrained char set instead of `!c.is_whitespace()` prevents
+/// catastrophic token-ID overrun when a closing sigil is malformed and
+/// Chinese/non-ASCII text follows (e.g. `§^tech_sovereignty^技术脱钩...`
+/// would previously eat the entire paragraph as the token ID).
+fn is_valid_token_id_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == '-'
+}
+
+/// Terminated by the first character that is not a valid token ID character,
+/// per spec §5.1/§5.2.  This is a **security-critical** parser boundary:
+/// using a strict ASCII identifier character set instead of `!c.is_whitespace()`
+/// prevents catastrophic token-ID overrun when a closing sigil is malformed
+/// and non-ASCII content follows (e.g. Chinese characters, which are not
+/// classified as whitespace by Unicode).
 pub(crate) fn take_token_id(s: &str) -> String {
-    s.chars().take_while(|c| !c.is_whitespace()).collect()
+    s.chars()
+        .take_while(|c| is_valid_token_id_char(*c))
+        .collect()
 }
 
 /// `§!TokenID` occurrences in `content` (spec §5.1).
@@ -168,23 +187,105 @@ pub(crate) fn unmarked_residual(content: &str) -> String {
         .join(" ")
 }
 
+// ─────────────────────────── Additional ref extractors ───────────────────────────
+
+/// Extract every token ID referenced by `§^` spans (closed, unclosed, and
+/// bare bookmarks) in `content`.  Deduplicated.
+///
+/// Unlike `extract_inline_refs` which handles `§!TokenID`, this covers the
+/// `§^`-style span markers and bare bookmarks.  The caller uses the combined
+/// set to ensure every referenced token has a matching `new_tokens` entry.
+pub fn extract_span_refs(content: &str) -> Vec<String> {
+    let mut ids = std::collections::BTreeSet::new();
+    // Closed & unclosed spans
+    let (spans, unclosed) = extract_spans(content);
+    for (id, _) in &spans {
+        if !id.is_empty() {
+            ids.insert(id.clone());
+        }
+    }
+    if let Some(id) = unclosed {
+        if !id.is_empty() {
+            ids.insert(id);
+        }
+    }
+    // Bare bookmarks
+    for (name, _) in extract_bare_bookmarks(content) {
+        if !name.is_empty() {
+            ids.insert(name);
+        }
+    }
+    ids.into_iter().collect()
+}
+
 // ─────────────────────────── Validation (spec §8.3) ───────────────────────────
 
-/// Validity rules from spec §8.3.
+/// Check for stray `§` characters in content that are not part of valid
+/// protocol sigils (`§!`, `§^`, `§#`).
+///
+/// Catches cases like `§ai_game_changer§^` (missing `^` after opening `§`)
+/// which are silently ignored by the permissive bookmark-protocol parser.
+pub fn check_malformed_sigils(content: &str) -> Result<(), ComplianceFailure> {
+    let mut chars = content.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if c == '§' {
+            match chars.peek() {
+                Some((_, '!')) | Some((_, '^')) | Some((_, '#')) => {
+                    // Valid sigil prefix — consume the second char and continue
+                    chars.next();
+                }
+                Some((_, next)) => {
+                    return Err(ComplianceFailure {
+                        reason: format!(
+                            "malformed sigil: §{} at position {} — expected §!/§^/§#",
+                            next, i
+                        ),
+                    });
+                }
+                None => {
+                    return Err(ComplianceFailure {
+                        reason: format!(
+                            "malformed sigil: bare § at end of content at position {}",
+                            i
+                        ),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Validity rules from spec §8.3, extended with additional checks.
+///
+/// ## Current checks (in order)
+///
+/// 1. `ask_user` and `content` are mutually exclusive (§8.3)
+/// 2. `ask_user` alone is always valid (short-circuits)
+/// 3. Empty close response (nothing to store)
+/// 4. No stray/malformed `§` sigils in content
+/// 5. Every `§!TokenID` resolves to a `new_tokens` entry or store token (§8.3)
+/// 6. No unclosed `§^` spans (§8.3) — checked before span-ref resolution
+/// 7. Every `§^TokenID` span reference resolves (closed spans and bare bookmarks)
+/// 8. Every preserved token exists in the store or is newly defined
+/// 9. Every relationship subject/object exists in the store or is newly defined
 pub fn validate_squire_response(
     resp: &SquireResponse,
     token_known: impl Fn(&str) -> bool,
 ) -> Result<(), ComplianceFailure> {
+    // ── Check 1: ask_user and content mutually exclusive ──
     if !resp.ask_user.is_empty() && !resp.content.is_empty() {
         return Err(ComplianceFailure {
             reason: "ask_user and content cannot coexist".to_string(),
         });
     }
 
+    // ── Check 2: ask_user alone is always valid ──
     if !resp.ask_user.is_empty() {
         return Ok(());
     }
 
+    // ── Check 3: empty close response ──
     if resp.content.is_empty()
         && resp.new_tokens.is_empty()
         && resp.relationships.is_empty()
@@ -195,6 +296,10 @@ pub fn validate_squire_response(
         });
     }
 
+    // ── Check 4: malformed/stray § sigils ──
+    check_malformed_sigils(&resp.content)?;
+
+    // ── Check 5: §! inline refs must resolve ──
     for token_id in extract_inline_refs(&resp.content) {
         let defined_inline = resp.new_tokens.iter().any(|t| t.id == token_id);
         if !defined_inline && !token_known(&token_id) {
@@ -204,11 +309,45 @@ pub fn validate_squire_response(
         }
     }
 
+    // ── Check 6: unclosed §^ spans (checked before span ref resolution
+    //    because a structurally unclosed span is a worse problem) ──
     let (_, unclosed) = extract_spans(&resp.content);
     if let Some(token_id) = unclosed {
         return Err(ComplianceFailure {
             reason: format!("unclosed §^ span {}", token_id),
         });
+    }
+
+    // ── Check 7: §^ span refs must resolve (closed spans and bare bookmarks) ──
+    for token_id in extract_span_refs(&resp.content) {
+        let defined_inline = resp.new_tokens.iter().any(|t| t.id == token_id);
+        if !defined_inline && !token_known(&token_id) {
+            return Err(ComplianceFailure {
+                reason: format!("undisplayable span reference §^{}", token_id),
+            });
+        }
+    }
+
+    // ── Check 8: preserved tokens must exist ──
+    for id in &resp.preserve {
+        let defined_inline = resp.new_tokens.iter().any(|t| &t.id == id);
+        if !defined_inline && !token_known(id) {
+            return Err(ComplianceFailure {
+                reason: format!("preserved token does not exist: {}", id),
+            });
+        }
+    }
+
+    // ── Check 9: relationship subjects/objects must exist ──
+    for rel in &resp.relationships {
+        for token_id in [&rel.subject, &rel.object] {
+            let defined_inline = resp.new_tokens.iter().any(|t| &t.id == token_id);
+            if !defined_inline && !token_known(token_id) {
+                return Err(ComplianceFailure {
+                    reason: format!("relationship references unknown token: {}", token_id),
+                });
+            }
+        }
     }
 
     Ok(())
@@ -247,4 +386,326 @@ pub async fn resolve_ranges(
         }
     }
     result.trim().to_string()
+}
+
+// ─────────────────────────── Range spec parsing (bookend positions) ───────────
+
+/// A single position in a range spec: `token:bookmark[:offset]`.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RangePosition {
+    pub token: String,
+    pub bookmark: String,
+    /// Character offset from the bookmark position (default 0).
+    pub offset: usize,
+}
+
+/// A parsed range spec: text from `start` position to `end` position.
+/// Both positions must be within the same source token (for now).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RangeSpec {
+    pub start: RangePosition,
+    pub end: RangePosition,
+}
+
+/// Parse a single position string `token:bookmark[:offset]`.
+fn parse_range_position(s: &str) -> Option<RangePosition> {
+    let s = s.trim();
+    let mut parts = s.splitn(3, ':');
+    let token = parts.next()?.to_string();
+    let bookmark = parts.next()?.to_string();
+    if token.is_empty() || bookmark.is_empty() {
+        return None;
+    }
+    let offset: usize = parts.next().and_then(|o| o.parse().ok()).unwrap_or(0);
+    Some(RangePosition { token, bookmark, offset })
+}
+
+/// Parse a `→`-delimited range spec: `token:bookmark[:offset]→token:bookmark[:offset]`.
+/// Returns `None` if the string doesn't contain `→` or positions are invalid.
+pub(crate) fn parse_range_spec(s: &str) -> Option<RangeSpec> {
+    let s = s.trim();
+    let arrow_pos = s.find(RANGE_ARROW)?;
+    let start_str = &s[..arrow_pos];
+    let end_str = &s[arrow_pos + RANGE_ARROW.len_utf8()..];
+
+    let start = parse_range_position(start_str)?;
+    let end = parse_range_position(end_str)?;
+
+    Some(RangeSpec { start, end })
+}
+
+/// Check whether a string looks like a range spec (contains `→`).
+pub(crate) fn is_range_spec(s: &str) -> bool {
+    s.contains(RANGE_ARROW)
+}
+
+/// Resolve a `RangeSpec` into one or more `TokenRange` entries by loading
+/// source tokens' `full_desc` and computing byte-level offset+length.
+///
+/// Currently handles the single-token case (both positions in same token).
+/// For multi-token spans, returns an error string.
+pub(crate) async fn resolve_range_spec(
+    spec: &RangeSpec,
+    store: &dyn SquireStore,
+) -> Result<Vec<TokenRange>, String> {
+    if spec.start.token != spec.end.token {
+        return Err(format!(
+            "multi-token ranges not yet supported: {}→{}",
+            spec.start.token, spec.end.token
+        ));
+    }
+
+    let detail = store.token_detail(&spec.start.token).await;
+    let text = detail
+        .and_then(|d| d.full_desc)
+        .ok_or_else(|| format!("source token {} not found or has no full_desc", spec.start.token))?;
+
+    // Find start bookmark position
+    let start_tag = format!("§^{}§^", spec.start.bookmark.trim_start_matches("§^"));
+    let start_pos = match text.find(&start_tag) {
+        Some(pos) => pos + start_tag.len(),
+        None => {
+            return Err(format!(
+                "bookmark {} not found in token {}",
+                spec.start.bookmark, spec.start.token
+            ));
+        }
+    };
+
+    // Find end bookmark position
+    let end_tag = format!("§^{}§^", spec.end.bookmark.trim_start_matches("§^"));
+    let end_pos = match text.find(&end_tag) {
+        Some(pos) => pos + end_tag.len(),
+        None => {
+            return Err(format!(
+                "bookmark {} not found in token {}",
+                spec.end.bookmark, spec.start.token
+            ));
+        }
+    };
+
+    let range_start = start_pos + spec.start.offset;
+    let range_end = end_pos + spec.end.offset;
+
+    if range_end <= range_start {
+        return Err(format!(
+            "empty or negative range: start={} end={}",
+            range_start, range_end
+        ));
+    }
+
+    let length = range_end - range_start;
+
+    Ok(vec![TokenRange {
+        token: spec.start.token.clone(),
+        bookmark: spec.start.bookmark.clone(),
+        offset: spec.start.offset,
+        length: Some(length),
+    }])
+}
+
+/// Scan all new_tokens in a parsed response. For any token whose full_desc
+/// is a range spec (`token:bookmark[:offset]→token:bookmark[:offset]`),
+/// resolve it by loading source tokens, computing offset+length, and
+/// populating `ranges`. The full_desc is cleared after successful resolution
+/// (the content will be reconstructed from ranges at display time).
+///
+/// Tokens whose full_desc is NOT a range spec are left untouched.
+pub async fn resolve_all_range_specs(
+    tokens: &mut [NewTokenSpec],
+    store: &dyn SquireStore,
+) -> Result<(), String> {
+    for token in tokens.iter_mut() {
+        let Some(ref desc) = token.full_desc else {
+            continue;
+        };
+        if !is_range_spec(desc) {
+            continue;
+        }
+        let spec = parse_range_spec(desc).ok_or_else(|| {
+            format!("invalid range spec in token {}: {}", token.id, desc)
+        })?;
+        let ranges = resolve_range_spec(&spec, store).await?;
+        token.ranges = ranges;
+        token.full_desc = None; // content will be resolved from ranges at display time
+    }
+    Ok(())
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::squire::InMemorySquireStore;
+    use squire_store::NewTokenSpec;
+
+    // ─── parse_range_position ───
+
+    #[test]
+    fn test_parse_range_position_token_only() {
+        let pos = parse_range_position("USR_T1_005:chunk_0").unwrap();
+        assert_eq!(pos.token, "USR_T1_005");
+        assert_eq!(pos.bookmark, "chunk_0");
+        assert_eq!(pos.offset, 0);
+    }
+
+    #[test]
+    fn test_parse_range_position_with_offset() {
+        let pos = parse_range_position("USR_T1_005:chunk_0:20").unwrap();
+        assert_eq!(pos.token, "USR_T1_005");
+        assert_eq!(pos.bookmark, "chunk_0");
+        assert_eq!(pos.offset, 20);
+    }
+
+    #[test]
+    fn test_parse_range_position_empty_token() {
+        assert!(parse_range_position(":chunk_0").is_none());
+    }
+
+    #[test]
+    fn test_parse_range_position_empty_bookmark() {
+        assert!(parse_range_position("USR_T1_005:").is_none());
+    }
+
+    // ─── parse_range_spec ───
+
+    #[test]
+    fn test_parse_range_spec_simple() {
+        let spec = parse_range_spec("USR_T1_005:chunk_0→USR_T1_005:chunk_1").unwrap();
+        assert_eq!(spec.start.token, "USR_T1_005");
+        assert_eq!(spec.start.bookmark, "chunk_0");
+        assert_eq!(spec.start.offset, 0);
+        assert_eq!(spec.end.token, "USR_T1_005");
+        assert_eq!(spec.end.bookmark, "chunk_1");
+        assert_eq!(spec.end.offset, 0);
+    }
+
+    #[test]
+    fn test_parse_range_spec_with_offsets() {
+        let spec =
+            parse_range_spec("USR_T1_005:chunk_0:20→USR_T1_005:chunk_1:3").unwrap();
+        assert_eq!(spec.start.offset, 20);
+        assert_eq!(spec.end.offset, 3);
+    }
+
+    #[test]
+    fn test_parse_range_spec_no_arrow() {
+        assert!(parse_range_spec("USR_T1_005:chunk_0").is_none());
+    }
+
+    #[test]
+    fn test_is_range_spec() {
+        assert!(is_range_spec("a:b→c:d"));
+        assert!(!is_range_spec("a:b-c:d"));
+    }
+
+    // ─── resolve_range_spec (unit) ───
+
+    /// Helper to set up an in-memory store with one source token whose
+    /// full_desc contains two chunk bookmarks using ASCII-friendly markers.
+    async fn setup_store_with_chunks() -> InMemorySquireStore {
+        let store = InMemorySquireStore::new();
+        // Use <BMK0> and <BMK1> as simple ASCII placeholder markers (7 bytes each)
+        // so we don't have to worry about multi-byte UTF-8 in byte-offset arithmetic.
+        store
+            .upsert_token(
+                NewTokenSpec {
+                    id: "USR_T1_005".into(),
+                    token_type: "user".into(),
+                    short_desc: "Test chunk".into(),
+                    full_desc: Some(
+                        "Some leading text.§^<BMK0>§^Hello World This is a test.§^<BMK1>§^And more text here."
+                            .into(),
+                    ),
+                    endpoint: None,
+                    ranges: vec![],
+                },
+                1,
+                uuid::Uuid::nil(),
+            )
+            .await;
+        store
+    }
+
+    #[tokio::test]
+    async fn test_resolve_range_spec_basic() {
+        let store = setup_store_with_chunks().await;
+        // Use <BMK0> and <BMK1> as bookmark names (matching the stored text above)
+        let spec = parse_range_spec("USR_T1_005:<BMK0>→USR_T1_005:<BMK1>").unwrap();
+        let ranges = resolve_range_spec(&spec, &store).await.unwrap();
+        assert_eq!(ranges.len(), 1);
+        let r = &ranges[0];
+        assert_eq!(r.token, "USR_T1_005");
+        assert_eq!(r.bookmark, "<BMK0>");
+        assert_eq!(r.offset, 0);
+        // "Some leading text.§^<BMK0>§^" = 31 bytes
+        // Then "Hello World This is a test.§^<BMK1>§^" = 39 bytes in range
+        assert_eq!(r.length, Some(39));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_range_spec_with_offset() {
+        let store = setup_store_with_chunks().await;
+        // From <BMK0>+6 to <BMK1> → skip "Hello " (6 chars), start at "World"
+        let spec =
+            parse_range_spec("USR_T1_005:<BMK0>:6→USR_T1_005:<BMK1>").unwrap();
+        let ranges = resolve_range_spec(&spec, &store).await.unwrap();
+        assert_eq!(ranges.len(), 1);
+        let r = &ranges[0];
+        assert_eq!(r.offset, 6);
+        // start=31+6=37, end=70, length=70-37=33 → "World This is a test."
+        assert_eq!(r.length, Some(33));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_range_spec_multi_token_rejected() {
+        let store = setup_store_with_chunks().await;
+        let spec =
+            parse_range_spec("USR_T1_005:<BMK0>→OTHER_TOKEN:<BMK1>").unwrap();
+        let result = resolve_range_spec(&spec, &store).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("multi-token"));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_all_range_specs_integration() {
+        let store = setup_store_with_chunks().await;
+        let mut tokens = vec![
+            NewTokenSpec {
+                id: "REF_Scene".into(),
+                token_type: "referential".into(),
+                short_desc: "The combat scene".into(),
+                full_desc: Some("USR_T1_005:<BMK0>→USR_T1_005:<BMK1>".into()),
+                endpoint: None,
+                ranges: vec![],
+            },
+            NewTokenSpec {
+                id: "CON_Theme".into(),
+                token_type: "concept".into(),
+                short_desc: "Theme of story".into(),
+                full_desc: None,
+                endpoint: None,
+                ranges: vec![],
+            },
+        ];
+
+        resolve_all_range_specs(&mut tokens, &store).await.unwrap();
+
+        // REF_Scene should have ranges resolved and full_desc cleared
+        let ref_token = &tokens[0];
+        assert!(!ref_token.ranges.is_empty(), "ranges should be populated");
+        assert_eq!(ref_token.full_desc, None, "full_desc should be cleared");
+        let range = &ref_token.ranges[0];
+        assert_eq!(range.token, "USR_T1_005");
+        assert_eq!(range.bookmark, "<BMK0>");
+        assert_eq!(range.length, Some(39));
+
+        // CON_Theme should be untouched
+        let concept_token = &tokens[1];
+        assert!(concept_token.ranges.is_empty());
+        assert_eq!(concept_token.short_desc, "Theme of story");
+    }
 }

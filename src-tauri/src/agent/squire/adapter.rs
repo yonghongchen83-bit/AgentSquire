@@ -12,15 +12,14 @@ use async_trait::async_trait;
 
 use super::ingestion::{ingest_response_chunks, ingest_user_input_chunks};
 use super::protocol::{
-    extract_inline_refs, extract_spans, resolve_ranges,
+    extract_inline_refs, extract_spans, resolve_all_range_specs, resolve_ranges,
     strip_span_markers, take_token_id, unmarked_residual, validate_squire_response,
 };
 use super::SquireStore;
 use super::tools::built_in_tool_definitions;
-use super::types::{ComplianceFailureRecord, SquireResponse};
+use super::types::{ComplianceFailureRecord, detect_and_parse};
 use crate::agent::context_adapter::{ContextManagerAdapter, TurnInput, TurnOutcome};
 use crate::agent::ToolResult;
-use crate::commands::utils::clean_deepseek_json;
 use crate::llm::provider::{ChatMessage, ChatRole, ToolCall, ToolDefinition};
 use crate::state::config::SquirePrefetchConfig;
 use crate::storage::conversation_store::{
@@ -190,10 +189,20 @@ pub(crate) fn classify_rejection_rule(reason: &str) -> String {
         "empty_close_response".to_string()
     } else if reason.starts_with("undisplayable token") {
         "undisplayable_token".to_string()
+    } else if reason.starts_with("undisplayable span reference") {
+        "undisplayable_span_reference".to_string()
+    } else if reason.starts_with("malformed sigil") {
+        "malformed_sigil".to_string()
     } else if reason.starts_with("unclosed") {
         "unclosed_span".to_string()
+    } else if reason.contains("preserved token does not exist") {
+        "preserve_token_unknown".to_string()
+    } else if reason.contains("relationship references unknown token") {
+        "relationship_unknown_token".to_string()
     } else if reason.contains("non-invocable token") {
         "non_invocable_token".to_string()
+    } else if reason.contains("unrecognized section") {
+        "unrecognized_section".to_string()
     } else {
         "other".to_string()
     }
@@ -399,8 +408,7 @@ impl ContextManagerAdapter for SquireContextAdapter {
         messages: &mut Vec<ChatMessage>,
         store: &dyn ConversationStore,
     ) -> Result<TurnOutcome, String> {
-        let cleaned = clean_deepseek_json(assistant_content.trim());
-        let parsed: SquireResponse = match serde_json::from_str(&cleaned) {
+        let mut parsed = match detect_and_parse(&assistant_content) {
             Ok(r) => r,
             Err(e) => {
                 return self
@@ -408,7 +416,7 @@ impl ContextManagerAdapter for SquireContextAdapter {
                         session_id,
                         messages,
                         assistant_content,
-                        format!("response is not valid Squire protocol JSON: {}", e),
+                        e,
                         store,
                     )
                     .await;
@@ -453,7 +461,16 @@ impl ContextManagerAdapter for SquireContextAdapter {
             set
         };
 
-        if let Err(failure) = validate_squire_response(&parsed, |id| known.contains(id)) {
+        // Validation needs to check against ALL tokens the model knows
+        // about: store tokens (§!-referenced + existing) plus tokens
+        // defined in this turn's new_tokens.  A relationship or preserve
+        // entry may reference a brand-new token that doesn't exist in the
+        // store yet — that is valid as long as it is defined inline.
+        let token_known = |id: &str| -> bool {
+            known.contains(id) || parsed.new_tokens.iter().any(|t| t.id == id)
+        };
+
+        if let Err(failure) = validate_squire_response(&parsed, token_known) {
             return self
                 .reject_and_record(session_id, messages, assistant_content, failure.reason, store)
                 .await;
@@ -495,6 +512,12 @@ impl ContextManagerAdapter for SquireContextAdapter {
         if !residual.is_empty() {
             self.store.record_raw_output(session_id, turn, residual).await;
         }
+
+        // Resolve range specs: when a new_token's full_desc is a
+        // `token:bookmark[:offset]→token:bookmark[:offset]` range spec,
+        // load the source chunk, compute byte-level offset+length, and
+        // populate the token's `ranges` field (spec §5.2, ADR 0012).
+        resolve_all_range_specs(&mut parsed.new_tokens, self.store.as_ref()).await?;
 
         for token in &parsed.new_tokens {
             let mut token = token.clone();

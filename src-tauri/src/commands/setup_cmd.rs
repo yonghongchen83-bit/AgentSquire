@@ -123,6 +123,8 @@ pub fn setup_app_impl(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
         subagent_tasks: Arc::new(TokioMutex::new(HashMap::new())),
         project_path: RwLock::new(initial_project_path),
         squire_store: RwLock::new(squire_store),
+        mcp_tools_cache: Arc::new(RwLock::new(HashMap::new())),
+        tool_registry_hash: Arc::new(RwLock::new(0)),
     });
 
     app.manage(WatcherState {

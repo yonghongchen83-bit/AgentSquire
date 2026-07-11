@@ -1,0 +1,14 @@
+{
+  "nodePath": "root/ServerRefector/RuntimeContext",
+  "items": [
+    { "id": "RC-1", "title": "Create engine-core crate with RuntimeContext + RuntimeConfig", "status": "not-started", "priority": "high" },
+    { "id": "RC-2", "title": "Define EventEmitter trait in engine-core", "status": "not-started", "priority": "high" },
+    { "id": "RC-3", "title": "Define Engine trait in engine-core", "status": "not-started", "priority": "high" },
+    { "id": "RC-4", "title": "Extract SquireEngine from streaming_cmd.rs", "status": "not-started", "priority": "high" },
+    { "id": "RC-5", "title": "Wire send_message_impl to build RuntimeContext and call SquireEngine", "status": "not-started", "priority": "high" },
+    { "id": "RC-6", "title": "Update setup_cmd.rs to provide TauriEventEmitter", "status": "not-started", "priority": "high" },
+    { "id": "RC-7", "title": "Write headless integration tests with mock RuntimeContext", "status": "not-started", "priority": "medium" },
+    { "id": "RC-8", "title": "Run full test suite and fix regressions", "status": "not-started", "priority": "high" }
+  ],
+  "children": []
+}

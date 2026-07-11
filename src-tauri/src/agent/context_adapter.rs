@@ -48,6 +48,18 @@ pub enum TurnOutcome {
         /// The original user request text with chunk bookmark markers.
         user_request: String,
     },
+    /// Phase 2 completed successfully — orchestrator should emit a summary
+    /// event to the frontend showing what was stored/rejected.
+    Phase2Done {
+        /// Number of tokens accepted and stored.
+        tokens_accepted: usize,
+        /// Number of relationships accepted and stored.
+        relationships_accepted: usize,
+        /// List of token IDs that were rejected (unknown references, etc.).
+        tokens_rejected: Vec<String>,
+        /// List of relationship descriptions that were rejected.
+        relationships_rejected: Vec<String>,
+    },
 }
 
 /// Pluggable per-session context strategy. Orchestration (provider calls,

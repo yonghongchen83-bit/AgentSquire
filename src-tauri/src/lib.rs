@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod commands;
+pub mod engine;
 pub mod fs;
 pub mod llm;
 pub mod mcp;

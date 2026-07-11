@@ -475,20 +475,26 @@ impl ContextManagerAdapter for SquireContextAdapter {
 
         match self.phase {
             SquirePhase::Phase1 => {
-                // If the response already has §# sections (new_tokens,
-                // relationships, preserve), it's a combined single-pass
-                // response — process content via Phase 1 logic, then
-                // immediately feed into Phase 2 token logic in the same
-                // call. This keeps backwards compatibility with test
-                // harnesses and bootstrapping scenarios.
-                let has_phase2_sections = !parsed.new_tokens.is_empty()
+                // Phase 1 should ONLY produce response content (with §! and
+                // §^...§^ markers). §#new_tokens, §#relationships, and
+                // §#preserve sections are for Phase 2 only. If the model
+                // outputs them in Phase 1, reject and ask it to retry.
+                if !parsed.new_tokens.is_empty()
                     || !parsed.relationships.is_empty()
-                    || !parsed.preserve.is_empty();
-                if has_phase2_sections {
-                    self.finalize_combined(session_id, parsed, assistant_content, _thinking, messages, store).await
-                } else {
-                    self.finalize_phase1(session_id, parsed, assistant_content, _thinking, messages, store).await
+                    || !parsed.preserve.is_empty()
+                {
+                    return self
+                        .reject_and_record(
+                            session_id,
+                            messages,
+                            assistant_content,
+                            "Phase 1 must not contain §#new_tokens, §#relationships, or §#preserve sections — those belong in Phase 2 only. Output only response text with §! and §^...§^ markers."
+                                .to_string(),
+                            store,
+                        )
+                        .await;
                 }
+                self.finalize_phase1(session_id, parsed, assistant_content, _thinking, messages, store).await
             }
             SquirePhase::Phase2 => self.finalize_phase2(session_id, parsed, assistant_content, _thinking, messages, store).await,
         }
@@ -607,129 +613,6 @@ impl SquireContextAdapter {
         })
     }
 
-    /// Combined single-pass: process Phase 1 content logic (hit counts,
-    /// raw partition, ingest chunks, display), then Phase 2 token/rel
-    /// logic in the same call. Used when a single response has both
-    /// content text AND §# token sections (backwards-compatible mode).
-    async fn finalize_combined(
-        &mut self,
-        session_id: SessionId,
-        mut parsed: super::types::SquireResponse,
-        assistant_content: String,
-        _thinking: Option<String>,
-        messages: &mut Vec<ChatMessage>,
-        store: &dyn ConversationStore,
-    ) -> Result<TurnOutcome, String> {
-        // ── Phase 1 content pass ──
-        if parsed.content.is_empty() {
-            return self
-                .reject_and_record(
-                    session_id,
-                    messages,
-                    assistant_content,
-                    "empty close response".to_string(),
-                    store,
-                )
-                .await;
-        }
-        if let Err(e) = check_malformed_sigils(&parsed.content) {
-            return self
-                .reject_and_record(session_id, messages, assistant_content, e.reason, store)
-                .await;
-        }
-        let (_, unclosed) = extract_spans(&parsed.content);
-        if let Some(token_id) = unclosed {
-            return self
-                .reject_and_record(
-                    session_id,
-                    messages,
-                    assistant_content,
-                    format!("unclosed §^ span {}", token_id),
-                    store,
-                )
-                .await;
-        }
-
-        self.retry_count = 0;
-        let turn = self.store.current_turn(session_id).await;
-        let (spans, _) = extract_spans(&parsed.content);
-
-        for token_id in extract_inline_refs(&parsed.content) {
-            if self.store.token_exists(&token_id).await {
-                self.store.record_hit(&token_id).await;
-            }
-        }
-
-        let residual = unmarked_residual(&parsed.content);
-        if !residual.is_empty() {
-            self.store.record_raw_output(session_id, turn, residual).await;
-        }
-
-        // ── Phase 2 token/rel pass ──
-        let _defining_now: HashSet<String> =
-            parsed.new_tokens.iter().map(|t| t.id.clone()).collect();
-
-        // Resolve range specs with soft-fail.
-        for token in parsed.new_tokens.iter_mut() {
-            if let Some(ref desc) = token.full_desc {
-                if is_range_spec(desc) {
-                    if let Some(spec) = parse_range_spec(desc) {
-                        if let Ok(ranges) = resolve_range_spec(&spec, self.store.as_ref()).await {
-                            token.ranges = ranges;
-                            token.full_desc = None;
-                        } else {
-                            token.full_desc = None; // unresolvable, store without ranges
-                        }
-                    }
-                }
-            }
-            let mut to_upsert = token.clone();
-            if spans.iter().any(|(id, _)| id == &to_upsert.id) {
-                to_upsert.token_type = "referential".to_string();
-            }
-            if to_upsert.full_desc.is_none() {
-                if let Some((_, span_text)) = spans.iter().find(|(id, _)| id == &to_upsert.id) {
-                    to_upsert.full_desc = Some(span_text.clone());
-                }
-            }
-            self.store.upsert_token(to_upsert, turn, session_id).await;
-        }
-
-        for rel in &parsed.relationships {
-            self.store.add_relationship(rel.clone()).await;
-        }
-
-        let mut always_preserve: Vec<String> = parsed.preserve.clone();
-        for id in self.store.list_token_ids_by_session(session_id).await {
-            if always_preserve.contains(&id) {
-                continue;
-            }
-            if id.starts_with("USR_") || id.starts_with("RESP_") {
-                always_preserve.push(id);
-            }
-        }
-        self.store
-            .set_preserve_list(session_id, always_preserve)
-            .await;
-        self.store.increment_turn(session_id).await;
-
-        ingest_response_chunks(&parsed.content, turn, self.store.as_ref(), session_id).await;
-
-        let display_content = self.expand_for_display(&parsed.content).await;
-        if !display_content.is_empty() {
-            store
-                .append_message(NewMessage {
-                    session_id,
-                    role: MessageRole::Assistant,
-                    content: display_content,
-                    thinking_content: _thinking,
-                })
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-
-        Ok(TurnOutcome::Done)
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -747,22 +630,12 @@ impl SquireContextAdapter {
         store: &dyn ConversationStore,
     ) -> Result<TurnOutcome, String> {
         // ═══════════════════════════════════════════════════════════════
-        // Hard validation gates — fundamental protocol violations that
-        // always reject the entire response.
+        // Phase 2 validation: reject malformed content but save valid
+        // tokens/relationships FIRST so they persist even on retry.
+        // The model only needs to fix what's broken on the next attempt.
         // ═══════════════════════════════════════════════════════════════
 
-        // Phase 2 must not produce content text (only §# sections).
-        if !parsed.content.is_empty() {
-            return self
-                .reject_and_record(
-                    session_id,
-                    messages,
-                    assistant_content,
-                    "Phase 2 must not produce content text".to_string(),
-                    store,
-                )
-                .await;
-        }
+        // Check malformed sigils and unclosed spans on content (hard rejects)
         if let Err(e) = check_malformed_sigils(&parsed.content) {
             return self
                 .reject_and_record(session_id, messages, assistant_content, e.reason, store)
@@ -808,7 +681,7 @@ impl SquireContextAdapter {
             if let Some(ref desc) = token.full_desc {
                 if is_range_spec(desc) {
                     match parse_range_spec(desc) {
-                        Some(spec) => match resolve_range_spec(&spec, self.store.as_ref()).await {
+                        Some(spec) => match resolve_range_spec(&spec, self.store.as_ref(), session_id).await {
                             Ok(ranges) => {
                                 token.ranges = ranges;
                                 token.full_desc = None;
@@ -904,11 +777,12 @@ impl SquireContextAdapter {
         self.store.increment_turn(session_id).await;
 
         // ═══════════════════════════════════════════════════════════════
-        // If any issues remain, return Retry with a focused message.
-        // Valid tokens/relationships have already been saved — the model
-        // only needs to fix what's left.
+        // Collect remaining issues — valid data is already saved, only
+        // problems need fixing on retry.
         // ═══════════════════════════════════════════════════════════════
         let mut issues: Vec<String> = Vec::new();
+        // Commentary text outside §# sections is ignored — only the
+        // structured sections matter for token/relationship extraction.
         if !range_issues.is_empty() {
             issues.push(format!(
                 "Range resolution failed for these tokens (stored without ranges, \
@@ -963,6 +837,12 @@ impl SquireContextAdapter {
                 .map_err(|e| e.to_string())?;
         }
 
-        Ok(TurnOutcome::Done)
+        // Return Phase2Done with summary of what was stored
+        Ok(TurnOutcome::Phase2Done {
+            tokens_accepted: parsed.new_tokens.len(),
+            relationships_accepted: valid_rels.len(),
+            tokens_rejected: vec![], // All tokens were accepted if we got here
+            relationships_rejected: vec![], // All relationships were accepted if we got here
+        })
     }
 }

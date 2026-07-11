@@ -1,4 +1,5 @@
 export const CHAT_MODEL_PREF_KEY = 'chat:last-model-selection'
+export const CHAT_PHASE2_MODEL_PREF_KEY = 'chat:last-phase2-model-selection'
 export const CHAT_THINKING_PREF_KEY = 'chat:last-thinking-level'
 export const CHAT_SQUIRE_MODE_DEFAULT_KEY = 'chat:last-squire-mode-default'
 
@@ -47,6 +48,32 @@ export function saveStoredThinkingLevel(level: 'default' | 'none' | 'low' | 'mid
     window.localStorage.setItem(CHAT_THINKING_PREF_KEY, level)
   } catch {
     // ignore
+  }
+}
+
+export function loadStoredPhase2Selection(): { provider: string; model: string } {
+  if (typeof window === 'undefined') {
+    return { provider: '', model: '' }
+  }
+  try {
+    const raw = window.localStorage.getItem(CHAT_PHASE2_MODEL_PREF_KEY)
+    if (!raw) return { provider: '', model: '' }
+    const parsed = JSON.parse(raw) as { provider?: string; model?: string }
+    return {
+      provider: parsed.provider ?? '',
+      model: parsed.model ?? '',
+    }
+  } catch {
+    return { provider: '', model: '' }
+  }
+}
+
+export function saveStoredPhase2Selection(provider: string, model: string) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(CHAT_PHASE2_MODEL_PREF_KEY, JSON.stringify({ provider, model }))
+  } catch {
+    // Ignore storage errors (private mode/quota/etc.)
   }
 }
 

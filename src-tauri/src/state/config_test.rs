@@ -34,6 +34,7 @@ fn test_provider_config() {
             name: "openai-main".into(),
             api_key: "sk-xxx".into(),
             model: "gpt-4".into(),
+            phase2_model: String::new(),
             models: vec!["gpt-4".into()],
             endpoint: None,
             metadata: std::collections::HashMap::new(),

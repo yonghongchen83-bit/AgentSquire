@@ -32,6 +32,8 @@ export function ChatPanel() {
   const providers = useChatStore((s) => s.providers)
   const selectedProvider = useChatStore((s) => s.selectedProvider)
   const selectedModel = useChatStore((s) => s.selectedModel)
+  const selectedPhase2Provider = useChatStore((s) => s.selectedPhase2Provider)
+  const selectedPhase2Model = useChatStore((s) => s.selectedPhase2Model)
   const selectedThinkingLevel = useChatStore((s) => s.selectedThinkingLevel)
   const loadConversations = useChatStore((s) => s.loadConversations)
   const loadProviders = useChatStore((s) => s.loadProviders)
@@ -41,6 +43,8 @@ export function ChatPanel() {
   const deleteConversation = useChatStore((s) => s.deleteConversation)
   const setSelectedProvider = useChatStore((s) => s.setSelectedProvider)
   const setSelectedModel = useChatStore((s) => s.setSelectedModel)
+  const setSelectedPhase2Provider = useChatStore((s) => s.setSelectedPhase2Provider)
+  const setSelectedPhase2Model = useChatStore((s) => s.setSelectedPhase2Model)
   const setSelectedThinkingLevel = useChatStore((s) => s.setSelectedThinkingLevel)
   const sendMessage = useChatStore((s) => s.sendMessage)
   const cancelStreaming = useChatStore((s) => s.cancelStreaming)
@@ -127,6 +131,19 @@ export function ChatPanel() {
     }
   }, [setSelectedProvider, setSelectedModel])
 
+  const handlePhase2ModelSelect = useCallback((value: string) => {
+    if (value === '__none__') {
+      setSelectedPhase2Provider('')
+      setSelectedPhase2Model('')
+      return
+    }
+    const [providerName, modelName] = value.split('::')
+    if (providerName && modelName) {
+      setSelectedPhase2Provider(providerName)
+      setSelectedPhase2Model(modelName)
+    }
+  }, [setSelectedPhase2Provider, setSelectedPhase2Model])
+
   const currentLabel = useMemo(() => {
     if (selectedProvider && selectedModel) {
       return `${selectedProvider} · ${selectedModel}`
@@ -140,6 +157,20 @@ export function ChatPanel() {
     }
     return ''
   }, [selectedProvider, selectedModel])
+
+  const currentPhase2Label = useMemo(() => {
+    if (selectedPhase2Provider && selectedPhase2Model) {
+      return `${selectedPhase2Provider} · ${selectedPhase2Model}`
+    }
+    return 'Same as main'
+  }, [selectedPhase2Provider, selectedPhase2Model])
+
+  const currentPhase2Value = useMemo(() => {
+    if (selectedPhase2Provider && selectedPhase2Model) {
+      return `${selectedPhase2Provider}::${selectedPhase2Model}`
+    }
+    return '__none__'
+  }, [selectedPhase2Provider, selectedPhase2Model])
 
   const handleSelectConversation = useCallback(async (id: string) => {
     await selectConversation(id)
@@ -222,7 +253,34 @@ export function ChatPanel() {
                   <SelectTrigger className="h-7 text-xs w-auto min-w-[200px]">
                     <SelectValue placeholder="Select model...">{currentLabel}</SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="max-h-[300px]">
+                  <SelectContent className="max-h-[450px] overflow-y-auto">
+                    {providers.map((prov) => (
+                      <SelectGroup key={prov.name}>
+                        <SelectLabel className="text-xs font-semibold text-muted-foreground px-2 py-1">
+                          {prov.name}
+                        </SelectLabel>
+                        {prov.models.map((m) => (
+                          <SelectItem
+                            key={`${prov.name}::${m}`}
+                            value={`${prov.name}::${m}`}
+                            className="text-xs pl-6"
+                          >
+                            {m}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-xs text-muted-foreground shrink-0 ml-3">Phase 2:</span>
+                <Select value={currentPhase2Value} onValueChange={handlePhase2ModelSelect}>
+                  <SelectTrigger className="h-7 text-xs w-auto min-w-[140px]">
+                    <SelectValue placeholder="Same as main">{currentPhase2Label}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[450px] overflow-y-auto">
+                    <SelectItem value="__none__" className="text-xs">
+                      Same as main
+                    </SelectItem>
                     {providers.map((prov) => (
                       <SelectGroup key={prov.name}>
                         <SelectLabel className="text-xs font-semibold text-muted-foreground px-2 py-1">

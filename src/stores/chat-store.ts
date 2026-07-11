@@ -19,6 +19,8 @@ import {
   saveStoredSelection,
   loadStoredThinkingLevel,
   saveStoredThinkingLevel,
+  loadStoredPhase2Selection,
+  saveStoredPhase2Selection,
 } from '@/stores/chat-store/preferences'
 import { resolveModelSelection } from '@/stores/chat-store/core'
 import { setupStreamListeners as setupStreamListenersImpl } from '@/stores/chat-store/stream-listeners'
@@ -37,6 +39,8 @@ interface ChatState {
   providers: ProviderInfo[]
   selectedProvider: string
   selectedModel: string
+  selectedPhase2Provider: string
+  selectedPhase2Model: string
   selectedThinkingLevel: 'default' | 'none' | 'low' | 'mid' | 'high'
   pendingApprovals: ToolApprovalRequest[]
   autoApproveScope: 'none' | 'session' | 'workspace'
@@ -57,6 +61,8 @@ interface ChatState {
   deleteConversation: (id: string) => Promise<void>
   setSelectedProvider: (name: string) => void
   setSelectedModel: (model: string) => void
+  setSelectedPhase2Provider: (name: string) => void
+  setSelectedPhase2Model: (model: string) => void
   setSelectedThinkingLevel: (level: 'default' | 'none' | 'low' | 'mid' | 'high') => void
   sendMessage: (content: string) => Promise<void>
   cancelStreaming: () => void
@@ -73,6 +79,7 @@ interface ChatState {
 export const useChatStore = create<ChatState>((set, get) => {
   let cleanupFns: (() => void)[] = []
   const storedSelection = loadStoredSelection()
+  const storedPhase2Selection = loadStoredPhase2Selection()
   const storedThinkingLevel = loadStoredThinkingLevel()
 
   async function setupStreamListeners(sessionId: string) {
@@ -95,6 +102,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     providers: [],
     selectedProvider: storedSelection.provider,
     selectedModel: storedSelection.model,
+    selectedPhase2Provider: storedPhase2Selection.provider,
+    selectedPhase2Model: storedPhase2Selection.model,
     selectedThinkingLevel: storedThinkingLevel,
     pendingApprovals: [],
     autoApproveScope: 'none',
@@ -143,6 +152,16 @@ export const useChatStore = create<ChatState>((set, get) => {
     setSelectedModel: (model: string) => set((s) => {
       saveStoredSelection(s.selectedProvider, model)
       return { selectedModel: model }
+    }),
+
+    setSelectedPhase2Provider: (name: string) => set((s) => {
+      saveStoredPhase2Selection(name, s.selectedPhase2Model)
+      return { selectedPhase2Provider: name }
+    }),
+
+    setSelectedPhase2Model: (model: string) => set((s) => {
+      saveStoredPhase2Selection(s.selectedPhase2Provider, model)
+      return { selectedPhase2Model: model }
     }),
 
     setSelectedThinkingLevel: (level: 'default' | 'none' | 'low' | 'mid' | 'high') => set(() => {
@@ -211,7 +230,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     sendMessage: async (content: string) => {
-      const { activeConversationId, selectedProvider, selectedModel, selectedThinkingLevel } = get()
+      const { activeConversationId, selectedProvider, selectedModel, selectedThinkingLevel, selectedPhase2Provider, selectedPhase2Model } = get()
       let sessionId = activeConversationId
 
       if (!sessionId) {
@@ -251,6 +270,8 @@ export const useChatStore = create<ChatState>((set, get) => {
           selectedProvider || undefined,
           selectedModel || undefined,
           selectedThinkingLevel,
+          selectedPhase2Provider || undefined,
+          selectedPhase2Model || undefined,
         )
       } catch (e) {
         set({

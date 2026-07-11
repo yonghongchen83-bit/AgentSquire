@@ -58,6 +58,39 @@ impl LlmProvider for AnthropicProvider {
         model.starts_with("claude-")
     }
 
+    async fn chat_with_instance(
+        &self,
+        instance: &provider_core::ModelInstance,
+        request: provider_core::ChatRequest,
+    ) -> Result<mpsc::Receiver<StreamEvent>, LlmError> {
+        let override_endpoint = instance
+            .endpoint
+            .as_ref()
+            .filter(|e| *e != &self.base_url);
+        let override_key = instance.api_key.as_ref().filter(|k| *k != &self.api_key);
+
+        if override_endpoint.is_some() || override_key.is_some() {
+            let temp = AnthropicProvider {
+                client: self.client.clone(),
+                api_key: override_key
+                    .map(|k| k.clone())
+                    .unwrap_or_else(|| self.api_key.clone()),
+                base_url: override_endpoint
+                    .map(|e| e.clone())
+                    .unwrap_or_else(|| self.base_url.clone()),
+                model: self.model.clone(),
+                verbose: self.verbose,
+            };
+            let mut req = request;
+            instance.apply_to_request(&mut req);
+            temp.chat(req).await
+        } else {
+            let mut req = request;
+            instance.apply_to_request(&mut req);
+            self.chat(req).await
+        }
+    }
+
     async fn chat(
         &self,
         request: ChatRequest,

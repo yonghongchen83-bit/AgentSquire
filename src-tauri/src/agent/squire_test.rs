@@ -1108,7 +1108,7 @@ async fn finalize_turn_persists_expanded_content_on_compliant_response() {
         "ask_user": "",
         "content": "§^TRT_Answer The answer is 42 §^",
         "preserve": [],
-        "new_tokens": [{"id": "TRT_Answer", "type": "referential", "short_desc": "the answer"}],
+        "new_tokens": [],
         "relationships": []
     })
     .to_string();
@@ -1117,13 +1117,15 @@ async fn finalize_turn_persists_expanded_content_on_compliant_response() {
         .finalize_turn(sid, response, None, &mut messages, &conv_store)
         .await
         .unwrap();
-
-    assert!(matches!(outcome, TurnOutcome::Done));
+    // Phase 1 returns Phase2 (no token sections in response).
+    assert!(matches!(outcome, TurnOutcome::Phase2 { .. }));
     let appended = conv_store.appended.lock().unwrap();
     assert_eq!(appended.len(), 1);
     assert_eq!(appended[0].content, "The answer is 42");
     drop(appended);
-    assert!(adapter.store.token_exists("TRT_Answer").await);
+    // Phase 1 does not create span tokens — that happens in Phase 2.
+    // The span §^TRT_Answer is captured as a RESP_T chunk for Phase 2
+    // to resolve into a referential token later.
 }
 
 // ---- hit-count fidelity ----
@@ -1189,11 +1191,31 @@ async fn finalize_turn_does_not_double_credit_a_token_defined_and_cited_in_the_s
     let sid = Uuid::new_v4();
     let mut messages = Vec::new();
 
+    // Phase 1: §! references a token in new_tokens — this is now rejected
+    // because Phase 1 must not have new_tokens. The test is adjusted to
+    // use §! references to existing tokens only (Phase 1 content), then
+    // the token definition and relationship happen in Phase 2.
+    // For this test, we pre-create the token so Phase 1 can reference it.
+    store
+        .upsert_token(
+            NewTokenSpec {
+                id: "TRT_New".to_string(),
+                token_type: "referential".to_string(),
+                short_desc: "the answer".to_string(),
+                full_desc: None,
+                endpoint: None,
+                ranges: vec![],
+            },
+            0,
+            SessionId::nil(),
+        )
+        .await;
+
     let response = serde_json::json!({
         "ask_user": "",
         "content": "See §!TRT_New for the answer.",
         "preserve": [],
-        "new_tokens": [{"id": "TRT_New", "type": "referential", "short_desc": "the answer"}],
+        "new_tokens": [],
         "relationships": []
     })
     .to_string();
@@ -1202,11 +1224,15 @@ async fn finalize_turn_does_not_double_credit_a_token_defined_and_cited_in_the_s
         .finalize_turn(sid, response, None, &mut messages, &conv_store)
         .await
         .unwrap();
-    assert!(matches!(outcome, TurnOutcome::Done));
+    // Content-only Phase 1 response returns Phase2.
+    assert!(matches!(outcome, TurnOutcome::Phase2 { .. }));
 
-    let results = store.explore_memory("all", "", 0, 10, 0, sid).await;
+    // The §! reference in content credited a hit on top of the
+    // creation hit (= 1). Query by nil session to find the
+    // globally-registered token.
+    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
     let token = results.iter().find(|t| t.token_id == "TRT_New").unwrap();
-    assert_eq!(token.accumulated_hits, 1);
+    assert_eq!(token.accumulated_hits, 2);
 }
 
 #[tokio::test]
@@ -1276,7 +1302,7 @@ async fn finalize_turn_persists_unmarked_text_to_raw_partition_on_compliant_resp
         "ask_user": "",
         "content": "Sure thing. §^TRT_Answer The answer is 42 §^ Hope that helps.",
         "preserve": [],
-        "new_tokens": [{"id": "TRT_Answer", "type": "referential", "short_desc": "the answer"}],
+        "new_tokens": [],
         "relationships": []
     })
     .to_string();
@@ -1285,7 +1311,7 @@ async fn finalize_turn_persists_unmarked_text_to_raw_partition_on_compliant_resp
         .finalize_turn(sid, response, None, &mut messages, &conv_store)
         .await
         .unwrap();
-    assert!(matches!(outcome, TurnOutcome::Done));
+    assert!(matches!(outcome, TurnOutcome::Phase2 { .. }));
 
     let records = store.raw_partition_records().await;
     assert_eq!(records.len(), 1);
@@ -1308,7 +1334,7 @@ async fn finalize_turn_writes_nothing_to_raw_partition_when_response_is_fully_sp
         "ask_user": "",
         "content": "§^TRT_Answer The entire response is one span §^",
         "preserve": [],
-        "new_tokens": [{"id": "TRT_Answer", "type": "referential", "short_desc": "the answer"}],
+        "new_tokens": [],
         "relationships": []
     })
     .to_string();
@@ -1317,7 +1343,8 @@ async fn finalize_turn_writes_nothing_to_raw_partition_when_response_is_fully_sp
         .finalize_turn(sid, response, None, &mut messages, &conv_store)
         .await
         .unwrap();
-    assert!(matches!(outcome, TurnOutcome::Done));
+    // Phase 1 with no token sections returns Phase2.
+    assert!(matches!(outcome, TurnOutcome::Phase2 { .. }));
     assert!(store.raw_partition_records().await.is_empty());
 }
 

@@ -123,8 +123,8 @@ pub struct NewTokenSpec {
 /// is resolved from the source token's `full_desc` text.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TokenRange {
-    /// The chunk token ID (e.g. `USR_T1_005` or `RESP_T2_003`).
-    pub token: String,
+    /// The storage namespace (e.g. `USR_T1_005` or `RESP_T2_003`).
+    pub namespace: String,
     /// The bookmark name as placed by the model via `§^` in its output.
     pub bookmark: String,
     /// Additional byte offset from the bookmark position (default 0).

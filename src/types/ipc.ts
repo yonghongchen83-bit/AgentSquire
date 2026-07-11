@@ -255,6 +255,7 @@ export interface LlmProviderConfig {
   name: string
   apiKey: string
   model: string
+  phase2Model?: string
   models: string[]
   endpoint?: string
   metadata?: Record<string, string>

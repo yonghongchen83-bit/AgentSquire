@@ -70,7 +70,7 @@ const store = create<SettingsStore>((set) => ({
   }),
   addLlmProvider: () => set((s) => {
     if (!s.config) return {}
-    const providers = [...s.config.llmProviders, { providerType: 'openai', name: '', apiKey: '', model: '', models: [], endpoint: 'https://api.openai.com/v1' }]
+    const providers = [...s.config.llmProviders, { providerType: 'openai', name: '', apiKey: '', model: '', phase2Model: '', models: [], endpoint: 'https://api.openai.com/v1' }]
     return { config: { ...s.config, llmProviders: providers } }
   }),
   removeLlmProvider: (index) => set((s) => {

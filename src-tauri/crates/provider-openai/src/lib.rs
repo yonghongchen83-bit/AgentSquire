@@ -108,8 +108,12 @@ fn flush_pending_tool_calls(
 
 impl OpenAIProvider {
     pub fn new(api_key: String, model: String, base_url: Option<String>) -> Self {
+        let client = Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(15)) // 15s to establish connection
+            .build()
+            .expect("Failed to build reqwest Client");
         Self {
-            client: Client::new(),
+            client,
             api_key,
             base_url: base_url.unwrap_or_else(|| "https://api.openai.com/v1".into()),
             model,
@@ -182,6 +186,40 @@ impl LlmProvider for OpenAIProvider {
         // that looks like a model name (non-empty, no spaces).
         let m = model.trim();
         !m.is_empty() && !m.contains(' ')
+    }
+
+    async fn chat_with_instance(
+        &self,
+        instance: &provider_core::ModelInstance,
+        request: provider_core::ChatRequest,
+    ) -> Result<mpsc::Receiver<StreamEvent>, LlmError> {
+        let override_endpoint = instance
+            .endpoint
+            .as_ref()
+            .filter(|e| *e != &self.base_url);
+        let override_key = instance.api_key.as_ref().filter(|k| *k != &self.api_key);
+
+        if override_endpoint.is_some() || override_key.is_some() {
+            let temp = OpenAIProvider {
+                client: self.client.clone(),
+                api_key: override_key
+                    .map(|k| k.clone())
+                    .unwrap_or_else(|| self.api_key.clone()),
+                base_url: override_endpoint
+                    .map(|e| e.clone())
+                    .unwrap_or_else(|| self.base_url.clone()),
+                model: self.model.clone(),
+                verbose: self.verbose,
+                wire_log_path: self.wire_log_path.clone(),
+            };
+            let mut req = request;
+            instance.apply_to_request(&mut req);
+            temp.chat(req).await
+        } else {
+            let mut req = request;
+            instance.apply_to_request(&mut req);
+            self.chat(req).await
+        }
     }
 
     async fn chat(&self, request: ChatRequest) -> Result<mpsc::Receiver<StreamEvent>, LlmError> {

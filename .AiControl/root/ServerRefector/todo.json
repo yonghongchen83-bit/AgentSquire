@@ -1,0 +1,21 @@
+{
+  "nodePath": "root/ServerRefector",
+  "items": [
+    { "id": "S-1", "title": "Define ModelInstance + ModelOptions struct in provider-core", "status": "not-started", "priority": "high" },
+    { "id": "S-2", "title": "Update LlmProvider::chat() to accept &ModelInstance", "status": "not-started", "priority": "high" },
+    { "id": "S-3", "title": "Update OpenAIProvider to use ModelInstance", "status": "not-started", "priority": "high" },
+    { "id": "S-4", "title": "Update AnthropicProvider to use ModelInstance", "status": "not-started", "priority": "high" },
+    { "id": "S-5", "title": "Define RuntimeContext struct", "status": "not-started", "priority": "high" },
+    { "id": "S-6", "title": "Define Engine trait with run(RuntimeContext)", "status": "not-started", "priority": "high" },
+    { "id": "S-7", "title": "Extract SquireEngine from streaming_cmd.rs", "status": "not-started", "priority": "high" },
+    { "id": "S-8", "title": "Wire send_message_impl to build RuntimeContext + call Engine", "status": "not-started", "priority": "high" },
+    { "id": "S-9", "title": "Update frontend IPC to use ModelInstance", "status": "not-started", "priority": "medium" },
+    { "id": "S-10", "title": "Write headless integration tests with mock RuntimeContext", "status": "not-started", "priority": "medium" },
+    { "id": "S-11", "title": "Run full test suite and fix regressions", "status": "not-started", "priority": "high" }
+  ],
+  "children": [
+    { "nodePath": "root/ServerRefector/ModelInstance" },
+    { "nodePath": "root/ServerRefector/RuntimeContext" }
+  ]
+}
+

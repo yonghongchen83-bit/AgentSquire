@@ -168,6 +168,8 @@ export async function sendMessage(
   providerName?: string,
   model?: string,
   thinkingLevel?: 'default' | 'none' | 'low' | 'mid' | 'high',
+  phase2Provider?: string,
+  phase2Model?: string,
 ): Promise<void> {
   return invoke('send_message', {
     sessionId,
@@ -175,6 +177,8 @@ export async function sendMessage(
     providerName,
     model: model ?? null,
     thinkingLevel: thinkingLevel ?? null,
+    phase2Provider: phase2Provider ?? null,
+    phase2Model: phase2Model ?? null,
   })
 }
 
@@ -250,6 +254,24 @@ export function onStreamToolCall(cb: (toolCall: { id: string; name: string; argu
 
 export function onStreamDone(cb: () => void) {
   return listen('stream-done', () => cb())
+}
+
+export interface Phase2Summary {
+  tokens_accepted: number
+  relationships_accepted: number
+  tokens_rejected: string[]
+  relationships_rejected: string[]
+}
+
+export function onStreamPhase2Summary(cb: (summary: Phase2Summary) => void) {
+  return listen<string>('stream-phase2-summary', (event) => {
+    try {
+      const summary = JSON.parse(event.payload) as Phase2Summary
+      cb(summary)
+    } catch {
+      // Ignore parse errors
+    }
+  })
 }
 
 export function onStreamError(cb: (error: string) => void) {

@@ -10,6 +10,7 @@ import {
   onStreamToolPending,
   onStreamToolResult,
   onStreamAskUserPending,
+  onStreamPhase2Summary,
   setMessageBlocks,
   approveToolCall as approveIpc,
 } from '@/lib/ipc'
@@ -138,6 +139,33 @@ export async function setupStreamListeners({
   cleanupFns.push(
     await onStreamStatus((status) => {
       set({ streamingStatus: status })
+    }),
+  )
+
+  cleanupFns.push(
+    await onStreamPhase2Summary((summary) => {
+      // Add a Phase 2 summary block showing what was stored/rejected
+      const summaryText = [
+        `**Phase 2 Complete**`,
+        `- Tokens stored: ${summary.tokens_accepted}`,
+        `- Relationships stored: ${summary.relationships_accepted}`,
+        ...(summary.tokens_rejected.length > 0
+          ? [`- Tokens rejected: ${summary.tokens_rejected.join(', ')}`]
+          : []),
+        ...(summary.relationships_rejected.length > 0
+          ? [`- Relationships rejected: ${summary.relationships_rejected.join(', ')}`]
+          : []),
+      ].join('\n')
+
+      set((s: { streamingBlocks: Block[] }) => ({
+        streamingBlocks: [
+          ...s.streamingBlocks,
+          {
+            type: 'text',
+            content: summaryText,
+          } as Block,
+        ],
+      }))
     }),
   )
 

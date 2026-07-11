@@ -65,6 +65,7 @@
     "@wdio/types": "^9.29.0",
     "edgedriver": "^6.3.0",
     "jsdom": "^29.1.1",
+    "msedgedriver": "^91.0.0",
     "oxlint": "^1.69.0",
     "typescript": "~6.0.2",
     "vite": "^8.1.0",

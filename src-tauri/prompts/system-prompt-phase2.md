@@ -37,15 +37,19 @@ token_id | referential | description | range
 
 The range format is:
 
-SourceToken:bookmark[:offset]→SourceToken:bookmark[:offset]
+[namespace:]bookmark[:offset]→[namespace:]bookmark[:offset]
 
-where offset is default to 0 when omitted.
+A bookmark is a §^name§^ marker you see in the text. `namespace` identifies the storage (e.g. USR_T1_001 for a user input chunk). When the bookmark is in the current turn's input/response, namespace can be omitted — just bookmark. Offset (default 0) is a character offset from the bookmark position.
 
-Examples:
+Examples (current turn — no namespace needed):
 
 REF_Scene | referential | The combat scene | chunk_0→chunk_1
 
-REF_Intro | referential | First paragraph | RESP_T2_001:start:10→RESP_T2_001:end
+REF_Intro | referential | First paragraph | chunk_0:10→chunk_0
+
+Example (explicit namespace):
+
+REF_Scene | referential | The combat scene | USR_T1_001:chunk_0→USR_T1_001:chunk_1
 
 When Phase 1 already created a token via §^TokenID ... §^ span, you do not
 need to redefine it — it already exists. Only create REF_* tokens for text

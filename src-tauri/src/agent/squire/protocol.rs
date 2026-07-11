@@ -7,6 +7,7 @@
 use super::types::{ComplianceFailure, SquireResponse};
 use crate::agent::squire::SquireStore;
 use squire_store::{NewTokenSpec, TokenRange};
+use squire_store::SessionId;
 
 /// The character used to separate start and end positions in a range spec.
 const RANGE_ARROW: char = '→';
@@ -354,7 +355,7 @@ pub fn validate_squire_response(
 }
 
 /// Resolve a referential token's `ranges` into the concatenated text.
-/// Loads each referenced chunk token's `full_desc`, finds the bookmark
+/// Loads each referenced namespace's `full_desc`, finds the bookmark
 /// position within it (by scanning for `§^name§^` in the stored text),
 /// applies offset and length, and concatenates the slices.
 pub async fn resolve_ranges(
@@ -363,7 +364,7 @@ pub async fn resolve_ranges(
 ) -> String {
     let mut result = String::new();
     for range in ranges {
-        let detail = store.token_detail(&range.token).await;
+        let detail = store.token_detail(&range.namespace).await;
         let Some(text) = detail.and_then(|d| d.full_desc) else {
             continue;
         };
@@ -390,10 +391,14 @@ pub async fn resolve_ranges(
 
 // ─────────────────────────── Range spec parsing (bookend positions) ───────────
 
-/// A single position in a range spec: `token:bookmark[:offset]`.
+/// A single position in a range spec: `[namespace:]bookmark[:offset]`.
+/// `namespace` identifies the storage (e.g. USR_T1_001 for a user input chunk,
+/// a file path, or any scoped memory). Empty means current-turn context.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RangePosition {
-    pub token: String,
+    /// Storage namespace (e.g. USR_T1_001). Empty = current turn (auto-discovered).
+    pub namespace: String,
+    /// Bookmark name within the token's text.
     pub bookmark: String,
     /// Character offset from the bookmark position (default 0).
     pub offset: usize,
@@ -407,20 +412,57 @@ pub(crate) struct RangeSpec {
     pub end: RangePosition,
 }
 
-/// Parse a single position string `token:bookmark[:offset]`.
+/// Parse a single position string.
+///
+/// Accepts two formats:
+///   `bookmark[:offset]`                — bare bookmark (current-turn context)
+///   `namespace:bookmark[:offset]`      — explicit namespace + bookmark
+///
+/// Examples: `chunk_0`, `chunk_0:10`, `USR_T1_001:chunk_0:10`
 fn parse_range_position(s: &str) -> Option<RangePosition> {
     let s = s.trim();
-    let mut parts = s.splitn(3, ':');
-    let token = parts.next()?.to_string();
-    let bookmark = parts.next()?.to_string();
-    if token.is_empty() || bookmark.is_empty() {
+    if s.is_empty() {
         return None;
     }
-    let offset: usize = parts.next().and_then(|o| o.parse().ok()).unwrap_or(0);
-    Some(RangePosition { token, bookmark, offset })
+
+    // If the second colon-separated piece is a number, the format is
+    // bookmark:offset (NOT namespace:bookmark).
+    let colon_count = s.chars().filter(|&c| c == ':').count();
+    let mut parts = s.splitn(3, ':');
+
+    match colon_count {
+        0 => {
+            // bare bookmark: "chunk_0"
+            let bookmark = parts.next()?.to_string();
+            if bookmark.is_empty() { return None; }
+            Some(RangePosition { namespace: String::new(), bookmark, offset: 0 })
+        }
+        1 => {
+            // Could be "bookmark:10" (bookmark+offset) or "namespace:bookmark"
+            let first = parts.next()?.to_string();
+            let second = parts.next()?.to_string();
+            if first.is_empty() || second.is_empty() { return None; }
+
+            // If second parses as a number, it's an offset — treat first as bookmark
+            if let Ok(offset) = second.parse::<usize>() {
+                Some(RangePosition { namespace: String::new(), bookmark: first, offset })
+            } else {
+                // Otherwise it's namespace:bookmark
+                Some(RangePosition { namespace: first, bookmark: second, offset: 0 })
+            }
+        }
+        _ => {
+            // namespace:bookmark:offset — 3 parts
+            let namespace = parts.next()?.to_string();
+            let bookmark = parts.next()?.to_string();
+            let offset: usize = parts.next().and_then(|o| o.parse().ok()).unwrap_or(0);
+            if namespace.is_empty() || bookmark.is_empty() { return None; }
+            Some(RangePosition { namespace, bookmark, offset })
+        }
+    }
 }
 
-/// Parse a `→`-delimited range spec: `token:bookmark[:offset]→token:bookmark[:offset]`.
+/// Parse a `→`-delimited range spec: `namespace:bookmark[:offset]→namespace:bookmark[:offset]`.
 /// Returns `None` if the string doesn't contain `→` or positions are invalid.
 pub(crate) fn parse_range_spec(s: &str) -> Option<RangeSpec> {
     let s = s.trim();
@@ -442,23 +484,42 @@ pub(crate) fn is_range_spec(s: &str) -> bool {
 /// Resolve a `RangeSpec` into one or more `TokenRange` entries by loading
 /// source tokens' `full_desc` and computing byte-level offset+length.
 ///
-/// Currently handles the single-token case (both positions in same token).
-/// For multi-token spans, returns an error string.
+/// When the range position has no token ID (empty string), searches
+/// all chunk tokens in the session for the bookmark name. This supports
+/// the shorthand format `chunk_0→chunk_1` where the current-turn token
+/// is implicit.
+///
+/// For cross-token ranges (start and end in different chunk tokens), returns an error.
 pub(crate) async fn resolve_range_spec(
     spec: &RangeSpec,
     store: &dyn SquireStore,
+    session_id: SessionId,
 ) -> Result<Vec<TokenRange>, String> {
-    if spec.start.token != spec.end.token {
+    let start_has_ns = !spec.start.namespace.is_empty();
+    let end_has_ns = !spec.end.namespace.is_empty();
+
+    // If both have explicit namespaces, they must match
+    if start_has_ns && end_has_ns && spec.start.namespace != spec.end.namespace {
         return Err(format!(
-            "multi-token ranges not yet supported: {}→{}",
-            spec.start.token, spec.end.token
+            "cross-namespace ranges not yet supported: {}→{}",
+            spec.start.namespace, spec.end.namespace
         ));
     }
 
-    let detail = store.token_detail(&spec.start.token).await;
+    // Resolve the source namespace — if empty, search for the bookmark
+    let source_ns = if start_has_ns {
+        spec.start.namespace.clone()
+    } else if end_has_ns {
+        spec.end.namespace.clone()
+    } else {
+        // Both empty — search all session tokens for the start bookmark
+        find_token_with_bookmark(&spec.start.bookmark, store, session_id).await?
+    };
+
+    let detail = store.token_detail(&source_ns).await;
     let text = detail
         .and_then(|d| d.full_desc)
-        .ok_or_else(|| format!("source token {} not found or has no full_desc", spec.start.token))?;
+        .ok_or_else(|| format!("namespace {} not found or has no full_desc", source_ns))?;
 
     // Find start bookmark position
     let start_tag = format!("§^{}§^", spec.start.bookmark.trim_start_matches("§^"));
@@ -466,8 +527,8 @@ pub(crate) async fn resolve_range_spec(
         Some(pos) => pos + start_tag.len(),
         None => {
             return Err(format!(
-                "bookmark {} not found in token {}",
-                spec.start.bookmark, spec.start.token
+                "bookmark {} not found in namespace {}",
+                spec.start.bookmark, source_ns
             ));
         }
     };
@@ -478,8 +539,8 @@ pub(crate) async fn resolve_range_spec(
         Some(pos) => pos + end_tag.len(),
         None => {
             return Err(format!(
-                "bookmark {} not found in token {}",
-                spec.end.bookmark, spec.start.token
+                "bookmark {} not found in namespace {}",
+                spec.end.bookmark, source_ns
             ));
         }
     };
@@ -497,16 +558,43 @@ pub(crate) async fn resolve_range_spec(
     let length = range_end - range_start;
 
     Ok(vec![TokenRange {
-        token: spec.start.token.clone(),
+        namespace: source_ns,
         bookmark: spec.start.bookmark.clone(),
         offset: spec.start.offset,
         length: Some(length),
     }])
 }
 
+/// Search all namespaces in the given session (and global) for one whose
+/// `full_desc` contains the given bookmark marker. Returns the namespace ID.
+async fn find_token_with_bookmark(
+    bookmark_name: &str,
+    store: &dyn SquireStore,
+    session_id: SessionId,
+) -> Result<String, String> {
+    let tag = format!("§^{}§^", bookmark_name.trim_start_matches("§^"));
+    let mut candidates = store.list_token_ids_by_session(session_id).await;
+    // Also search global tokens
+    let global = store.list_token_ids_by_session(SessionId::nil()).await;
+    candidates.extend(global);
+    candidates.sort();
+    candidates.dedup();
+
+    for tid in &candidates {
+        if let Some(detail) = store.token_detail(tid).await {
+            if let Some(ref desc) = detail.full_desc {
+                if desc.contains(&tag) {
+                    return Ok(tid.clone());
+                }
+            }
+        }
+    }
+    Err(format!("bookmark '{}' not found in any namespace in this session", bookmark_name))
+}
+
 /// Scan all new_tokens in a parsed response. For any token whose full_desc
-/// is a range spec (`token:bookmark[:offset]→token:bookmark[:offset]`),
-/// resolve it by loading source tokens, computing offset+length, and
+/// is a range spec (`namespace:bookmark[:offset]→namespace:bookmark[:offset]`),
+/// resolve it by loading source namespaces, computing offset+length, and
 /// populating `ranges`. The full_desc is cleared after successful resolution
 /// (the content will be reconstructed from ranges at display time).
 ///
@@ -514,6 +602,7 @@ pub(crate) async fn resolve_range_spec(
 pub async fn resolve_all_range_specs(
     tokens: &mut [NewTokenSpec],
     store: &dyn SquireStore,
+    session_id: SessionId,
 ) -> Result<(), String> {
     for token in tokens.iter_mut() {
         let Some(ref desc) = token.full_desc else {
@@ -525,7 +614,7 @@ pub async fn resolve_all_range_specs(
         let spec = parse_range_spec(desc).ok_or_else(|| {
             format!("invalid range spec in token {}: {}", token.id, desc)
         })?;
-        let ranges = resolve_range_spec(&spec, store).await?;
+        let ranges = resolve_range_spec(&spec, store, session_id).await?;
         token.ranges = ranges;
         token.full_desc = None; // content will be resolved from ranges at display time
     }
@@ -547,7 +636,7 @@ mod tests {
     #[test]
     fn test_parse_range_position_token_only() {
         let pos = parse_range_position("USR_T1_005:chunk_0").unwrap();
-        assert_eq!(pos.token, "USR_T1_005");
+        assert_eq!(pos.namespace, "USR_T1_005");
         assert_eq!(pos.bookmark, "chunk_0");
         assert_eq!(pos.offset, 0);
     }
@@ -555,13 +644,13 @@ mod tests {
     #[test]
     fn test_parse_range_position_with_offset() {
         let pos = parse_range_position("USR_T1_005:chunk_0:20").unwrap();
-        assert_eq!(pos.token, "USR_T1_005");
+        assert_eq!(pos.namespace, "USR_T1_005");
         assert_eq!(pos.bookmark, "chunk_0");
         assert_eq!(pos.offset, 20);
     }
 
     #[test]
-    fn test_parse_range_position_empty_token() {
+    fn test_parse_range_position_empty_namespace() {
         assert!(parse_range_position(":chunk_0").is_none());
     }
 
@@ -575,10 +664,10 @@ mod tests {
     #[test]
     fn test_parse_range_spec_simple() {
         let spec = parse_range_spec("USR_T1_005:chunk_0→USR_T1_005:chunk_1").unwrap();
-        assert_eq!(spec.start.token, "USR_T1_005");
+        assert_eq!(spec.start.namespace, "USR_T1_005");
         assert_eq!(spec.start.bookmark, "chunk_0");
         assert_eq!(spec.start.offset, 0);
-        assert_eq!(spec.end.token, "USR_T1_005");
+        assert_eq!(spec.end.namespace, "USR_T1_005");
         assert_eq!(spec.end.bookmark, "chunk_1");
         assert_eq!(spec.end.offset, 0);
     }
@@ -587,7 +676,9 @@ mod tests {
     fn test_parse_range_spec_with_offsets() {
         let spec =
             parse_range_spec("USR_T1_005:chunk_0:20→USR_T1_005:chunk_1:3").unwrap();
+        assert_eq!(spec.start.namespace, "USR_T1_005");
         assert_eq!(spec.start.offset, 20);
+        assert_eq!(spec.end.namespace, "USR_T1_005");
         assert_eq!(spec.end.offset, 3);
     }
 
@@ -635,10 +726,10 @@ mod tests {
         let store = setup_store_with_chunks().await;
         // Use <BMK0> and <BMK1> as bookmark names (matching the stored text above)
         let spec = parse_range_spec("USR_T1_005:<BMK0>→USR_T1_005:<BMK1>").unwrap();
-        let ranges = resolve_range_spec(&spec, &store).await.unwrap();
+        let ranges = resolve_range_spec(&spec, &store, SessionId::nil()).await.unwrap();
         assert_eq!(ranges.len(), 1);
         let r = &ranges[0];
-        assert_eq!(r.token, "USR_T1_005");
+        assert_eq!(r.namespace, "USR_T1_005");
         assert_eq!(r.bookmark, "<BMK0>");
         assert_eq!(r.offset, 0);
         // "Some leading text.§^<BMK0>§^" = 31 bytes
@@ -652,7 +743,7 @@ mod tests {
         // From <BMK0>+6 to <BMK1> → skip "Hello " (6 chars), start at "World"
         let spec =
             parse_range_spec("USR_T1_005:<BMK0>:6→USR_T1_005:<BMK1>").unwrap();
-        let ranges = resolve_range_spec(&spec, &store).await.unwrap();
+        let ranges = resolve_range_spec(&spec, &store, SessionId::nil()).await.unwrap();
         assert_eq!(ranges.len(), 1);
         let r = &ranges[0];
         assert_eq!(r.offset, 6);
@@ -665,9 +756,9 @@ mod tests {
         let store = setup_store_with_chunks().await;
         let spec =
             parse_range_spec("USR_T1_005:<BMK0>→OTHER_TOKEN:<BMK1>").unwrap();
-        let result = resolve_range_spec(&spec, &store).await;
+        let result = resolve_range_spec(&spec, &store, SessionId::nil()).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("multi-token"));
+        assert!(result.unwrap_err().contains("cross-namespace"));
     }
 
     #[tokio::test]
@@ -692,14 +783,14 @@ mod tests {
             },
         ];
 
-        resolve_all_range_specs(&mut tokens, &store).await.unwrap();
+        resolve_all_range_specs(&mut tokens, &store, SessionId::nil()).await.unwrap();
 
         // REF_Scene should have ranges resolved and full_desc cleared
         let ref_token = &tokens[0];
         assert!(!ref_token.ranges.is_empty(), "ranges should be populated");
         assert_eq!(ref_token.full_desc, None, "full_desc should be cleared");
         let range = &ref_token.ranges[0];
-        assert_eq!(range.token, "USR_T1_005");
+        assert_eq!(range.namespace, "USR_T1_005");
         assert_eq!(range.bookmark, "<BMK0>");
         assert_eq!(range.length, Some(39));
 

@@ -111,6 +111,10 @@ pub struct ProviderConfig {
     #[serde(default)]
     pub api_key: String,
     pub model: String,
+    /// Optional model override for Phase 2 (token/relationship generation).
+    /// If empty, Phase 2 uses the same model as Phase 1.
+    #[serde(default)]
+    pub phase2_model: String,
     #[serde(default)]
     pub models: Vec<String>,
     #[serde(default)]

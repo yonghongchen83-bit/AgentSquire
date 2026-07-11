@@ -1,5 +1,5 @@
 use provider_anthropic::AnthropicProvider;
-use provider_core::LlmProvider;
+use provider_core::{LlmProvider, ModelInstance, ModelOptions};
 use provider_openai::OpenAIProvider;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -44,6 +44,7 @@ pub struct ProviderEntry {
     pub endpoint: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct ProviderRegistry {
     entries: Vec<ProviderEntry>,
     default_index: Option<usize>,
@@ -144,6 +145,64 @@ impl ProviderRegistry {
                 default_model: e.default_model.clone(),
             })
             .collect()
+    }
+
+    /// Resolve a `ModelInstance` from a provider name and model ID with
+    /// optional overrides. Looks up the provider entry, merges its stored
+    /// config (endpoint, api_key) with the given overrides, and returns a
+    /// complete `ModelInstance`.
+    pub fn resolve_model_instance(
+        &self,
+        provider_name: &str,
+        model: &str,
+        options: Option<ModelOptions>,
+    ) -> Result<ModelInstance, String> {
+        let entry = self
+            .get(provider_name)
+            .ok_or_else(|| format!("Provider '{}' not found in registry", provider_name))?;
+        Ok(ModelInstance {
+            provider_name: provider_name.to_string(),
+            model: model.to_string(),
+            endpoint: entry.endpoint.clone(),
+            api_key: if entry.api_key.is_empty() {
+                None
+            } else {
+                Some(entry.api_key.clone())
+            },
+            options: options.unwrap_or_default(),
+        })
+    }
+
+    /// Resolve a provider `Arc` for a given `ModelInstance`. Returns the
+    /// provider entry's `Arc<dyn LlmProvider>` and the resolved model string.
+    ///
+    /// This is the primary way the engine should obtain a provider — it keeps
+    /// the engine loop decoupled from registry internals.
+    pub fn resolve_provider_for_instance(
+        &self,
+        instance: &ModelInstance,
+    ) -> Result<(Arc<dyn LlmProvider>, String), String> {
+        let entry = self
+            .get(&instance.provider_name)
+            .ok_or_else(|| format!("Provider '{}' not found", instance.provider_name))?;
+        let model = if instance.model.is_empty() {
+            entry.default_model.clone()
+        } else {
+            instance.model.clone()
+        };
+        Ok((entry.provider.clone(), model))
+    }
+
+    /// Convenience: resolve both provider+model and produce the effective
+    /// model string (honouring the instance's model field, falling back to
+    /// the entry's default).
+    pub fn resolve_model(&self, instance: &ModelInstance) -> String {
+        if !instance.model.is_empty() {
+            return instance.model.clone();
+        }
+        self.get(&instance.provider_name)
+            .map(|e| e.default_model.clone())
+            .unwrap_or_default()
     }
 
     pub fn rebuild_from_config(&mut self, config: &ProviderRegistryConfig) {

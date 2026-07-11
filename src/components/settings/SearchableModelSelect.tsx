@@ -7,6 +7,8 @@ interface SearchableModelSelectProps {
   onSelect: (modelId: string) => void
   onRefresh?: () => void
   fetching?: boolean
+  /** Optional controlled value to display in the input (e.g. phase2Model). */
+  value?: string
 }
 
 export function SearchableModelSelect({
@@ -15,6 +17,7 @@ export function SearchableModelSelect({
   onSelect,
   onRefresh,
   fetching,
+  value,
 }: SearchableModelSelectProps) {
   const [query, setQuery] = useState('')
   const [isOpen, setIsOpen] = useState(false)
@@ -69,6 +72,12 @@ export function SearchableModelSelect({
     inputRef.current?.blur()
   }
 
+  // When the dropdown is closed and the user hasn't typed anything,
+  // show the externally controlled value (e.g. phase2Model) as a
+  // non-editable display. Once the user starts typing, the local
+  // query takes over.
+  const inputValue = (!isOpen && !query && value) ? value : query
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!isOpen) {
       if (e.key === 'ArrowDown' || e.key === 'Enter') {
@@ -105,7 +114,7 @@ export function SearchableModelSelect({
       <div className="flex gap-2">
         <Input
           ref={inputRef}
-          value={query}
+          value={inputValue}
           onChange={(e) => {
             setQuery(e.target.value)
             if (!isOpen) setIsOpen(true)

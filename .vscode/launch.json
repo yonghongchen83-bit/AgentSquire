@@ -10,6 +10,16 @@
       "cwd": "${workspaceFolder}",
       "preLaunchTask": "pre-tauri-debug",
       "sourceLanguages": ["rust"]
+    },
+    {
+      "name": "Tauri: Quick Launch (no build)",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/src-tauri/target/debug/squirecli.exe",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "start-vite",
+      "sourceLanguages": ["rust"]
     }
   ]
 }

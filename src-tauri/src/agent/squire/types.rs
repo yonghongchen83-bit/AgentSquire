@@ -47,7 +47,15 @@ pub fn parse_bookmark_protocol(text: &str) -> SquireResponse {
         let trimmed_line = line.trim();
         let mut is_header = false;
         for key in SECTION_KEYS {
-            if trimmed_line == format!("§#{}", key) {
+            // Match "§#new_tokens", "§#new_tokens:", "§#new_tokens:" (colon),
+            // or "#new_tokens" / "#new_tokens:" (missing § — common model mistake)
+            let patterns = [
+                format!("§#{}", key),
+                format!("§#{}:", key),
+                format!("#{}", key),
+                format!("#{}:", key),
+            ];
+            if patterns.iter().any(|p| trimmed_line == *p || trimmed_line.starts_with(p)) {
                 current_section = Some(key);
                 is_header = true;
                 break;

@@ -1,0 +1,14 @@
+{
+  "nodePath": "root/ServerRefector/ModelInstance",
+  "items": [
+    { "id": "MI-1", "title": "Define ModelInstance + ModelOptions in provider-core", "status": "not-started", "priority": "high" },
+    { "id": "MI-2", "title": "Update LlmProvider::chat() to accept &ModelInstance", "status": "not-started", "priority": "high" },
+    { "id": "MI-3", "title": "Update OpenAIProvider to consume ModelInstance", "status": "not-started", "priority": "high" },
+    { "id": "MI-4", "title": "Update AnthropicProvider to consume ModelInstance", "status": "not-started", "priority": "high" },
+    { "id": "MI-5", "title": "Add resolve_model_instance() to ProviderRegistry", "status": "not-started", "priority": "high" },
+    { "id": "MI-6", "title": "Update streaming_cmd to build ModelInstance from IPC args", "status": "not-started", "priority": "high" },
+    { "id": "MI-7", "title": "Update frontend IPC to send structured model selection", "status": "not-started", "priority": "medium" },
+    { "id": "MI-8", "title": "Write ModelInstance serialization unit tests", "status": "not-started", "priority": "medium" }
+  ],
+  "children": []
+}

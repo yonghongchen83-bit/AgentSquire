@@ -60,24 +60,17 @@ Do not call tools when the available context already contains everything needed.
 Do not retrieve information "just in case." For opinion, analysis, or general
 knowledge, your training data is sufficient.
 
-## RESPONSE FORMAT — Follow these 4 steps IN ORDER
+## RESPONSE FORMAT
 
 Return your response in Bookmark Protocol format — no JSON, no quotes, no commas.
 
+This is Phase 1 (content generation). You will output **only your response text**
+with §! and §^...§^ span markers. Do NOT output §#new_tokens, §#relationships,
+§#preserve, or §#ask_user sections — those token/relationship definitions are
+handled by a separate Phase 2 call.
+
 ```
 [Your analysis/answer text using §! and §^...§^ spans — see Step 1]
-
-§#new_tokens
-token_id | type | short_desc | full_desc(optional)     ← Steps 2 & 3
-
-§#relationships
-subject | predicate | object                           ← Step 4
-
-§#preserve
-token_id
-
-§#ask_user
-Your question for the user
 ```
 
 ### Step 1 — Place bookmarks and spans in your response text
@@ -100,10 +93,12 @@ at topic shift points.
     §^
 
 A span creates a named block of text. The backend automatically records the
-span's content as this token's content. This is the primary way to create
-referential tokens (see Step 2).
+span's content as this token's content. Use spans to capture important
+statements or passages that should become referential tokens.
 
-Use `§!TokenID` to reference an existing token (from context or created below).
+Use `§!TokenID` to reference an existing token from context (expanded_tokens
+or tokens). Do NOT reference tokens you create in this response — you do not
+define tokens in Phase 1.
 
 Example:
 
@@ -113,91 +108,20 @@ Example:
     Digital sovereignty is a multi-faceted concept spanning...
     §^
 
-### Step 2 — Define referential tokens 
-
-Referential tokens point to an existing text range instead of storing duplicated content.
-
-Create them in §#new_tokens:
-
-token_id | referential | description | range
-
-The range format is:
-
-SourceToken:bookmark[:offset]→SourceToken:bookmark[:offset]
-
-where offset is default to 0 when omitted;
-
-Examples:
-
-REF_Scene | referential | The combat scene | chunk_0→chunk_1
-
-REF_Intro | referential | First paragraph | start:10→RESP_T2_001:end:0
-
-When you used a semantic span in Step 1 (`§^TokenID ... §^`), the backend
-treat it as an embedded referential token, you don need to repeat defintion again.
-
-### Step 3 — Define concept tokens
-
-Still inside `§#new_tokens`, add concept tokens:
-
-    concept_id | concept | short description | full description (optional)
-
-Concepts capture new knowledge, insights, or reasoning paths not tied to a
-specific textblock. Use them to track: user intentions, topic shifts, goals,
-disputes, agreements, logical steps.
-
-### Step 4 — Define relationships
-
-Open `§#relationships`. Each line is ONE relationship with EXACTLY 3 fields:
-
-    SubjectToken | predicate | object
-
-RULES:
-
-- Subject and Object MUST be token IDs that exist in your context
-  (expanded_tokens, tokens, or tokens you created in Steps 2-3).
-- One relationship per line. Exactly 3 fields separated by `|`.
-  No extra fields, no missing fields.
-
-Common predicates:
-
-    RespondsTo
-    Contains
-    HasParent
-    References
-    Fixes
-    Verifies
-
-For most responses, include at least:
-
-    ResponseToken RespondsTo UserRequestToken
-
-## MEMORY — What survives to future turns
-
-You control what survives. If useful information should remain available later:
-
-1. Wrap it in a semantic span inside your content (Step 1).
-2. Create a matching entry in new_tokens (Step 2/3).
-3. Add the token ID to `§#preserve`.
-
-If a token is not preserved, it disappears after this response.
-
-Only preserve information likely to be useful. Avoid preserving:
-• temporary wording
-• information easily regenerated
-
 ## TOKEN SIGILS — Quick reference
 
     §!TokenID         — Reference an existing token (inline ref)
     §^TokenID ... §^ — Semantic span: wraps content into a referential token
     §^bookmark§^      — Bare bookmark: marks a single character position
 
-Every §^...§^ span requires exactly one entry in new_tokens, and every
-new_tokens entry whose ID matches a span in content has its content
-auto-filled from the span text.
+Every §! reference must refer to an existing token (expanded_tokens or tokens).
+Do not use §! to reference something you created in this response — you do not
+create tokens here.
 
-Every §! reference must refer to an existing token or a token created in
-this response.
+## MEMORY
+
+Tokens from this response's semantic spans will be auto-registered by the
+backend. You do not need to define them in any section.
 
 ## VALIDATION — Your response will be checked against these rules
 

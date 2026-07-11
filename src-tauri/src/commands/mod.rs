@@ -8,6 +8,7 @@ use crate::agent::{PendingApprovals, PendingAskUserQuestions};
 use crate::fs::ops::FileEntry;
 use crate::fs::watcher::FileWatcher;
 use crate::llm::registry::{from_app_config_with_wire_log, ProviderInfo, ProviderRegistry};
+use crate::mcp::DiscoveredTool;
 use crate::search::grep::SearchMatch;
 use crate::shell::exec::CommandResult;
 use crate::state::config::{self, AppConfig, McpServerConfig};
@@ -48,6 +49,17 @@ pub struct AppState {
     /// binding/unbinding a workspace — the frontend session panel then refreshes
     /// to show only sessions scoped to that workspace.
     pub squire_store: RwLock<Arc<dyn SquireStore>>,
+    /// Cache of discovered MCP tools per server ID. Populated on first
+    /// discovery and reused across subsequent requests — MCP servers are
+    /// long-lived processes whose tool list rarely changes within a session.
+    /// Keyed by server ID so re-discovery is triggered automatically when
+    /// the server config changes (app restart).
+    /// Wrapped in Arc so it can be shared across tokio::spawn boundaries
+    /// while allowing cache writes from within the spawned task.
+    pub mcp_tools_cache: Arc<RwLock<HashMap<String, Vec<DiscoveredTool>>>>,
+    /// Content hash of the last-ingested tool definitions. Used to skip
+    /// `ingest_tool_registry` when nothing changed between turns.
+    pub tool_registry_hash: Arc<RwLock<u64>>,
 }
 
 pub struct WatcherState {
@@ -288,6 +300,8 @@ pub async fn send_message(
     provider_name: Option<String>,
     model: Option<String>,
     thinking_level: Option<String>,
+    phase2_provider: Option<String>,
+    phase2_model: Option<String>,
 ) -> Result<(), String> {
     streaming_cmd::send_message_impl(
         app,
@@ -299,6 +313,8 @@ pub async fn send_message(
         provider_name,
         model,
         thinking_level,
+        phase2_provider,
+        phase2_model,
     )
     .await
 }

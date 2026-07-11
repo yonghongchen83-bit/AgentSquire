@@ -77,11 +77,10 @@ export function SettingsDialog() {
         if (p.category) initial[i] = p.category
       })
       setSelectedProviderId(initial)
-      const initiallyCollapsed: Record<number, boolean> = {}
-      providers.forEach((_, i) => {
-        initiallyCollapsed[i] = true
-      })
-      setCollapsedProviders(initiallyCollapsed)
+      // Collapse all providers by default
+      const collapsed: Record<number, boolean> = {}
+      providers.forEach((_, i) => { collapsed[i] = true })
+      setCollapsedProviders(collapsed)
     }
   }, [open, fetchedConfig, setConfig])
 

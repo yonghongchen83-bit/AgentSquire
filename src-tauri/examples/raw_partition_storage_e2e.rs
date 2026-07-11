@@ -33,7 +33,7 @@ use squirecli_lib::agent::context_adapter::{ContextManagerAdapter, TurnOutcome};
 use squirecli_lib::agent::squire::{SquireContextAdapter, SquireStore};
 use squirecli_lib::state::db::Database;
 use squirecli_lib::storage::conversation_store::{ConversationStore, ContextMode, NewSession};
-use squirecli_lib::storage::squire_lancedb::LanceDbSquireStore;
+use squire_store::LanceDbSquireStore;
 use std::sync::Arc;
 
 fn main() {

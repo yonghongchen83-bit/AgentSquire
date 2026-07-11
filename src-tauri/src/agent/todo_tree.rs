@@ -626,7 +626,7 @@ impl TodoTreeTool {
             .upsert_token(
                 squire_store::NewTokenSpec {
                     id: id.clone(),
-                    token_type: "todo".to_string(),
+                    token_type: "concept".to_string(),
                     short_desc: title_raw.to_string(),
                     full_desc: None,
                     endpoint: None,

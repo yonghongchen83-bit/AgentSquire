@@ -11,7 +11,8 @@ fn test_tool_registry_contains_all_tools() {
     let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
     assert!(names.contains(&"run_terminal"));
     assert!(names.contains(&"web_fetch"));
-    assert_eq!(defs.len(), 2);
+    assert!(names.contains(&"todo_tree"));
+    assert_eq!(defs.len(), 3);
 }
 
 #[test]

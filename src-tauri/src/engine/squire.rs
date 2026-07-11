@@ -20,8 +20,8 @@ use crate::agent::context_adapter::{
     ContextManagerAdapter, LegacyContextAdapter, TurnOutcome,
 };
 use crate::agent::squire::{
-    ingest_tool_registry, SquireContextAdapter, SquireExploreTool, SquireInvokeTool,
-    SquireTokenToDetailTool, ToolEndpoint,
+    ingest_tool_registry, SquireBatchTool, SquireContextAdapter, SquireExploreTool,
+    SquireInvokeTool, SquireRdfTool, SquireTokenToDetailTool, ToolEndpoint,
 };
 use crate::agent::{
     McpProxyTool, SubagentTool, ToolRegistry,
@@ -184,39 +184,22 @@ impl SquireEngineRun {
             .await
             .map_err(|e| e.to_string())?;
 
-        // ── Resolve provider + model from ModelInstance ──
+        // ── Resolve Phase 1 provider + model ──
         let (provider_arc, selected_model) = self
             .provider_registry
-            .resolve_provider_for_instance(&self.ctx.model_instance)
+            .resolve_provider_for_instance(&self.ctx.phase1_model_instance)
             .map_err(|e| e.to_string())?;
-        let selected_provider_name = self.ctx.model_instance.provider_name.clone();
+        let selected_provider_name = self.ctx.phase1_model_instance.provider_name.clone();
 
-        // Resolve Phase 2 provider
-        let (p2_provider_arc, p2_model_name) = match &self.ctx.phase2_model_instance {
-            Some(p2_instance) => {
-                match self.provider_registry.resolve_provider_for_instance(p2_instance) {
-                    Ok((p, m)) => (Some(p), Some(m)),
-                    Err(e) => {
-                        self.emit(EngineEvent::Output {
-                            source: "chat".to_string(),
-                            line: format!(
-                                "WARNING: Phase 2 provider '{}' not found: {}. Falling back to Phase 1.",
-                                p2_instance.provider_name, e
-                            ),
-                            timestamp: chrono::Utc::now().to_rfc3339(),
-                        });
-                        (None, None)
-                    }
-                }
-            }
-            None => (None, None),
-        };
+        // ── Resolve Phase 2 provider (independent instance, no fallback) ──
+        let phase2_provider_arc = self
+            .provider_registry
+            .resolve_provider_for_instance(&self.ctx.phase2_model_instance)
+            .map_err(|e| e.to_string())?;
+        let phase2_provider_arc = phase2_provider_arc.0;
 
-        let mut provider_arc = provider_arc;
-        let mut current_model = selected_model.clone();
-
-        let phase2_provider_arc = p2_provider_arc;
-        let phase2_model_name = p2_model_name;
+        let provider_arc = provider_arc;
+        let current_model = selected_model.clone();
 
         // ── Build tool registry ──
         self.emit_status("Preparing tools...");
@@ -362,13 +345,24 @@ impl SquireEngineRun {
 
         // ── Register Squire-specific tools ──
         if session.session.context_mode == ContextMode::Squire {
+            let batch_counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let batch_cap = crate::agent::squire::tools::DEFAULT_BATCH_CAP;
             tool_registry.register(Box::new(SquireExploreTool {
                 store: self.squire_store.clone(),
                 tool_defs: base_tool_defs.clone(),
                 session_id: session.session.id,
+                batch_counter: batch_counter.clone(),
+                batch_cap,
             }));
             tool_registry.register(Box::new(SquireTokenToDetailTool {
                 store: self.squire_store.clone(),
+                batch_counter: batch_counter.clone(),
+                batch_cap,
+            }));
+            tool_registry.register(Box::new(SquireRdfTool {
+                store: self.squire_store.clone(),
+                batch_counter: batch_counter.clone(),
+                batch_cap,
             }));
             tool_registry.register(Box::new(crate::agent::TodoTreeTool::for_store(
                 self.squire_store.clone(),
@@ -379,6 +373,13 @@ impl SquireEngineRun {
                 session.session.id,
             )));
             tool_registry.register(Box::new(SquireInvokeTool));
+            tool_registry.register(Box::new(SquireBatchTool {
+                store: self.squire_store.clone(),
+                tool_defs: base_tool_defs.clone(),
+                session_id: session.session.id,
+                batch_counter: batch_counter.clone(),
+                batch_cap,
+            }));
         }
 
         let tool_registry = Arc::new(tool_registry);
@@ -427,8 +428,8 @@ impl SquireEngineRun {
                 temperature: None,
                 max_tokens: None,
             };
-            // Apply ModelInstance options onto the request
-            self.ctx.model_instance.apply_to_request(&mut request);
+            // Apply Phase 1 ModelInstance options onto the request
+            self.ctx.phase1_model_instance.apply_to_request(&mut request);
 
             if self.verbose_logging {
                 let request_pretty =
@@ -778,169 +779,136 @@ impl SquireEngineRun {
                             phase1_content,
                             user_request,
                         }) => {
-                            // Emit Phase 1 response immediately
+                            // Emit Phase 1 response immediately (user sees it).
                             for chunk in Self::split_into_chunks(&phase1_content, 256) {
                                 self.emit(EngineEvent::Chunk(chunk));
                             }
                             self.emit(EngineEvent::Done);
 
-                            // Run Phase 2
-                            if let Some(ref p2_provider) = phase2_provider_arc {
-                                provider_arc = p2_provider.clone();
-                            }
-                            if let Some(ref p2_model) = phase2_model_name {
-                                current_model = p2_model.clone();
-                            }
+                            // ── Formatter pass (Phase 4) ─────────────────
+                            // Fire-and-forget background task: formatter uses
+                            // JSON structured output, sees only current turn
+                            // data. Pure optimization — if it fails, nothing
+                            // breaks, tokens simply aren't created this turn.
+                            let squire_store = self.squire_store.clone();
+                            let p2_provider = phase2_provider_arc.clone();
+                            let sid = self.sid;
+                            let conv_store = self.store.clone();
+                            let emitter = self.event.clone();
+                            let verbose = self.verbose_logging;
+                            // Capture Phase 2 instance options now (needed inside
+                            // spawn because self is moved).
+                            let p2_instance = self.ctx.phase2_model_instance.clone();
 
-                            let p2_prompt =
-                                crate::agent::squire_prompts::get_prompt(
-                                    "system-prompt-phase2.md",
+                            tokio::spawn(async move {
+                                let p2_prompt = crate::agent::squire_prompts::get_prompt(
+                                    "system-prompt-formatter.md",
                                 );
-                            let p2_messages = vec![
-                                ChatMessage {
-                                    role: ChatRole::System,
-                                    content: p2_prompt,
-                                    tool_call_id: None,
-                                    tool_calls: None,
-                                    reasoning_content: None,
-                                },
-                                ChatMessage {
-                                    role: ChatRole::User,
-                                    content: format!(
-                                        "Original user request:\n{}\n\nAssistant Phase 1 response:\n{}",
-                                        user_request, phase1_content
-                                    ),
-                                    tool_call_id: None,
-                                    tool_calls: None,
-                                    reasoning_content: None,
-                                },
-                            ];
-                            adapter.set_phase2(user_request);
+                                let p2_messages = vec![
+                                    ChatMessage {
+                                        role: ChatRole::System,
+                                        content: p2_prompt,
+                                        tool_call_id: None,
+                                        tool_calls: None,
+                                        reasoning_content: None,
+                                    },
+                                    ChatMessage {
+                                        role: ChatRole::User,
+                                        content: format!(
+                                            "## Original user request\n\n{}\n\n## Assistant response\n\n{}",
+                                            user_request, phase1_content
+                                        ),
+                                        tool_call_id: None,
+                                        tool_calls: None,
+                                        reasoning_content: None,
+                                    },
+                                ];
 
-                            // Call provider with Phase 2 request
-                            let p2_request = ChatRequest {
-                                model: current_model.clone(),
-                                messages: p2_messages,
-                                tools: vec![],
-                                thinking_level: self.ctx.model_instance.options.thinking_level.clone(),
-                                temperature: None,
-                                max_tokens: None,
-                            };
+                                let mut p2_request = ChatRequest {
+                                    model: String::new(),
+                                    messages: p2_messages,
+                                    tools: vec![],
+                                    thinking_level: None,
+                                    temperature: None,
+                                    max_tokens: None,
+                                };
+                                // Apply the Phase 2 ModelInstance — sets model,
+                                // thinking_level, temperature, and max_tokens
+                                // from the independently-configured instance.
+                                p2_instance.apply_to_request(&mut p2_request);
 
-                            match tokio::time::timeout(
-                                Duration::from_secs(60),
-                                provider_arc.chat(p2_request),
-                            )
-                            .await
-                            {
-                                Ok(Ok(mut p2_stream)) => {
-                                    let mut p2_response = String::new();
-                                    let mut p2_thinking = String::new();
-                                    loop {
-                                        match tokio::time::timeout(
-                                            Duration::from_secs(30),
-                                            p2_stream.recv(),
-                                        )
-                                        .await
-                                        {
-                                            Ok(Some(StreamEvent::Chunk(text))) => {
-                                                p2_response.push_str(&text)
-                                            }
-                                            Ok(Some(StreamEvent::Thinking(text))) => {
-                                                p2_thinking.push_str(&text)
-                                            }
-                                            Ok(Some(StreamEvent::Done(_))) => break,
-                                            Ok(Some(StreamEvent::Error(e))) => {
-                                                if self.verbose_logging {
-                                                    self.emit(EngineEvent::Output {
-                                                        source: "chat".to_string(),
-                                                        line: format!(
-                                                            "[timing] Phase 2 LLM error: {}",
-                                                            e
-                                                        ),
-                                                        timestamp: chrono::Utc::now()
-                                                            .to_rfc3339(),
+                                let result = tokio::time::timeout(
+                                    Duration::from_secs(60),
+                                    p2_provider.chat(p2_request),
+                                ).await;
+
+                                let mut formatter_text = String::new();
+                                match result {
+                                    Ok(Ok(mut stream)) => {
+                                        loop {
+                                            match tokio::time::timeout(
+                                                Duration::from_secs(30),
+                                                stream.recv(),
+                                            ).await {
+                                                Ok(Some(StreamEvent::Chunk(t))) => formatter_text.push_str(&t),
+                                                Ok(Some(StreamEvent::Done(_))) => break,
+                                                Ok(None) => break,
+                                                Ok(Some(StreamEvent::Error(ref e))) if verbose => {
+                                                    let _ = emitter.emit(&EngineEvent::Output {
+                                                        source: "formatter".to_string(),
+                                                        line: format!("Formatter error: {}", e),
+                                                        timestamp: chrono::Utc::now().to_rfc3339(),
                                                     });
                                                 }
-                                                return Ok(());
-                                            }
-                                            Ok(Some(_)) => {}
-                                            Ok(None) => break,
-                                            Err(_) => {
-                                                if self.verbose_logging {
-                                                    self.emit(EngineEvent::Output {
-                                                        source: "chat".to_string(),
-                                                        line: "[timing] Phase 2 stream stalled for 30s, aborting"
-                                                            .to_string(),
-                                                        timestamp: chrono::Utc::now()
-                                                            .to_rfc3339(),
-                                                    });
-                                                }
-                                                return Ok(());
+                                                Err(_) | Ok(Some(StreamEvent::Error(_))) => break,
+                                                _ => {}
                                             }
                                         }
                                     }
-
-                                    let p2_thinking_opt =
-                                        if p2_thinking.is_empty() { None } else { Some(p2_thinking) };
-                                    match adapter
-                                        .finalize_turn(
-                                            self.sid,
-                                            p2_response,
-                                            p2_thinking_opt,
-                                            &mut messages,
-                                            self.store.as_ref(),
-                                        )
-                                        .await
-                                    {
-                                        Ok(TurnOutcome::Phase2Done {
-                                            tokens_accepted,
-                                            relationships_accepted,
-                                            ..
-                                        }) => {
-                                            let summary = serde_json::json!({
-                                                "tokens_accepted": tokens_accepted,
-                                                "relationships_accepted": relationships_accepted,
-                                                "tokens_rejected": Vec::<String>::new(),
-                                                "relationships_rejected": Vec::<String>::new(),
-                                            });
-                                            self.emit(EngineEvent::Phase2Summary(summary));
-                                        }
-                                        _ => {
-                                            if self.verbose_logging {
-                                                self.emit(EngineEvent::Output {
-                                                    source: "chat".to_string(),
-                                                    line: "[timing] Phase 2 finalize_turn did not complete"
-                                                        .to_string(),
-                                                    timestamp: chrono::Utc::now().to_rfc3339(),
-                                                });
-                                            }
-                                        }
-                                    }
-                                }
-                                Ok(Err(e)) => {
-                                    if self.verbose_logging {
-                                        self.emit(EngineEvent::Output {
-                                            source: "chat".to_string(),
-                                            line: format!(
-                                                "[timing] Phase 2 LLM chat failed: {}",
-                                                e
-                                            ),
+                                    Err(ref _timeout) if verbose => {
+                                        let _ = emitter.emit(&EngineEvent::Output {
+                                            source: "formatter".to_string(),
+                                            line: "Formatter timed out after 60s".to_string(),
                                             timestamp: chrono::Utc::now().to_rfc3339(),
                                         });
                                     }
+                                    _ => {}
                                 }
-                                Err(_) => {
-                                    if self.verbose_logging {
-                                        self.emit(EngineEvent::Output {
-                                            source: "chat".to_string(),
-                                            line: "[timing] Phase 2 timed out after 60s"
-                                                .to_string(),
+
+                                if formatter_text.is_empty() {
+                                    return;
+                                }
+
+                                let mut adapter = SquireContextAdapter::new(squire_store.clone());
+                                adapter.set_phase2(user_request.clone());
+                                match adapter.finalize_formatter_json(
+                                    sid,
+                                    &formatter_text,
+                                    conv_store.as_ref(),
+                                ).await {
+                                    Ok(TurnOutcome::Phase2Done {
+                                        tokens_accepted,
+                                        relationships_accepted,
+                                        ..
+                                    }) => {
+                                        let summary = serde_json::json!({
+                                            "tokens_accepted": tokens_accepted,
+                                            "relationships_accepted": relationships_accepted,
+                                            "tokens_rejected": Vec::<String>::new(),
+                                            "relationships_rejected": Vec::<String>::new(),
+                                        });
+                                        let _ = emitter.emit(&EngineEvent::Phase2Summary(summary));
+                                    }
+                                    Err(ref e) if verbose => {
+                                        let _ = emitter.emit(&EngineEvent::Output {
+                                            source: "formatter".to_string(),
+                                            line: format!("Formatter finalize failed: {}", e),
                                             timestamp: chrono::Utc::now().to_rfc3339(),
                                         });
                                     }
+                                    _ => {}
                                 }
-                            }
+                            });
 
                             return Ok(());
                         }

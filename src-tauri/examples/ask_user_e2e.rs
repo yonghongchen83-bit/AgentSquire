@@ -223,6 +223,14 @@ async fn main() {
                         });
                         continue;
                     }
+                    TurnOutcome::Phase2 { .. } => {
+                        println!("\n>>> TurnOutcome::Phase2 (two-phase protocol) — not exercised in ask_user e2e.");
+                        break;
+                    }
+                    TurnOutcome::Phase2Done { .. } => {
+                        println!("\n>>> TurnOutcome::Phase2Done — not exercised in ask_user e2e.");
+                        break;
+                    }
                 }
             }
             other => {

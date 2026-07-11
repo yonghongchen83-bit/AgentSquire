@@ -22,7 +22,7 @@ use serde::Deserialize;
 
 use notify::Watcher as _;
 
-use squire_store::SessionId;
+use squire_store::{predicates, Relationship, SessionId};
 use crate::agent::squire::{NewTokenSpec, SquireStore};
 
 // ── Data types ─────────────────────────────────────────────────────────
@@ -160,7 +160,7 @@ pub async fn ingest_one_workflow(store: &dyn SquireStore, wf: &WorkflowDef) {
         .upsert_token(
             NewTokenSpec {
                 id: wf.id.clone(),
-                token_type: "workflow".to_string(),
+                token_type: "source".to_string(),
                 short_desc: wf.short_desc.clone(),
                 full_desc: Some(wf.full_desc.clone()),
                 endpoint: None,
@@ -169,6 +169,14 @@ pub async fn ingest_one_workflow(store: &dyn SquireStore, wf: &WorkflowDef) {
             0,
             SessionId::nil(),
         )
+        .await;
+    // Role expressed via relationship, not hardcoded token_type
+    store
+        .insert_relationship(Relationship {
+            subject: wf.id.clone(),
+            predicate: predicates::IS_A_WORKFLOW.to_string(),
+            object: wf.id.clone(),
+        })
         .await;
 }
 

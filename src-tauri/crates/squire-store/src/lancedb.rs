@@ -579,11 +579,45 @@ impl SquireStore for LanceDbSquireStore {
             return Vec::new();
         };
 
+        // Build role index from relationships — when resource_type is a role
+        // name (tool/workflow/skill), check relationships since the token_type
+        // is now always "source" for role-bearing tokens (spec §2: roles are
+        // graph-assigned, not hardcoded types).
+        let role_token_ids: Option<std::collections::HashSet<String>> =
+            if matches!(resource_type, "tool" | "skill" | "workflow" | "tool_skill") {
+                async {
+                    let rt = self.relationships_table().await.ok()?;
+                    let rs = rt.query().execute().await.ok()?;
+                    let rb = rs.try_collect::<Vec<_>>().await.ok()?;
+                    let mut ids = std::collections::HashSet::new();
+                    for batch in &rb {
+                        let preds = batch.column_by_name("predicate")?;
+                        let subs = batch.column_by_name("subject")?;
+                        let preds = preds.as_string::<i32>();
+                        let subs = subs.as_string::<i32>();
+                        for i in 0..batch.num_rows() {
+                            let pred = preds.value(i);
+                            let sub = subs.value(i);
+                            match (resource_type, pred) {
+                                ("tool", p) if p == "IS_A_TOOL" => { ids.insert(sub.to_string()); }
+                                ("skill", p) if p == "IS_A_SKILL" => { ids.insert(sub.to_string()); }
+                                ("workflow", p) if p == "IS_A_WORKFLOW" => { ids.insert(sub.to_string()); }
+                                ("tool_skill", p) if p == "IS_A_TOOL" || p == "IS_A_SKILL" => { ids.insert(sub.to_string()); }
+                                _ => {}
+                            }
+                        }
+                    }
+                    Some(ids)
+                }.await
+            } else {
+                None
+            };
+
         let type_matches = |t: &str| {
             resource_type == "all"
                 || t == resource_type
                 || (resource_type == "memory"
-                    && (t == "concept" || t == "referential" || t == "system_referential"))
+                    && (t == "concept" || t == "referential" || t == "source"))
                 || (resource_type == "tool_skill" && t == "skill")
         };
 
@@ -668,7 +702,11 @@ impl SquireStore for LanceDbSquireStore {
                     continue;
                 }
 
-                if !type_matches(token_type) {
+                let by_type = type_matches(token_type);
+                let by_role = role_token_ids
+                    .as_ref()
+                    .map_or(false, |ids| ids.contains(token_id));
+                if !by_type && !by_role {
                     continue;
                 }
 

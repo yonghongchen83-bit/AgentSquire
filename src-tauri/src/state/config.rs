@@ -57,6 +57,17 @@ pub struct SquirePrefetchConfig {
     /// Set to 0.0 to disable filtering (include everything).
     #[serde(default = "default_prefetch_min_score")]
     pub min_score: f32,
+    /// Spec §4: character budget for the long list. Tokens whose
+    /// `full_desc` fits within the remaining budget are placed in the
+    /// long list (full content inlined).  Tokens exceeding the budget
+    /// are demoted to the short list (ID + short_desc only).  Defaults
+    /// to 4096 — enough for several medium-length tokens per turn.
+    #[serde(default = "default_long_list_budget")]
+    pub long_list_budget: usize,
+}
+
+fn default_long_list_budget() -> usize {
+    4096
 }
 
 fn default_prefetch_min_score() -> f32 {
@@ -71,6 +82,7 @@ impl Default for SquirePrefetchConfig {
             tool_top_k: 3,
             skill_top_k: 3,
             min_score: default_prefetch_min_score(),
+            long_list_budget: default_long_list_budget(),
         }
     }
 }

@@ -30,6 +30,7 @@ fn test_config_serde_roundtrip() {
                 endpoint: None,
                 metadata: std::collections::HashMap::new(),
                 category: None,
+                phase2_model: String::new(),
             },
         ],
         mcp_servers: vec![],

@@ -32,8 +32,9 @@
 
 use squirecli_lib::agent::squire::{ingest_tool_registry, SquireExploreTool, SquireInvokeTool, SquireStore, SquireTokenToDetailTool};
 use squirecli_lib::agent::{Tool, ToolRegistry, ToolResult};
-use squirecli_lib::storage::squire_lancedb::LanceDbSquireStore;
+use squire_store::LanceDbSquireStore;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
 
 struct FakeMcpWeatherTool;
 
@@ -112,8 +113,10 @@ async fn run() {
     // Step 2: call the real explore() tool exactly as the model would.
     let explore_tool = SquireExploreTool {
         store: store.clone(),
-        tool_registry: tool_registry.clone(),
+        tool_defs: tool_registry.definitions(),
         session_id,
+        batch_counter: Arc::new(AtomicU32::new(0)),
+        batch_cap: 100,
     };
     let explore_result = explore_tool
         .execute(
@@ -136,7 +139,8 @@ async fn run() {
     // token_to_detail, resolving the *ingested* row, not the live registry.
     let detail_tool = SquireTokenToDetailTool {
         store: store.clone(),
-        tool_registry: Arc::new(ToolRegistry::empty()), // force store-path resolution
+        batch_counter: Arc::new(AtomicU32::new(0)),
+        batch_cap: 100,
     };
     let detail_result = detail_tool
         .execute(
@@ -160,7 +164,7 @@ async fn run() {
     println!("\n===== re-ingesting (simulating a second turn) =====");
     ingest_tool_registry(tool_registry.as_ref(), store.as_ref(), &std::collections::HashMap::new()).await;
     ingest_tool_registry(tool_registry.as_ref(), store.as_ref(), &std::collections::HashMap::new()).await;
-    let all_tools = store.explore_memory("tool", "", 0, 100, 0).await;
+    let all_tools = store.explore_memory("tool", "", 0, 100, 0, session_id).await;
     println!("tool-typed token count after 3 ingestion passes: {}", all_tools.len());
     assert_eq!(
         all_tools.len(),
@@ -172,10 +176,7 @@ async fn run() {
     // dispatches correctly to the real tool under the exact id
     // ingest_tool_registry used for its store row — proving the id scheme
     // decision holds end-to-end, not just in isolated unit tests.
-    let invoke_tool = SquireInvokeTool {
-        tool_registry: tool_registry.clone(),
-        store: store.clone(),
-    };
+    let invoke_tool = SquireInvokeTool;
     let invoke_result = invoke_tool
         .execute(
             "call-3",

@@ -1,0 +1,51 @@
+id = "WF_GovernanceFramework"
+short_desc = "Meta-workflow: how the governance layer (workflows, skills, batch, formatter) composes"
+full_desc = """
+The governance framework that ties workflows, skills, batch composition, and
+the formatter pass into a coherent orchestration model.  This workflow is
+**meta-level** — it describes how the system's components interact, not how
+to answer a specific user question.
+
+**Architecture (spec §8 / §7):**
+
+1. **Workflows are tokens** — Every workflow is a source token with an
+   `IS_A_WORKFLOW` relationship triple.  The AI discovers workflows the same
+   way it discovers any other knowledge: via explore()/rdf().
+
+2. **Skills are tokens** — Same principle.  A skill TOML file becomes a source
+   token with an `IS_A_SKILL` relationship.  Skills are **not** hardcoded
+   tool types — they're graph-assigned roles (Phase 1 refactoring).
+
+3. **Tools are tokens** — MCP tools and built-in tools are ingested at startup
+   as source tokens with `IS_A_TOOL` relationships.  No separate "tool layer."
+
+4. **Batch composition saves round trips** — Use `batch()` with `|` pipes and
+   `&` parallel operators to bundle multiple retrieval calls.  Each batch
+   expression counts as 1 call against the per-turn cap (default 3).
+
+5. **Batch cap prevents loops** — The AI can make at most N discovery calls
+   (explore/rdf/token_to_detail/batch) per turn.  When the cap is hit, respond
+   with what you have.  This prevents unbounded retrieval spirals.
+
+6. **Formatter pass is background** — After each turn, a separate formatter
+   model (JSON structured output, temperature 0, no tools) curates new tokens
+   and preserve lists.  The formatter is a pure optimisation — if it fails,
+   nothing breaks.
+
+7. **Context assembly is budget-driven** — Long-list tokens get their
+   full_desc inlined up to a character budget (default 4096).  Exceeding
+   tokens are demoted to short-list (ID + short_desc).  Nothing is dropped.
+
+**Token model (Phase 1):**
+- 4 token types: source, referential, concept, relationship
+- Roles (tool, skill, workflow, decision, assumption, todo) are graph-assigned
+  via relationship triplets — NOT hardcoded type values
+
+**When to select this workflow:**
+- The user asks about Squire's internals or architecture
+- You need to understand why a token exists or how to interpret context
+- Debugging unexpected system behaviour
+
+**When NOT to use this workflow:**
+- For actual user-facing tasks — select a domain workflow instead
+"""

@@ -352,7 +352,7 @@ impl DecisionTreeTool {
             .upsert_token(
                 squire_store::NewTokenSpec {
                     id: id.clone(),
-                    token_type: "decision".to_string(),
+                    token_type: "concept".to_string(),
                     short_desc: title_raw.to_string(),
                     full_desc: None,
                     endpoint: None,
@@ -408,7 +408,7 @@ impl DecisionTreeTool {
             .upsert_token(
                 squire_store::NewTokenSpec {
                     id: id.clone(),
-                    token_type: "decision".to_string(),
+                    token_type: "concept".to_string(),
                     short_desc: title_raw.to_string(),
                     full_desc: None,
                     endpoint: None,
@@ -474,7 +474,7 @@ impl DecisionTreeTool {
                     .upsert_token(
                         squire_store::NewTokenSpec {
                             id: ass_id.clone(),
-                            token_type: "assumption".to_string(),
+                            token_type: "concept".to_string(),
                             short_desc: assumption_text.to_string(),
                             full_desc: None,
                             endpoint: None,

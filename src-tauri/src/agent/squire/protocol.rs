@@ -545,8 +545,20 @@ pub(crate) async fn resolve_range_spec(
         }
     };
 
-    let range_start = start_pos + spec.start.offset;
-    let range_end = end_pos + spec.end.offset;
+    let mut range_start = start_pos + spec.start.offset;
+    let mut range_end = end_pos + spec.end.offset;
+
+    // Special case: same bookmark on both sides with no meaningful span.
+    // The model wrote `chunk_0→chunk_0` meaning "the full chunk" but the
+    // resolver sees two identical positions (both point just past the
+    // same §^bookmark§^ marker).  Treat this as "from bookmark to end of
+    // text" instead of rejecting it as empty.
+    if range_end <= range_start
+        && spec.start.bookmark == spec.end.bookmark
+        && spec.start.namespace == spec.end.namespace
+    {
+        range_end = text.len();
+    }
 
     if range_end <= range_start {
         return Err(format!(
@@ -705,7 +717,7 @@ mod tests {
             .upsert_token(
                 NewTokenSpec {
                     id: "USR_T1_005".into(),
-                    token_type: "user".into(),
+                    token_type: "source".into(),
                     short_desc: "Test chunk".into(),
                     full_desc: Some(
                         "Some leading text.§^<BMK0>§^Hello World This is a test.§^<BMK1>§^And more text here."

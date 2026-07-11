@@ -11,6 +11,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
 use std::sync::Mutex as StdMutex;
 use uuid::Uuid;
 
@@ -94,7 +95,7 @@ impl ConversationStore for RecordingStore {
     }
 }
 
-/// Extracts the context JSON block (expanded_tokens, tokens, active_process_state)
+/// Extracts the context JSON block (long_tokens, short_tokens, active_process_state)
 /// from the system message in a `build_turn_input` response, where it is appended
 /// after the `--- Context for this turn ---` delimiter.
 fn extract_context(system_content: &str) -> Value {
@@ -569,7 +570,7 @@ async fn explore_memory_filters_by_type_and_query() {
         .upsert_token(
             NewTokenSpec {
                 id: "WF_Chat".to_string(),
-                token_type: "workflow".to_string(),
+                token_type: "source".to_string(),
                 short_desc: "friendly chat".to_string(),
                 full_desc: None,
                 endpoint: None,
@@ -670,7 +671,7 @@ async fn explore_memory_num_hops_one_expands_directly_connected_token() {
         .upsert_token(
             NewTokenSpec {
                 id: "WF_Unrelated".to_string(),
-                token_type: "workflow".to_string(),
+                token_type: "source".to_string(),
                 short_desc: "totally unrelated workflow".to_string(),
                 full_desc: None,
                 endpoint: None,
@@ -873,6 +874,8 @@ async fn token_to_detail_tool_increments_hit_count_on_store_backed_token() {
         .await;
     let tool = SquireTokenToDetailTool {
         store: store.clone(),
+        batch_counter: Arc::new(AtomicU32::new(0)),
+        batch_cap: 100,
     };
 
     tool.execute(
@@ -940,16 +943,17 @@ async fn build_turn_input_merges_base_tools_with_built_ins() {
     let turn_input = adapter.build_turn_input(&session, &base_tools).await.unwrap();
 
     let tool_names: Vec<&str> = turn_input.tools.iter().map(|t| t.name.as_str()).collect();
-    // SquireContextAdapter replaces base_tools with its own built-in set.
-    assert_eq!(tool_names, vec!["explore", "token_to_detail", "invoke"]);
+    // SquireContextAdapter replaces base_tools with its own built-in set
+    // (now 5 tools: explore, token_to_detail, rdf, invoke, batch).
+    assert_eq!(tool_names, vec!["explore", "token_to_detail", "rdf", "invoke", "batch"]);
 
     assert!(matches!(turn_input.messages[0].role, ChatRole::System));
     assert!(matches!(turn_input.messages[1].role, ChatRole::User));
     let request: Value = serde_json::from_str(&turn_input.messages[1].content).unwrap();
     assert_eq!(request["user_request"], "§^chunk_0§^hello squire");
     let ctx = extract_context(&turn_input.messages[0].content);
-    assert!(ctx["expanded_tokens"].is_array());
-    assert!(ctx["tokens"].is_array());
+    assert!(ctx["long_tokens"].is_array());
+    assert!(ctx["short_tokens"].is_array());
     assert!(ctx["active_process_state"].is_object());
 }
 
@@ -974,7 +978,7 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
         .upsert_token(
             NewTokenSpec {
                 id: "WF_A".to_string(),
-                token_type: "workflow".to_string(),
+                token_type: "source".to_string(),
                 short_desc: "alpha workflow".to_string(),
                 full_desc: None,
                 endpoint: None,
@@ -988,7 +992,7 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
         .upsert_token(
             NewTokenSpec {
                 id: "TOOL_A".to_string(),
-                token_type: "tool".to_string(),
+                token_type: "source".to_string(),
                 short_desc: "alpha tool".to_string(),
                 full_desc: None,
                 endpoint: None,
@@ -1002,7 +1006,7 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
         .upsert_token(
             NewTokenSpec {
                 id: "SKILL_A".to_string(),
-                token_type: "skill".to_string(),
+                token_type: "source".to_string(),
                 short_desc: "alpha skill".to_string(),
                 full_desc: None,
                 endpoint: None,
@@ -1013,15 +1017,46 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
         )
         .await;
 
+    // Phase 1 refactoring: role-bearing tokens now have token_type "source"
+    // with their role assigned via graph relationships (spec §2).  The
+    // explore_memory role index builds from IS_A_* predicates, so seed the
+    // role links for the workflow/tool/skill tokens created above.
+    use squire_store::predicates;
+    store
+        .insert_relationship(Relationship {
+            subject: "WF_A".to_string(),
+            predicate: predicates::IS_A_WORKFLOW.to_string(),
+            object: "workflow_role".to_string(),
+        })
+        .await;
+    store
+        .insert_relationship(Relationship {
+            subject: "TOOL_A".to_string(),
+            predicate: predicates::IS_A_TOOL.to_string(),
+            object: "tool_role".to_string(),
+        })
+        .await;
+    store
+        .insert_relationship(Relationship {
+            subject: "SKILL_A".to_string(),
+            predicate: predicates::IS_A_SKILL.to_string(),
+            object: "skill_role".to_string(),
+        })
+        .await;
+
     let mut adapter = SquireContextAdapter::new_with_prefetch(
         store.clone(),
         SquirePrefetchConfig {
-            memory_top_k: 2,  // 2 because the USR_T0_001_* token ingested in
-                              // build_turn_input also matches "alpha"
+            memory_top_k: 10, // After phase 1 refactoring, role-bearing tokens
+                               // use token_type "source" which also matches
+                               // the "memory" resource group, so we need
+                               // enough headroom for CONCEPT + WF/TOOL/SKILL
+                               // (all "source") + USR_T chunk tokens.
             workflow_top_k: 1,
             tool_top_k: 1,
             skill_top_k: 1,
             min_score: 0.0,
+            ..Default::default()
         },
     );
     let session = fixture_session("alpha");
@@ -1032,8 +1067,8 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
     assert!(store.token_exists(&format!("USR_T0_001_{}", session_short)).await);
     let ctx = extract_context(&turn_input.messages[0].content);
 
-    // Prefetched tokens have no full_desc, so they go to the tokens (short) list.
-    let ids: Vec<String> = ctx["tokens"]
+    // Prefetched tokens have no full_desc, so they go to the short_tokens list.
+    let ids: Vec<String> = ctx["short_tokens"]
         .as_array()
         .unwrap()
         .iter()
@@ -1073,25 +1108,29 @@ async fn build_turn_input_merges_preserved_first_then_prefetch_without_duplicate
     let mut adapter = SquireContextAdapter::new(store);
     let turn_input = adapter.build_turn_input(&session, &[]).await.unwrap();
     let ctx = extract_context(&turn_input.messages[0].content);
-    // Preserved tokens (CONCEPT_Keep) are expanded — they go in expanded_tokens.
-    // The user chunk USR_T0_001 has full_desc, so it is also in expanded_tokens.
-    let expanded = ctx["expanded_tokens"].as_array().unwrap();
-    assert!(!expanded.is_empty());
-    let expanded_ids: Vec<String> = expanded
+    // Preserved tokens (CONCEPT_Keep) with full_desc are long-list candidates.
+    // CONCEPT_Keep has no full_desc, so it's demoted to short_tokens.
+    // The user chunk USR_T0_001 has full_desc (bookmark-wrapped text),
+    // so it goes in long_tokens.
+    let long_tokens = ctx["long_tokens"].as_array().unwrap();
+    let short_tokens = ctx["short_tokens"].as_array().unwrap();
+    assert!(!long_tokens.is_empty(), "USR_T chunk should be in long_tokens");
+    assert!(!short_tokens.is_empty(), "CONCEPT_Keep should be in short_tokens");
+
+    let short_ids: Vec<String> = short_tokens
         .iter()
         .filter_map(|v| v.get("token_id").and_then(|id| id.as_str()).map(str::to_string))
         .collect();
-    // Preserved tokens come first in the merged list, so CONCEPT_Keep
-    // should be the first entry in expanded_tokens.
-    assert_eq!(expanded_ids.first().map(String::as_str), Some("CONCEPT_Keep"));
-    // No duplicates.
-    assert_eq!(
-        expanded_ids
-            .iter()
-            .filter(|id| id.as_str() == "CONCEPT_Keep")
-            .count(),
-        1
-    );
+    assert!(short_ids.contains(&"CONCEPT_Keep".to_string()),
+        "preserved token with no full_desc should be in short_tokens");
+
+    let long_ids: Vec<String> = long_tokens
+        .iter()
+        .filter_map(|v| v.get("token_id").and_then(|id| id.as_str()).map(str::to_string))
+        .collect();
+    // No duplicates across lists.
+    assert!(!short_ids.iter().any(|id| long_ids.contains(id)),
+        "no token should appear in both lists");
 }
 
 #[tokio::test]
@@ -1137,7 +1176,7 @@ async fn finalize_turn_credits_a_hit_for_a_preexisting_token_cited_via_sigil_wit
         .upsert_token(
             NewTokenSpec {
                 id: "WF_Existing".to_string(),
-                token_type: "workflow".to_string(),
+                token_type: "source".to_string(),
                 short_desc: "an existing workflow".to_string(),
                 full_desc: None,
                 endpoint: None,
@@ -1649,6 +1688,8 @@ async fn explore_tool_searches_full_tool_registry_for_resource_type_tool() {
         store: Arc::new(InMemorySquireStore::new()),
         tool_defs: tool_defs_snapshot,
         session_id: Uuid::new_v4(),
+        batch_counter: Arc::new(AtomicU32::new(0)),
+        batch_cap: 100,
     };
 
     let result = tool
@@ -1704,7 +1745,7 @@ async fn upsert_token_persists_and_returns_endpoint_via_in_memory_store() {
         .upsert_token(
             NewTokenSpec {
                 id: "mcp_srv1_remote_tool".to_string(),
-                token_type: "tool".to_string(),
+                token_type: "source".to_string(),
                 short_desc: "an mcp tool".to_string(),
                 full_desc: None,
                 endpoint: Some(endpoint.clone()),
@@ -1730,7 +1771,7 @@ async fn upsert_token_without_endpoint_preserves_previously_stored_endpoint() {
         .upsert_token(
             NewTokenSpec {
                 id: "mcp_srv1_remote_tool".to_string(),
-                token_type: "tool".to_string(),
+                token_type: "source".to_string(),
                 short_desc: "v1".to_string(),
                 full_desc: None,
                 endpoint: Some(endpoint.clone()),
@@ -1744,7 +1785,7 @@ async fn upsert_token_without_endpoint_preserves_previously_stored_endpoint() {
         .upsert_token(
             NewTokenSpec {
                 id: "mcp_srv1_remote_tool".to_string(),
-                token_type: "tool".to_string(),
+                token_type: "source".to_string(),
                 short_desc: "v2".to_string(),
                 full_desc: None,
                 endpoint: None,
@@ -1807,7 +1848,7 @@ async fn token_to_detail_tool_output_never_leaks_endpoint_data() {
         .upsert_token(
             NewTokenSpec {
                 id: "mcp_srv1_remote_tool".to_string(),
-                token_type: "tool".to_string(),
+                token_type: "source".to_string(),
                 short_desc: "an mcp tool".to_string(),
                 full_desc: Some("full description".to_string()),
                 endpoint: Some(ToolEndpoint::Mcp {
@@ -1822,6 +1863,8 @@ async fn token_to_detail_tool_output_never_leaks_endpoint_data() {
         .await;
     let tool = SquireTokenToDetailTool {
         store: store.clone(),
+        batch_counter: Arc::new(AtomicU32::new(0)),
+        batch_cap: 100,
     };
 
     let short = tool
@@ -1848,6 +1891,8 @@ async fn token_to_detail_tool_returns_tool_schema_from_store() {
     ingest_tool_registry(&registry, store.as_ref(), &HashMap::new()).await;
     let tool = SquireTokenToDetailTool {
         store: store.clone(),
+        batch_counter: Arc::new(AtomicU32::new(0)),
+        batch_cap: 100,
     };
 
     let result = tool
@@ -2087,11 +2132,11 @@ async fn ingest_user_input_chunks_uses_system_referential_type_discoverable_via_
     ingest_user_input_chunks("Some chat message content.", 1, &store, SessionId::nil()).await;
 
     let results = store
-        .explore_memory("system_referential", "chat message", 0, 10, 1, SessionId::nil())
+        .explore_memory("source", "chat message", 0, 10, 1, SessionId::nil())
         .await;
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].token_id, "USR_T1_001_00000000");
-    assert_eq!(results[0].token_type, "system_referential");
+    assert_eq!(results[0].token_type, "source");
 
     let via_all = store.explore_memory("all", "", 0, 100, 1, SessionId::nil()).await;
     assert!(via_all.iter().any(|t| t.token_id == "USR_T1_001_00000000"));
@@ -2135,7 +2180,7 @@ async fn ingest_user_input_chunks_creation_turn_matches_the_turn_argument() {
 async fn ingest_user_input_chunks_empty_text_writes_no_tokens() {
     let store = InMemorySquireStore::new();
     ingest_user_input_chunks("   ", 1, &store, SessionId::nil()).await;
-    let results = store.explore_memory("system_referential", "", 0, 10, 1, SessionId::nil()).await;
+    let results = store.explore_memory("source", "", 0, 10, 1, SessionId::nil()).await;
     assert!(results.is_empty());
 }
 
@@ -2154,9 +2199,9 @@ async fn build_turn_input_ingests_user_message_as_system_referential_chunk_same_
     assert_eq!(detail.full_desc.as_deref(), Some("§^chunk_0§^Please summarize the quarterly report for me."));
 
     let ctx = extract_context(&turn_input.messages[0].content);
-    // The user chunk USR_T0_001_* has full_desc, so it is in expanded_tokens.
-    let expanded = ctx["expanded_tokens"].as_array().unwrap();
-    assert!(expanded
+    // The user chunk USR_T0_001_* has full_desc, so it is in long_tokens.
+    let long_tokens = ctx["long_tokens"].as_array().unwrap();
+    assert!(long_tokens
         .iter()
         .any(|t| t["token_id"] == usr_id));
 }
@@ -2180,8 +2225,428 @@ async fn ingest_user_input_chunks_does_not_write_relationships() {
     ingest_user_input_chunks("Some content.\n\nMore content.", 1, store.as_ref(), SessionId::nil()).await;
 
     let results = store
-        .explore_memory("system_referential", "", 1, 100, 1, SessionId::nil())
+        .explore_memory("source", "", 1, 100, 1, SessionId::nil())
         .await;
     assert!(results.iter().all(|t| t.hop_distance == 0));
+}
+
+// ── rdf() graph-walk tests ──
+
+#[tokio::test]
+async fn rdf_returns_tokens_one_hop_from_seed() {
+    let store = Arc::new(InMemorySquireStore::new());
+    // Seed token
+    store.upsert_token(
+        NewTokenSpec { id: "HUB".to_string(), token_type: "concept".to_string(), short_desc: "hub".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        0, SessionId::nil(),
+    ).await;
+    // Three leaf tokens connected to HUB
+    for i in 0..3 {
+        let id = format!("LEAF_{}", i);
+        store.upsert_token(
+            NewTokenSpec { id: id.clone(), token_type: "concept".to_string(), short_desc: "leaf".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+            0, SessionId::nil(),
+        ).await;
+        store.insert_relationship(Relationship {
+            subject: id, predicate: "relatedTo".to_string(), object: "HUB".to_string(),
+        }).await;
+    }
+
+    let tool = SquireRdfTool { store: store.clone(), batch_counter: Arc::new(AtomicU32::new(0)), batch_cap: 100 };
+    let result = tool.execute("call-1", serde_json::json!({"token_id": "HUB", "hops": 1})).await;
+    assert!(!result.is_error, "rdf should succeed: {}", result.output);
+    let tokens: Vec<serde_json::Value> = serde_json::from_str(&result.output).unwrap();
+    assert_eq!(tokens.len(), 3, "all three leaves reachable in 1 hop");
+    let ids: Vec<&str> = tokens.iter().map(|t| t["token_id"].as_str().unwrap()).collect();
+    assert!(ids.contains(&"LEAF_0"));
+    assert!(ids.contains(&"LEAF_1"));
+    assert!(ids.contains(&"LEAF_2"));
+}
+
+#[tokio::test]
+async fn rdf_returns_empty_for_token_with_no_relationships() {
+    let store = Arc::new(InMemorySquireStore::new());
+    store.upsert_token(
+        NewTokenSpec { id: "ISOLATED".to_string(), token_type: "concept".to_string(), short_desc: "loner".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        0, SessionId::nil(),
+    ).await;
+
+    let tool = SquireRdfTool { store: store.clone(), batch_counter: Arc::new(AtomicU32::new(0)), batch_cap: 100 };
+    let result = tool.execute("call-1", serde_json::json!({"token_id": "ISOLATED", "hops": 1})).await;
+    assert!(!result.is_error);
+    let tokens: Vec<serde_json::Value> = serde_json::from_str(&result.output).unwrap();
+    assert!(tokens.is_empty(), "isolated token has no neighbors");
+}
+
+#[tokio::test]
+async fn rdf_errors_for_unknown_seed() {
+    let store = Arc::new(InMemorySquireStore::new());
+    let tool = SquireRdfTool { store: store.clone(), batch_counter: Arc::new(AtomicU32::new(0)), batch_cap: 100 };
+    let result = tool.execute("call-1", serde_json::json!({"token_id": "NONEXISTENT", "hops": 1})).await;
+    assert!(result.is_error);
+    assert!(result.output.contains("Unknown seed token"));
+}
+
+#[tokio::test]
+async fn rdf_respects_max_results() {
+    let store = Arc::new(InMemorySquireStore::new());
+    store.upsert_token(
+        NewTokenSpec { id: "CENTER".to_string(), token_type: "concept".to_string(), short_desc: "center".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        0, SessionId::nil(),
+    ).await;
+    for i in 0..10 {
+        let id = format!("NBR_{}", i);
+        store.upsert_token(
+            NewTokenSpec { id: id.clone(), token_type: "concept".to_string(), short_desc: "neighbor".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+            0, SessionId::nil(),
+        ).await;
+        store.insert_relationship(Relationship {
+            subject: "CENTER".to_string(), predicate: "linksTo".to_string(), object: id,
+        }).await;
+    }
+
+    let tool = SquireRdfTool { store: store.clone(), batch_counter: Arc::new(AtomicU32::new(0)), batch_cap: 100 };
+    let result = tool.execute("call-1", serde_json::json!({"token_id": "CENTER", "hops": 1, "max_results": 3})).await;
+    assert!(!result.is_error);
+    let tokens: Vec<serde_json::Value> = serde_json::from_str(&result.output).unwrap();
+    assert_eq!(tokens.len(), 3);
+}
+
+#[tokio::test]
+async fn rdf_multi_hop_discovers_transitive_neighbors() {
+    let store = Arc::new(InMemorySquireStore::new());
+    // A -relatedTo-> B -relatedTo-> C
+    for id in ["A", "B", "C"] {
+        store.upsert_token(
+            NewTokenSpec { id: id.to_string(), token_type: "concept".to_string(), short_desc: id.to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+            0, SessionId::nil(),
+        ).await;
+    }
+    store.insert_relationship(Relationship {
+        subject: "A".to_string(), predicate: "relatedTo".to_string(), object: "B".to_string(),
+    }).await;
+    store.insert_relationship(Relationship {
+        subject: "B".to_string(), predicate: "relatedTo".to_string(), object: "C".to_string(),
+    }).await;
+
+    let tool = SquireRdfTool { store: store.clone(), batch_counter: Arc::new(AtomicU32::new(0)), batch_cap: 100 };
+    let result = tool.execute("call-1", serde_json::json!({"token_id": "A", "hops": 2})).await;
+    assert!(!result.is_error);
+    let tokens: Vec<serde_json::Value> = serde_json::from_str(&result.output).unwrap();
+    let ids: Vec<&str> = tokens.iter().map(|t| t["token_id"].as_str().unwrap()).collect();
+    assert!(ids.contains(&"B"), "B reachable in 1 hop");
+    assert!(ids.contains(&"C"), "C reachable in 2 hops");
+    assert_eq!(tokens.iter().filter(|t| t["token_id"] == "B" && t["hop_distance"] == 1).count(), 1);
+    assert_eq!(tokens.iter().filter(|t| t["token_id"] == "C" && t["hop_distance"] == 2).count(), 1);
+}
+
+#[tokio::test]
+async fn rdf_increments_hit_count_on_seed_token() {
+    let store = Arc::new(InMemorySquireStore::new());
+    store.upsert_token(
+        NewTokenSpec { id: "HUB".to_string(), token_type: "concept".to_string(), short_desc: "hub".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        0, SessionId::nil(),
+    ).await;
+    store.upsert_token(
+        NewTokenSpec { id: "LEAF".to_string(), token_type: "concept".to_string(), short_desc: "leaf".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        0, SessionId::nil(),
+    ).await;
+    store.insert_relationship(Relationship {
+        subject: "HUB".to_string(), predicate: "links".to_string(), object: "LEAF".to_string(),
+    }).await;
+
+    let tool = SquireRdfTool { store: store.clone(), batch_counter: Arc::new(AtomicU32::new(0)), batch_cap: 100 };
+    // Call rdf twice — each call should increment the seed's hit count
+    tool.execute("call-1", serde_json::json!({"token_id": "HUB", "hops": 1})).await;
+    tool.execute("call-2", serde_json::json!({"token_id": "HUB", "hops": 1})).await;
+
+    // Verify hit count increased (spec §5.1: loading context = +1 hit per call)
+    // TokenDetail doesn't expose accumulated_hits, so verify via explore output.
+    let results = store.explore_memory("all", "hub", 0, 10, 0, SessionId::nil()).await;
+    let hub = results.iter().find(|t| t.token_id == "HUB").unwrap();
+    assert_eq!(hub.accumulated_hits, 3, "initial upsert (1) + two rdf calls (2) = 3 hits");
+}
+
+// ── Batch retrieval cap tests ──
+
+#[tokio::test]
+async fn batch_cap_blocks_excess_discovery_calls() {
+    let store = Arc::new(InMemorySquireStore::new());
+    store.upsert_token(
+        NewTokenSpec { id: "X".to_string(), token_type: "concept".to_string(), short_desc: "token X".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        0, SessionId::nil(),
+    ).await;
+
+    let counter = Arc::new(AtomicU32::new(0));
+    let cap = 2;
+
+    let explore = SquireExploreTool {
+        store: store.clone(),
+        tool_defs: vec![],
+        session_id: SessionId::nil(),
+        batch_counter: counter.clone(),
+        batch_cap: cap,
+    };
+    let detail = SquireTokenToDetailTool {
+        store: store.clone(),
+        batch_counter: counter.clone(),
+        batch_cap: cap,
+    };
+
+    // First call ok
+    let r1 = explore.execute("c1", serde_json::json!({"resource_type": "all", "query": "X"})).await;
+    assert!(!r1.is_error, "first call should succeed");
+
+    // Second call ok
+    let r2 = detail.execute("c2", serde_json::json!({"token_id": "X", "detail_level": "short"})).await;
+    assert!(!r2.is_error, "second call should succeed");
+
+    // Third call — cap exceeded
+    let r3 = explore.execute("c3", serde_json::json!({"resource_type": "all", "query": "X"})).await;
+    assert!(r3.is_error, "third call should be blocked by cap");
+    assert!(r3.output.contains("Batch retrieval cap"), "error should mention cap");
+}
+
+#[tokio::test]
+async fn batch_cap_is_per_turn_not_global() {
+    // Each turn gets its own counter — verify independent counters don't interfere.
+    let store = Arc::new(InMemorySquireStore::new());
+    store.upsert_token(
+        NewTokenSpec { id: "Y".to_string(), token_type: "concept".to_string(), short_desc: "token Y".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        0, SessionId::nil(),
+    ).await;
+
+    // Turn 1: counter gets used up
+    let c1 = Arc::new(AtomicU32::new(0));
+    let t1 = SquireTokenToDetailTool { store: store.clone(), batch_counter: c1.clone(), batch_cap: 1 };
+    assert!(!t1.execute("c1", serde_json::json!({"token_id": "Y", "detail_level": "short"})).await.is_error);
+    assert!(t1.execute("c2", serde_json::json!({"token_id": "Y", "detail_level": "short"})).await.is_error);
+
+    // Turn 2: fresh counter — should work again
+    let c2 = Arc::new(AtomicU32::new(0));
+    let t2 = SquireTokenToDetailTool { store: store.clone(), batch_counter: c2.clone(), batch_cap: 1 };
+    assert!(!t2.execute("c3", serde_json::json!({"token_id": "Y", "detail_level": "short"})).await.is_error);
+}
+
+// ── Long/short list budget algorithm tests ──
+
+#[tokio::test]
+async fn long_list_budget_demotes_tokens_that_exceed_remaining_chars() {
+    let store = Arc::new(InMemorySquireStore::new());
+    // Two tokens with full_desc — one small, one large
+    store.upsert_token(
+        NewTokenSpec {
+            id: "SMALL".to_string(), token_type: "concept".to_string(),
+            short_desc: "small token".to_string(),
+            full_desc: Some("tiny".to_string()),
+            endpoint: None, ranges: vec![],
+        },
+        0, SessionId::nil(),
+    ).await;
+    store.upsert_token(
+        NewTokenSpec {
+            id: "BIG".to_string(), token_type: "concept".to_string(),
+            short_desc: "big token".to_string(),
+            full_desc: Some("a".repeat(100)),
+            endpoint: None, ranges: vec![],
+        },
+        0, SessionId::nil(),
+    ).await;
+
+    let session = fixture_session("token");
+    let sid = session.session.id;
+    // Both preserved (long-list candidates)
+    store.set_preserve_list(sid, vec!["SMALL".to_string(), "BIG".to_string()]).await;
+
+    let mut adapter = SquireContextAdapter::new_with_prefetch(
+        store.clone(),
+        SquirePrefetchConfig { long_list_budget: 50, ..Default::default() },
+    );
+    let turn_input = adapter.build_turn_input(&session, &[]).await.unwrap();
+    let ctx = extract_context(&turn_input.messages[0].content);
+
+    let long: Vec<_> = ctx["long_tokens"].as_array().unwrap().iter()
+        .filter_map(|t| t["token_id"].as_str().map(|s| s.to_string()))
+        .collect();
+    let short: Vec<_> = ctx["short_tokens"].as_array().unwrap().iter()
+        .filter_map(|t| t["token_id"].as_str().map(|s| s.to_string()))
+        .collect();
+
+    // SMALL (4 chars) fits in budget of 50 → long list
+    assert!(long.contains(&"SMALL".to_string()), "small token should be in long list");
+    // BIG (100 chars) exceeds budget → demoted to short
+    assert!(!long.contains(&"BIG".to_string()), "big token should NOT be in long list");
+    assert!(short.contains(&"BIG".to_string()), "big token should be demoted to short list");
+    // Budget utilisation reported
+    assert!(ctx["long_list_budget_used"].as_u64().unwrap() > 0);
+}
+
+#[tokio::test]
+async fn long_list_budget_is_reported_in_context() {
+    let store = Arc::new(InMemorySquireStore::new());
+    let session = fixture_session("hello");
+    let mut adapter = SquireContextAdapter::new_with_prefetch(
+        store,
+        SquirePrefetchConfig { long_list_budget: 2000, ..Default::default() },
+    );
+    let turn_input = adapter.build_turn_input(&session, &[]).await.unwrap();
+    let ctx = extract_context(&turn_input.messages[0].content);
+
+    assert!(ctx["long_tokens"].is_array());
+    assert!(ctx["short_tokens"].is_array());
+    assert!(ctx["long_list_budget_used"].as_u64().is_some());
+    assert_eq!(ctx["long_list_budget_total"].as_u64().unwrap(), 2000);
+}
+
+// ── Batch composition syntax tests ──
+
+#[test]
+fn batch_parser_simple_explore() {
+    let groups = parse_batch_expr("explore(memory, rust, 1, 10)").unwrap();
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].len(), 1);
+}
+
+#[test]
+fn batch_parser_pipeline() {
+    let groups = parse_batch_expr("explore(memory, rust, 1, 10) | rdf(2)").unwrap();
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].len(), 2); // explore + rdf
+}
+
+#[test]
+fn batch_parser_parallel_groups() {
+    let groups = parse_batch_expr("explore(memory, X, 1, 5) & explore(workflow, Y, 0, 3)").unwrap();
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].len(), 1);
+    assert_eq!(groups[1].len(), 1);
+}
+
+#[test]
+fn batch_parser_semicolon_separator() {
+    let groups = parse_batch_expr("explore(memory, A, 0, 5); token_to_detail(TOOL_X)").unwrap();
+    assert_eq!(groups.len(), 2);
+}
+
+#[test]
+fn batch_parser_newline_separator() {
+    let groups = parse_batch_expr("explore(memory, A, 0, 5)\nexplore(workflow, B, 0, 3)").unwrap();
+    assert_eq!(groups.len(), 2);
+}
+
+#[test]
+fn batch_parser_quoted_args_with_comma() {
+    let groups = parse_batch_expr("explore(memory, 'rust ownership, borrowing', 1, 10)").unwrap();
+    assert_eq!(groups.len(), 1);
+}
+
+#[test]
+fn batch_parser_multiple_pipes() {
+    let groups = parse_batch_expr("explore(memory, rust, 1, 10) | rdf(2) | rdf(1)").unwrap();
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].len(), 3);
+}
+
+#[test]
+fn batch_parser_error_on_unknown_func() {
+    assert!(parse_batch_expr("nonexistent(arg)").is_err());
+}
+
+#[tokio::test]
+async fn batch_tool_executes_simple_explore() {
+    let store = Arc::new(InMemorySquireStore::new());
+    store.upsert_token(
+        NewTokenSpec { id: "X".to_string(), token_type: "concept".to_string(), short_desc: "token X".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        0, SessionId::nil(),
+    ).await;
+    let tool = SquireBatchTool {
+        store: store.clone(),
+        tool_defs: vec![],
+        session_id: SessionId::nil(),
+        batch_counter: Arc::new(AtomicU32::new(0)),
+        batch_cap: 100,
+    };
+    let result = tool.execute("c1", serde_json::json!({"expression": "explore(all, X, 0, 10)"})).await;
+    assert!(!result.is_error, "batch should succeed: {}", result.output);
+    let tokens: Vec<serde_json::Value> = serde_json::from_str(&result.output).unwrap();
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0]["token_id"], "X");
+}
+
+#[tokio::test]
+async fn batch_tool_pipeline_explore_rdf() {
+    let store = Arc::new(InMemorySquireStore::new());
+    // Create two connected tokens
+    store.upsert_token(
+        NewTokenSpec { id: "HUB".to_string(), token_type: "concept".to_string(), short_desc: "hub".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        0, SessionId::nil(),
+    ).await;
+    store.upsert_token(
+        NewTokenSpec { id: "LEAF".to_string(), token_type: "concept".to_string(), short_desc: "leaf".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        0, SessionId::nil(),
+    ).await;
+    store.insert_relationship(Relationship {
+        subject: "HUB".to_string(), predicate: "linksTo".to_string(), object: "LEAF".to_string(),
+    }).await;
+
+    let tool = SquireBatchTool {
+        store: store.clone(),
+        tool_defs: vec![],
+        session_id: SessionId::nil(),
+        batch_counter: Arc::new(AtomicU32::new(0)),
+        batch_cap: 100,
+    };
+    // explore finds HUB, pipe feeds to rdf which finds LEAF
+    let result = tool.execute("c1", serde_json::json!({"expression": "explore(all, hub, 0, 10) | rdf(1)"})).await;
+    assert!(!result.is_error, "batch pipe should succeed: {}", result.output);
+    let tokens: Vec<serde_json::Value> = serde_json::from_str(&result.output).unwrap();
+    let ids: Vec<&str> = tokens.iter().map(|t| t["token_id"].as_str().unwrap()).collect();
+    assert!(ids.contains(&"LEAF"), "LEAF should be discovered via rdf in pipeline");
+}
+
+#[tokio::test]
+async fn batch_tool_parallel_groups_merge_results() {
+    let store = Arc::new(InMemorySquireStore::new());
+    store.upsert_token(
+        NewTokenSpec { id: "A".to_string(), token_type: "concept".to_string(), short_desc: "alpha".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        0, SessionId::nil(),
+    ).await;
+    store.upsert_token(
+        NewTokenSpec { id: "B".to_string(), token_type: "concept".to_string(), short_desc: "beta".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        0, SessionId::nil(),
+    ).await;
+
+    let tool = SquireBatchTool {
+        store: store.clone(),
+        tool_defs: vec![],
+        session_id: SessionId::nil(),
+        batch_counter: Arc::new(AtomicU32::new(0)),
+        batch_cap: 100,
+    };
+    let result = tool.execute("c1", serde_json::json!({"expression": "explore(all, alpha, 0, 10) & explore(all, beta, 0, 10)"})).await;
+    assert!(!result.is_error);
+    let tokens: Vec<serde_json::Value> = serde_json::from_str(&result.output).unwrap();
+    assert_eq!(tokens.len(), 2, "both tokens should appear from parallel groups");
+}
+
+#[tokio::test]
+async fn batch_tool_counts_as_one_call() {
+    let store = Arc::new(InMemorySquireStore::new());
+    store.upsert_token(
+        NewTokenSpec { id: "X".to_string(), token_type: "concept".to_string(), short_desc: "X".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        0, SessionId::nil(),
+    ).await;
+    let counter = Arc::new(AtomicU32::new(0));
+    let tool = SquireBatchTool {
+        store, tool_defs: vec![], session_id: SessionId::nil(),
+        batch_counter: counter.clone(), batch_cap: 1,
+    };
+    // First call succeeds
+    let r1 = tool.execute("c1", serde_json::json!({"expression": "explore(all, X, 0, 10)"})).await;
+    assert!(!r1.is_error);
+    // Second call fails — cap of 1
+    let r2 = tool.execute("c2", serde_json::json!({"expression": "explore(all, X, 0, 10)"})).await;
+    assert!(r2.is_error);
+    assert!(r2.output.contains("Batch retrieval cap"));
 }
 

@@ -4,7 +4,7 @@
 //! `squire-store` crate. This module only keeps the in-memory
 //! implementation used in tests and development.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
 
 use async_trait::async_trait;
@@ -134,11 +134,48 @@ impl SquireStore for InMemorySquireStore {
     ) -> Vec<TokenSummary> {
         let q = query.to_lowercase();
         let tokens = self.tokens.lock().await;
+
+        // Build role index from relationships — when resource_type is a
+        // role name (tool/workflow/skill), we need to check relationships
+        // since the token_type is now always "source" for role-bearing tokens.
+        let rels = self.relationships.lock().await;
+        let role_token_ids: Option<HashSet<String>> = match resource_type {
+            "tool" => Some(
+                rels.iter()
+                    .filter(|r| r.predicate == squire_store::predicates::IS_A_TOOL)
+                    .map(|r| r.subject.clone())
+                    .collect(),
+            ),
+            "skill" => Some(
+                rels.iter()
+                    .filter(|r| r.predicate == squire_store::predicates::IS_A_SKILL)
+                    .map(|r| r.subject.clone())
+                    .collect(),
+            ),
+            "workflow" => Some(
+                rels.iter()
+                    .filter(|r| r.predicate == squire_store::predicates::IS_A_WORKFLOW)
+                    .map(|r| r.subject.clone())
+                    .collect(),
+            ),
+            "tool_skill" => Some(
+                rels.iter()
+                    .filter(|r| {
+                        r.predicate == squire_store::predicates::IS_A_TOOL
+                            || r.predicate == squire_store::predicates::IS_A_SKILL
+                    })
+                    .map(|r| r.subject.clone())
+                    .collect(),
+            ),
+            _ => None,
+        };
+        drop(rels);
+
         let type_matches = |t: &str| {
             resource_type == "all"
                 || t == resource_type
                 || (resource_type == "memory"
-                    && (t == "concept" || t == "referential" || t == "system_referential"))
+                    && (t == "concept" || t == "referential" || t == "source"))
                 || (resource_type == "tool_skill" && t == "skill")
         };
 
@@ -151,7 +188,13 @@ impl SquireStore for InMemorySquireStore {
 
         let mut direct: Vec<TokenSummary> = tokens
             .iter()
-            .filter(|(_, t)| type_matches(&t.token_type))
+            .filter(|(id, t)| {
+                let by_type = type_matches(&t.token_type);
+                let by_role = role_token_ids
+                    .as_ref()
+                    .map_or(false, |ids| ids.contains(id.as_str()));
+                by_type || by_role
+            })
             .filter(|(_, t)| session_matches(t))
             .filter(|(id, t)| {
                 q.is_empty()

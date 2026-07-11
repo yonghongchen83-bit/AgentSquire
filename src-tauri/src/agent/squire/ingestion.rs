@@ -4,9 +4,9 @@
 //! - `ingest_tool_registry` — upserts one `tool`-typed `SquireStore` token
 //!   per entry in the app's real `ToolRegistry` (local built-ins + MCP tools)
 //! - `ingest_user_input_chunks` — splits the latest user message into
-//!   `USR_T{turn}_{NNN}` `system_referential`-typed tokens
+//!   `USR_T{turn}_{NNN}` `source`-typed tokens
 //! - `ingest_response_chunks` — splits the model's response into
-//!   `RESP_T{turn}_{NNN}` `system_referential`-typed tokens
+//!   `RESP_T{turn}_{NNN}` `source`-typed tokens
 //!
 //! Both chunking paths use the same dumb heuristic (100-200 chars, sentence
 //! boundaries if possible). The AI can then place `§^bookmark` references at
@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use super::types::{NewTokenSpec, ToolEndpoint};
+use super::types::{NewTokenSpec, Relationship, ToolEndpoint};
 use super::SquireStore;
 use crate::agent::{ToolDefinition, ToolRegistry};
 use crate::storage::conversation_store::SessionId;
@@ -88,13 +88,15 @@ pub async fn ingest_tool_registry(
     store: &dyn SquireStore,
     endpoints: &HashMap<String, ToolEndpoint>,
 ) {
+    use squire_store::predicates;
     let global_session = SessionId::nil();
     for def in registry.definitions() {
+        let id = tool_token_id(&def.name);
         store
             .upsert_token(
                 NewTokenSpec {
-                    id: tool_token_id(&def.name),
-                    token_type: "tool".to_string(),
+                    id: id.clone(),
+                    token_type: "source".to_string(),
                     short_desc: def.description.clone(),
                     full_desc: Some(tool_full_desc(&def)),
                     endpoint: endpoints.get(&def.name).cloned(),
@@ -103,6 +105,14 @@ pub async fn ingest_tool_registry(
                 0,
                 global_session,
             )
+            .await;
+        // Role is expressed via relationship, not hardcoded token_type
+        store
+            .insert_relationship(Relationship {
+                subject: id.clone(),
+                predicate: predicates::IS_A_TOOL.to_string(),
+                object: id.clone(),
+            })
             .await;
     }
 }
@@ -203,7 +213,7 @@ pub(crate) fn first_sentence(chunk: &str) -> String {
 }
 
 /// Ingests a text (user input or model response) as `{prefix}_T{turn}_{NNN}_{session_short}`-id
-/// `system_referential` tokens. Same chunking algorithm regardless of source.
+/// `source` tokens. Same chunking algorithm regardless of source.
 ///
 /// `prefix` should be `"USR"` for user input or `"RESP"` for model responses.
 /// `session_id` is embedded in the token ID to prevent cross-session collisions —
@@ -231,7 +241,7 @@ pub async fn ingest_text_chunks(
             .upsert_token(
                 NewTokenSpec {
                     id: id.clone(),
-                    token_type: "system_referential".to_string(),
+                    token_type: "source".to_string(),
                     short_desc: first_sentence(&chunk),
                     full_desc: Some(bookmarked),
                     endpoint: None,

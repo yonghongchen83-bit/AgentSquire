@@ -75,6 +75,13 @@ impl Default for RuntimeConfig {
 
 /// All runtime dependencies an engine needs to execute a turn.
 ///
+/// Each phase has its own **independent** [`ModelInstance`]: Phase 1 and
+/// Phase 2 may use different providers, different models, different
+/// endpoints, different API keys, and different per-model options
+/// (thinking, temperature, max_tokens).  They are never merged and one
+/// never falls back to the other — the UI and headless tests supply two
+/// fully-resolved instances.
+///
 /// This replaces ad-hoc field-by-field extraction from Tauri's `AppState`.
 /// The real app constructs `RuntimeContext` in `setup_app_impl` / command
 /// handlers. Tests construct it directly with in-memory/test doubles.
@@ -99,23 +106,25 @@ pub struct RuntimeContext {
     pub event_emitter: Arc<dyn EventEmitter>,
     /// Cancellation flag for aborting the engine mid-execution.
     pub cancelled: Arc<AtomicBool>,
-    /// Current model instance for Phase 1.
-    pub model_instance: ModelInstance,
-    /// Optional Phase 2 model instance (provider + model for token generation).
-    pub phase2_model_instance: Option<ModelInstance>,
+    /// Model instance for Phase 1 (response generation + bookmarks).
+    pub phase1_model_instance: ModelInstance,
+    /// Model instance for Phase 2 (formatter pass / token generation).
+    /// Independent of Phase 1 — may be same or different provider/model/options.
+    pub phase2_model_instance: ModelInstance,
     /// Tauri `AppHandle` — kept as optional legacy bridge for `SubagentTool`.
     /// TODO(ServerRefactor): remove once SubagentTool is decoupled from AppHandle.
     pub app_handle: Option<tauri::AppHandle>,
 }
 
 impl RuntimeContext {
-    /// Create a new `RuntimeContext` with the given provider registry and store.
+    /// Create a new `RuntimeContext` with two independent model instances.
     pub fn new(
         provider_registry: Arc<ProviderRegistry>,
         store: Arc<dyn ConversationStore>,
         squire_store: Arc<dyn SquireStore>,
         event_emitter: Arc<dyn EventEmitter>,
-        model_instance: ModelInstance,
+        phase1_model_instance: ModelInstance,
+        phase2_model_instance: ModelInstance,
     ) -> Self {
         Self {
             provider_registry,
@@ -128,8 +137,8 @@ impl RuntimeContext {
             tool_endpoints: HashMap::new(),
             event_emitter,
             cancelled: Arc::new(AtomicBool::new(false)),
-            model_instance,
-            phase2_model_instance: None,
+            phase1_model_instance,
+            phase2_model_instance,
             app_handle: None,
         }
     }

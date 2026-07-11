@@ -18,7 +18,7 @@ use super::protocol::{
 };
 use super::SquireStore;
 use super::tools::built_in_tool_definitions;
-use super::types::{ComplianceFailureRecord, detect_and_parse};
+use super::types::{ComplianceFailureRecord, TokenSummary, detect_and_parse};
 use crate::agent::context_adapter::{ContextManagerAdapter, TurnInput, TurnOutcome};
 use crate::agent::ToolResult;
 use crate::llm::provider::{ChatMessage, ChatRole, ToolCall, ToolDefinition};
@@ -268,12 +268,12 @@ impl ContextManagerAdapter for SquireContextAdapter {
         // discoverable in the same turn it arrived (see decisions.md).
         // Chunks now carry §^chunk_{i}§^ bookmark markers so the AI can
         // create referential tokens via new_tokens with a `ranges` entry.
-        let _chunk_ids = ingest_user_input_chunks(&user_text, current_turn, self.store.as_ref(), session.session.id).await;
+        let chunk_ids = ingest_user_input_chunks(&user_text, current_turn, self.store.as_ref(), session.session.id).await;
 
         // Reconstruct the user request text with §^bookmark§^ bare bookmarks
         // at each chunk boundary, so the AI can see which spans it can
         // reference via new_tokens with a `ranges` entry.  The matching
-        // USR_T tokens in expanded_tokens carry the same bookmark markers
+        // USR_T tokens in long_tokens carry the same bookmark markers
         // in their full_desc, so the bookmark names are correlated.
         //
         // NOTE: No §! references here — those are for tokens the AI itself
@@ -321,49 +321,132 @@ impl ContextManagerAdapter for SquireContextAdapter {
             .explore_memory("skill", &user_text, 1, self.prefetch.skill_top_k, current_turn, session.session.id)
             .await;
 
-        // Merge all sources (preserved + semantic prefetch) into one
-        // deduplicated token list. Preserved tokens take priority, and
-        // duplicates across prefetch sources or within a single source
-        // (e.g. the same workflow returned twice) are removed.
-        // Prefetched tokens below the min_score threshold are discarded —
-        // irrelevant matches waste context and confuse the AI.
+        // ═══════════════════════════════════════════════════════════════
+        // Context assembly — Short List / Long List algorithm (spec §4)
+        // ═══════════════════════════════════════════════════════════════
+        //
+        // Long list:  full_desc inlined, no further round trip needed.
+        // Short list: token_id + short_desc only; requires token_to_detail().
+        //
+        // Sources feeding each list:
+        //   1. Squire prefetch (this turn) — always enters short list only
+        //   2. Formatter carry-forward (preserved from previous turn) —
+        //      enters the long-list candidate pool
+        //
+        // Algorithm (spec §4):
+        //   for token in long_list_candidates:
+        //       if cost(token) <= remaining budget → long list
+        //       else → short list (demoted, never dropped)
+        //   for token in short_list_candidates:
+        //       → short list (deduplicated against already-placed longs)
         let min_score = self.prefetch.min_score;
-        let mut seen: HashSet<String> =
-            preserved.iter().map(|t| t.token_id.clone()).collect();
-        let preserved_ids: HashSet<String> = seen.clone();
-        let mut all_tokens: Vec<_> = preserved.into_iter().collect();
-        for token in memory_prefetched
-            .into_iter()
-            .chain(workflow_prefetched.into_iter())
-            .chain(tool_prefetched.into_iter())
-            .chain(skill_prefetched.into_iter())
+        let long_list_budget = self.prefetch.long_list_budget.max(1);
+        let mut remaining_budget = long_list_budget;
+        let mut seen_ids: HashSet<String> = HashSet::new();
+        let mut long_tokens: Vec<serde_json::Value> = Vec::new();
+        let mut short_tokens: Vec<serde_json::Value> = Vec::new();
+
+        // Merge prefetched tokens (deduplicated across resource classes).
+        // Prefetched tokens below min_score are discarded.
+        let mut all_prefetched: Vec<TokenSummary> = Vec::new();
         {
-            if token.score < min_score {
-                continue;
-            }
-            if seen.insert(token.token_id.clone()) {
-                all_tokens.push(token);
+            let mut seen_prefetch: HashSet<String> = HashSet::new();
+            for token in memory_prefetched
+                .into_iter()
+                .chain(workflow_prefetched.into_iter())
+                .chain(tool_prefetched.into_iter())
+                .chain(skill_prefetched.into_iter())
+            {
+                if token.score < min_score {
+                    continue;
+                }
+                if seen_prefetch.insert(token.token_id.clone()) {
+                    all_prefetched.push(token);
+                }
             }
         }
 
-        // Classification policy for expanded (full_desc) vs. short form:
-        //   - Preserved tokens — expanded, because the AI chose to keep them
-        //   - User/referential chunks (USR_T*, RESP_T*) — expanded, because
-        //     a referential token is meaningless without its content
-        //   - Prefetched bootstrap tokens — short form only; the AI uses
-        //     token_to_detail when it needs the full description
-        let mut expanded_tokens: Vec<serde_json::Value> = Vec::new();
-        let mut short_tokens: Vec<serde_json::Value> = Vec::new();
-        for token in &all_tokens {
-            let is_preserved = preserved_ids.contains(&token.token_id);
-            let is_referential = token.token_id.starts_with("USR_T")
-                || token.token_id.starts_with("RESP_T");
-
-            if is_preserved || is_referential {
-                let detail = self.store.token_detail(&token.token_id).await;
-                expanded_tokens.push(serde_json::json!({
+        // ── Phase 1: Long-list candidates (preserved tokens) ──────────
+        // Preserved tokens carry the formatter's intent from the previous turn
+        // (spec §7 step 7). They always enter the long-list candidate pool.
+        // If their full_desc is too large for the remaining budget, they are
+        // demoted to the short list (never dropped).
+        for token in &preserved {
+            seen_ids.insert(token.token_id.clone());
+            let detail = self.store.token_detail(&token.token_id).await;
+            let full_desc = detail.and_then(|d| d.full_desc).unwrap_or_default();
+            if full_desc.is_empty() {
+                // No full_desc available — just put on short list
+                short_tokens.push(serde_json::json!({
                     "token_id": token.token_id,
-                    "full_desc": detail.and_then(|d| d.full_desc).unwrap_or_default(),
+                    "short_desc": token.short_desc,
+                }));
+                continue;
+            }
+            let cost = full_desc.len();
+            if cost <= remaining_budget {
+                remaining_budget = remaining_budget.saturating_sub(cost);
+                long_tokens.push(serde_json::json!({
+                    "token_id": token.token_id,
+                    "full_desc": full_desc,
+                }));
+            } else {
+                // Demoted to short — spec: "never dropped outright"
+                short_tokens.push(serde_json::json!({
+                    "token_id": token.token_id,
+                    "short_desc": token.short_desc,
+                }));
+            }
+        }
+
+        // ── Phase 2: Current-turn USR_T chunk tokens ─────────────────
+        // The chunks just created above are always relevant to this turn;
+        // they carry §^chunk_i§^ bookmark markers the AI uses for
+        // referential token creation. Short_desc alone is meaningless.
+        for chunk_id in &chunk_ids {
+            seen_ids.insert(chunk_id.clone());
+            let detail = self.store.token_detail(chunk_id).await;
+            let full_desc = detail.and_then(|d| d.full_desc).unwrap_or_default();
+            if full_desc.is_empty() {
+                continue;
+            }
+            let cost = full_desc.len();
+            if cost <= remaining_budget {
+                remaining_budget = remaining_budget.saturating_sub(cost);
+                long_tokens.push(serde_json::json!({
+                    "token_id": chunk_id,
+                    "full_desc": full_desc,
+                }));
+            } else {
+                short_tokens.push(serde_json::json!({
+                    "token_id": chunk_id,
+                    "short_desc": chunk_id.to_string(),
+                }));
+            }
+        }
+
+        // ── Phase 4: Source-token chunks found via prefetch ──────────
+        // USR_T/RESP_T source chunks are the raw material for referential
+        // tokens. Short_desc alone is meaningless; the AI needs the actual
+        // chunk text.  We inline them as long tokens (they're typically
+        // small: 100-400 chars each).
+        for token in &all_prefetched {
+            let is_chunk = token.token_id.starts_with("USR_T")
+                || token.token_id.starts_with("RESP_T");
+            if !is_chunk || !seen_ids.insert(token.token_id.clone()) {
+                continue;
+            }
+            let detail = self.store.token_detail(&token.token_id).await;
+            let full_desc = detail.and_then(|d| d.full_desc).unwrap_or_default();
+            if full_desc.is_empty() {
+                continue;
+            }
+            let cost = full_desc.len();
+            if cost <= remaining_budget {
+                remaining_budget = remaining_budget.saturating_sub(cost);
+                long_tokens.push(serde_json::json!({
+                    "token_id": token.token_id,
+                    "full_desc": full_desc,
                 }));
             } else {
                 short_tokens.push(serde_json::json!({
@@ -373,12 +456,38 @@ impl ContextManagerAdapter for SquireContextAdapter {
             }
         }
 
+        // ── Phase 5: Short-list candidates (prefetch + remaining) ────
+        // Prefetched tokens always enter the SHORT list (spec §4).
+        // Short list has no budget — "cheap by construction".
+        for token in &all_prefetched {
+            if !seen_ids.insert(token.token_id.clone()) {
+                continue;
+            }
+            short_tokens.push(serde_json::json!({
+                "token_id": token.token_id,
+                "short_desc": token.short_desc,
+            }));
+        }
+
+        // ── Budget utilisation log (debug) ───────────────────────────
+        if self.prefetch.long_list_budget > 0 && remaining_budget < long_list_budget {
+            log::debug!(
+                "Squire long-list budget: {}/{} chars used ({} remaining) for turn {}",
+                long_list_budget - remaining_budget,
+                long_list_budget,
+                remaining_budget,
+                current_turn
+            );
+        }
+
         let active_process_state =
             self.store.compute_active_process_state(session.session.id).await;
 
         let context = serde_json::json!({
-            "expanded_tokens": expanded_tokens,
-            "tokens": short_tokens,
+            "long_tokens": long_tokens,
+            "short_tokens": short_tokens,
+            "long_list_budget_used": long_list_budget.saturating_sub(remaining_budget),
+            "long_list_budget_total": long_list_budget,
             "active_process_state": active_process_state,
         });
 
@@ -753,11 +862,18 @@ impl SquireContextAdapter {
         let mut valid_preserve: Vec<String> = Vec::new();
         let mut invalid_preserve: Vec<String> = Vec::new();
         for id in &parsed.preserve {
-            let exists = defining_now.contains(id) || self.store.token_exists(id).await;
+            // Defensive: strip stray §# marker characters that models
+            // sometimes include in preserve lists.  These are parser
+            // artifacts, not real token IDs.
+            let cleaned = id.trim().trim_start_matches("§#").trim();
+            if cleaned.is_empty() {
+                continue;
+            }
+            let exists = defining_now.contains(cleaned) || self.store.token_exists(cleaned).await;
             if exists {
-                valid_preserve.push(id.clone());
+                valid_preserve.push(cleaned.to_string());
             } else {
-                invalid_preserve.push(id.clone());
+                invalid_preserve.push(cleaned.to_string());
             }
         }
 
@@ -777,38 +893,95 @@ impl SquireContextAdapter {
         self.store.increment_turn(session_id).await;
 
         // ═══════════════════════════════════════════════════════════════
-        // Collect remaining issues — valid data is already saved, only
-        // problems need fixing on retry.
+        // Build a clear, actionable retry message.
         // ═══════════════════════════════════════════════════════════════
-        let mut issues: Vec<String> = Vec::new();
-        // Commentary text outside §# sections is ignored — only the
-        // structured sections matter for token/relationship extraction.
-        if !range_issues.is_empty() {
-            issues.push(format!(
-                "Range resolution failed for these tokens (stored without ranges, \
-                 fix or remove the range specs): {}",
-                range_issues.join("; ")
-            ));
-        }
-        if !invalid_rels.is_empty() {
-            issues.push(format!(
-                "Invalid relationships (already saved valid ones; fix or remove these): {}",
-                invalid_rels.join("; ")
-            ));
-        }
-        if !invalid_preserve.is_empty() {
-            issues.push(format!(
-                "Unknown preserved tokens (already saved valid ones; fix or remove these): {}",
-                invalid_preserve.join(", ")
-            ));
-        }
+        if !range_issues.is_empty() || !invalid_rels.is_empty() || !invalid_preserve.is_empty() {
+            let mut retry_parts: Vec<String> = Vec::new();
 
-        if !issues.is_empty() {
-            let retry_msg = format!(
-                "Partial acceptance: valid tokens and relationships were saved. \
-                 Fix these remaining issues:\n{}",
-                issues.join("\n")
-            );
+            // ── Header: what was saved (so model doesn't re-do it) ──
+            let saved_new = parsed.new_tokens.len().saturating_sub(range_issues.len());
+            let saved_rel = valid_rels.len();
+            let saved_pres = valid_preserve.len();
+            if saved_new > 0 || saved_rel > 0 || saved_pres > 0 {
+                retry_parts.push(format!(
+                    "Saved: {} tokens, {} relationships, {} preserve entries. \
+                     Do NOT re-submit these — only fix the issues below.",
+                    saved_new, saved_rel, saved_pres
+                ));
+            }
+
+            // ── Range issues ──
+            if !range_issues.is_empty() {
+                retry_parts.push(format!(
+                    "Range specs to fix (tokens stored without ranges): {}",
+                    range_issues.join("; ")
+                ));
+                retry_parts.push(
+                    "Hint: chunk_0 alone = full chunk. chunk_0:0→chunk_0:50 = char offsets. \
+                     chunk_0→chunk_1 = from start of chunk_0 to start of chunk_1. \
+                     Use ACTUAL USR_T/RESP_T IDs (visible in long_tokens) as namespace prefix."
+                    .to_string(),
+                );
+            }
+
+            // ── Invalid relationships — group by common cause ──
+            if !invalid_rels.is_empty() {
+                // Detect common patterns: span names used as IDs, unknown subjects, concatenated lines
+                let span_name_ids: Vec<&str> = invalid_rels.iter()
+                    .filter_map(|s| {
+                        let parts: Vec<&str> = s.split('|').collect();
+                        let subj = parts.first()?.trim();
+                        let obj = parts.get(2)?.trim();
+                        // Span names typically look like lowercase_with_underscores, not CAPITALIZED_OR_prefix
+                        if subj.chars().next().map_or(false, |c| c.is_lowercase()) { Some(subj) }
+                        else if obj.chars().next().map_or(false, |c| c.is_lowercase()) { Some(obj) }
+                        else { None }
+                    })
+                    .collect();
+
+                let is_span_name_issue = !span_name_ids.is_empty();
+                retry_parts.push(format!(
+                    "Invalid relationships to fix ({} total): {}",
+                    invalid_rels.len(),
+                    invalid_rels.join("; ")
+                ));
+
+                if is_span_name_issue {
+                    retry_parts.push(format!(
+                        "IMPORTANT: these names are §^ SPAN MARKERS, not token IDs: {}. \
+                         Spans do NOT create tokens by themselves. Either: \
+                         (1) define a referential token with the span name as its id in §#new_tokens, \
+                         then reference it, or \
+                         (2) use existing RESP_T/USR_T token IDs from your context instead.",
+                        span_name_ids.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(", ")
+                    ));
+                }
+
+                // Check for concatenated lines (a single line with >3 pipe segments)
+                let concat_lines: Vec<&str> = invalid_rels.iter()
+                    .filter(|s| s.matches('|').count() >= 3)
+                    .map(|s| s.as_str())
+                    .collect();
+                if !concat_lines.is_empty() {
+                    retry_parts.push(
+                        "Warning: some relationship lines appear to have >3 | fields — \
+                         this usually means two lines were concatenated. \
+                         Make sure each relationship is on its OWN line with exactly 3 fields."
+                        .to_string(),
+                    );
+                }
+            }
+
+            // ── Preserve issues ──
+            if !invalid_preserve.is_empty() {
+                retry_parts.push(format!(
+                    "Invalid preserve entries: {}. Remove them from §#preserve or define them first.",
+                    invalid_preserve.join(", ")
+                ));
+            }
+
+            // ── Assemble ──
+            let retry_msg = retry_parts.join("\n\n");
             messages.push(ChatMessage {
                 role: ChatRole::User,
                 content: retry_msg,
@@ -841,8 +1014,36 @@ impl SquireContextAdapter {
         Ok(TurnOutcome::Phase2Done {
             tokens_accepted: parsed.new_tokens.len(),
             relationships_accepted: valid_rels.len(),
-            tokens_rejected: vec![], // All tokens were accepted if we got here
-            relationships_rejected: vec![], // All relationships were accepted if we got here
+            tokens_rejected: vec![],
+            relationships_rejected: vec![],
         })
+    }
+
+    /// Formatter-pass finalize: parse the formatter model's JSON output and
+    /// process tokens/relationships/preserve. Unlike `finalize_phase2`, this
+    /// path does NOT chunk the response or persist a chat message — the
+    /// formatter output is purely structural, not user-facing.
+    pub async fn finalize_formatter_json(
+        &mut self,
+        session_id: SessionId,
+        formatter_output: &str,
+        store: &dyn ConversationStore,
+    ) -> Result<TurnOutcome, String> {
+        let parsed = crate::agent::squire::types::parse_formatter_json(formatter_output)
+            .map_err(|e| format!("Formatter JSON parse failed: {}", e))?;
+
+        // Delegate to the shared Phase 2 processing logic.
+        // No _thinking for formatter (it's a structured-output pass).
+        // No messages to push — formatter output isn't user-visible.
+        let mut dummy_messages = Vec::new();
+        self.finalize_phase2(
+            session_id,
+            parsed,
+            String::new(), // No assistant content for formatter
+            None,           // No thinking
+            &mut dummy_messages,
+            store,
+        )
+        .await
     }
 }

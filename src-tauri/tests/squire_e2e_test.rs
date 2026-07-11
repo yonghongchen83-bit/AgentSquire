@@ -202,6 +202,7 @@ async fn run_test() -> Result<(), String> {
             tool_top_k: 2,
             skill_top_k: 2,
             min_score: 0.0,
+            ..Default::default()
         },
     );
 

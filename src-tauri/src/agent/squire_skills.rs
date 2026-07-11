@@ -22,7 +22,7 @@ use serde::Deserialize;
 
 use notify::Watcher as _;
 
-use squire_store::SessionId;
+use squire_store::{predicates, Relationship, SessionId};
 use crate::agent::squire::{NewTokenSpec, SquireStore};
 
 // ── Data types ─────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ pub async fn ingest_one_skill(store: &dyn SquireStore, sk: &SkillDef) {
         .upsert_token(
             NewTokenSpec {
                 id: sk.id.clone(),
-                token_type: "skill".to_string(),
+                token_type: "source".to_string(),
                 short_desc: sk.short_desc.clone(),
                 full_desc: Some(sk.full_desc.clone()),
                 endpoint: None,
@@ -149,6 +149,14 @@ pub async fn ingest_one_skill(store: &dyn SquireStore, sk: &SkillDef) {
             0,
             SessionId::nil(),
         )
+        .await;
+    // Role expressed via relationship, not hardcoded token_type
+    store
+        .insert_relationship(Relationship {
+            subject: sk.id.clone(),
+            predicate: predicates::IS_A_SKILL.to_string(),
+            object: sk.id.clone(),
+        })
         .await;
 }
 

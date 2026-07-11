@@ -45,10 +45,10 @@ fn append_wire_log(path: Option<&PathBuf>, entry: &str) {
 }
 
 fn normalize_level(level: Option<String>) -> String {
-    let raw = level.unwrap_or_else(|| "mid".to_string()).to_lowercase();
+    let raw = level.unwrap_or_else(|| "default".to_string()).to_lowercase();
     match raw.as_str() {
         "default" | "none" | "low" | "mid" | "high" => raw,
-        _ => "mid".to_string(),
+        _ => "default".to_string(),
     }
 }
 

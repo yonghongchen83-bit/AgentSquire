@@ -35,8 +35,9 @@ use squirecli_lib::agent::{Tool, ToolRegistry};
 use squirecli_lib::storage::conversation_store::{
     ContextMode, Message, MessageRole, Session, SessionWithMessages,
 };
-use squirecli_lib::storage::squire_lancedb::LanceDbSquireStore;
+use squire_store::LanceDbSquireStore;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
 
 fn fixture_session(user_text: &str) -> SessionWithMessages {
     let session_id = uuid::Uuid::new_v4();
@@ -139,8 +140,10 @@ async fn run() {
     // ---- Confirm the exact real explore() tool surfaces them ----
     let explore_tool = SquireExploreTool {
         store: store.clone(),
-        tool_registry: Arc::new(ToolRegistry::empty()),
+        tool_defs: vec![],
         session_id: session.session.id,
+        batch_counter: Arc::new(AtomicU32::new(0)),
+        batch_cap: 100,
     };
     let explore_result = explore_tool
         .execute(

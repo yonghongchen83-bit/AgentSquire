@@ -1,13 +1,15 @@
-//! The three built-in Squire protocol tools: `explore`, `token_to_detail`,
-//! and `invoke`.
+//! The five built-in Squire protocol tools: `explore`, `token_to_detail`,
+//! `rdf`, `batch`, and `invoke`.
 //!
-//! `explore` and `token_to_detail` are the discovery surface. `invoke`
-//! proxies a call to a tool/skill discovered via `explore()`, identified by
-//! its `token_id`. The streaming orchestration in `streaming_cmd.rs`
-//! rewrites the `stream-tool-call` event so the frontend sees the real tool
-//! name (not "invoke"), keeping the UI consistent with Legacy mode.
+//! `explore`, `rdf`, `token_to_detail`, and `batch` are the discovery
+//! surface. `batch` composes explore/rdf/token_to_detail into pipelines
+//! (`|`) and parallel groups (`&`/`;`) — spec §3 batch composition
+//! syntax — reducing round trips while counting as one call.
+//! `invoke` proxies a call to a tool/skill discovered via `explore()`,
+//! identified by its `token_id`.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -17,6 +19,33 @@ use super::types::TokenSummary;
 use crate::agent::{Tool, ToolResult};
 use crate::llm::provider::ToolDefinition;
 use crate::storage::conversation_store::SessionId;
+
+/// Default per-turn cap on discovery-tool calls (explore + rdf + token_to_detail).
+/// Spec §3: "small, e.g. 2–3".
+pub const DEFAULT_BATCH_CAP: u32 = 3;
+
+/// Shared batch counter: check-and-increment. Returns `Some(ToolResult)` if
+/// the cap has been exceeded (the caller should return this error immediately);
+/// returns `None` if the call is allowed to proceed.
+fn check_batch_cap(counter: &AtomicU32, cap: u32, _tool_name: &str) -> Option<ToolResult> {
+    let count = counter.fetch_add(1, Ordering::Relaxed);
+    if count >= cap {
+        // Rollback so repeated over-cap calls all see the exceeded state
+        // without saturating the counter.
+        counter.store(cap, Ordering::Relaxed);
+        return Some(ToolResult {
+            call_id: String::new(),
+            output: format!(
+                "Batch retrieval cap ({}) exceeded. You have already made {} discovery calls \
+                 (explore/rdf/token_to_detail) this turn. Respond with the information you have, \
+                 or use invoke() on tools you have already discovered.",
+                cap, count
+            ),
+            is_error: true,
+        });
+    }
+    None
+}
 
 // ─────────────────────────── Tool definitions ───────────────────────────
 
@@ -52,6 +81,31 @@ pub fn built_in_tool_definitions() -> Vec<ToolDefinition> {
             }),
         },
         ToolDefinition {
+            name: "rdf".to_string(),
+            description: "Walk relationship (triplet) edges outward from a token, returning tokens discovered by graph traversal. Use after explore() to expand context around a seed token. Does NOT reason about which edges matter — that judgment belongs to the AI.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "token_id": {
+                        "type": "string",
+                        "description": "The token to start traversal from"
+                    },
+                    "hops": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "description": "Number of graph hops to walk outward"
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Max tokens to return (default 20)"
+                    }
+                },
+                "required": ["token_id", "hops"]
+            }),
+        },
+        ToolDefinition {
             name: "invoke".to_string(),
             description: "Execute a tool or skill by its token_id (discovered via explore(resource_type='tool_skill', ...)). The result is returned as if the tool was called directly.".to_string(),
             input_schema: serde_json::json!({
@@ -69,6 +123,20 @@ pub fn built_in_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["token_id", "params"]
             }),
         },
+        ToolDefinition {
+            name: "batch".to_string(),
+            description: "Compose explore/rdf/token_to_detail calls with pipe (|) and parallel (& or ;) operators. Piping explore results into rdf saves round trips and counts as one batch call. Example: explore(memory, 'rust', 1, 10) | rdf(2)".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "expression": {
+                        "type": "string",
+                        "description": "Batch expression using | (pipe), & or ; or newline (parallel). E.g. 'explore(memory, rust, 1, 10) | rdf(2)' or 'explore(memory, X, 1, 5) & explore(workflow, Y, 0, 3)'"
+                    }
+                },
+                "required": ["expression"]
+            }),
+        },
     ]
 }
 
@@ -84,6 +152,10 @@ pub struct SquireExploreTool {
     /// as a tool argument (see decisions.md: the model has no legitimate
     /// reason to know its own session id).
     pub session_id: SessionId,
+    /// Shared per-turn batch counter (explore + rdf + token_to_detail).
+    pub batch_counter: Arc<AtomicU32>,
+    /// Maximum discovery calls allowed this turn.
+    pub batch_cap: u32,
 }
 
 #[async_trait]
@@ -98,6 +170,9 @@ impl Tool for SquireExploreTool {
         built_in_tool_definitions()[0].input_schema.clone()
     }
     async fn execute(&self, call_id: &str, args: Value) -> ToolResult {
+        if let Some(err) = check_batch_cap(&self.batch_counter, self.batch_cap, "explore") {
+            return err;
+        }
         let resource_type = args
             .get("resource_type")
             .and_then(|v| v.as_str())
@@ -233,6 +308,10 @@ impl Tool for SquireExploreTool {
 
 pub struct SquireTokenToDetailTool {
     pub store: Arc<dyn SquireStore>,
+    /// Shared per-turn batch counter (explore + rdf + token_to_detail).
+    pub batch_counter: Arc<AtomicU32>,
+    /// Maximum discovery calls allowed this turn.
+    pub batch_cap: u32,
 }
 
 #[async_trait]
@@ -247,6 +326,9 @@ impl Tool for SquireTokenToDetailTool {
         built_in_tool_definitions()[1].input_schema.clone()
     }
     async fn execute(&self, call_id: &str, args: Value) -> ToolResult {
+        if let Some(err) = check_batch_cap(&self.batch_counter, self.batch_cap, "token_to_detail") {
+            return err;
+        }
         let token_id = args.get("token_id").and_then(|v| v.as_str()).unwrap_or("");
         if token_id.is_empty() {
             return ToolResult {
@@ -293,7 +375,123 @@ impl Tool for SquireTokenToDetailTool {
     }
 }
 
+// ─────────────────────────── Rdf (graph walk) tool ───────────────────────────
+
+/// `rdf(token_id, hops)` — walk relationship edges outward from a seed token.
+///
+/// Spec §3: a mechanical, non-judgmental walk of triplet edges. Does not reason
+/// about which edges matter — that judgment belongs to the AI. Uses the
+/// backend-agnostic `traverse_relationships` helper shared by all store
+/// implementations.
+pub struct SquireRdfTool {
+    pub store: Arc<dyn SquireStore>,
+    /// Shared per-turn batch counter (explore + rdf + token_to_detail).
+    pub batch_counter: Arc<AtomicU32>,
+    /// Maximum discovery calls allowed this turn.
+    pub batch_cap: u32,
+}
+
+#[async_trait]
+impl Tool for SquireRdfTool {
+    fn name(&self) -> &str {
+        "rdf"
+    }
+    fn description(&self) -> &str {
+        "Walk relationship edges outward from a token to discover related tokens via graph traversal."
+    }
+    fn input_schema(&self) -> Value {
+        built_in_tool_definitions()[2].input_schema.clone()
+    }
+    async fn execute(&self, call_id: &str, args: Value) -> ToolResult {
+        if let Some(err) = check_batch_cap(&self.batch_counter, self.batch_cap, "rdf") {
+            return err;
+        }
+        let token_id = args.get("token_id").and_then(|v| v.as_str()).unwrap_or("");
+        if token_id.is_empty() {
+            return ToolResult {
+                call_id: call_id.to_string(),
+                output: "Missing required argument: token_id".to_string(),
+                is_error: true,
+            };
+        }
+        let hops = args.get("hops").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+        let max_results = args
+            .get("max_results")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(20) as u32;
+
+        // Verify the seed token exists
+        let Some(_seed_token) = self.store.token_detail(token_id).await else {
+            return ToolResult {
+                call_id: call_id.to_string(),
+                output: format!("Unknown seed token: {}", token_id),
+                is_error: true,
+            };
+        };
+
+        // Record hit on the seed token (spec §5.1: loading context = +1 hit)
+        self.store.record_hit(token_id).await;
+
+        // Get all relationships in the graph
+        let relationships = self.store.get_relationships(None, None, None).await;
+
+        // Build edges: (subject, object) pairs
+        let edges: Vec<(String, String)> = relationships
+            .iter()
+            .map(|r| (r.subject.clone(), r.object.clone()))
+            .collect();
+
+        // Build node map for all tokens referenced in the graph, plus the seed
+        let all_ids = self.store.list_token_ids().await;
+        let mut all_nodes: std::collections::HashMap<String, squire_store::TraversalNode> =
+            std::collections::HashMap::new();
+        for id in &all_ids {
+            if let Some(detail) = self.store.token_detail(id).await {
+                all_nodes.insert(
+                    id.clone(),
+                    squire_store::TraversalNode {
+                        token_id: id.clone(),
+                        token_type: self
+                            .store
+                            .get_type(id)
+                            .await
+                            .unwrap_or_else(|| "unknown".to_string()),
+                        short_desc: detail.short_desc.clone(),
+                    },
+                );
+            }
+        }
+
+        // Seed: single token with score 1.0
+        let direct = vec![(token_id.to_string(), 1.0f32)];
+
+        // Walk the graph — pass |_| true because rdf() does not filter by type
+        let mut results: Vec<TokenSummary> = squire_store::traverse_relationships(
+            &direct,
+            &edges,
+            hops,
+            &all_nodes,
+            |_| true,
+        );
+
+        // Sort by hop_distance then score, truncate to max_results
+        results.sort_by(|a, b| {
+            a.hop_distance
+                .cmp(&b.hop_distance)
+                .then_with(|| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal))
+        });
+        results.truncate(max_results.max(1) as usize);
+
+        ToolResult {
+            call_id: call_id.to_string(),
+            output: serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()),
+            is_error: false,
+        }
+    }
+}
+
 // ─────────────────────────── Invoke tool ───────────────────────────
+// ... existing invoke tool code continues ...
 
 /// Squire's `invoke(token_id, params)` tool — a ToolDefinition-only entry point.
 ///
@@ -318,7 +516,7 @@ impl Tool for SquireInvokeTool {
     }
 
     fn input_schema(&self) -> Value {
-        built_in_tool_definitions()[2].input_schema.clone()
+        built_in_tool_definitions()[3].input_schema.clone()
     }
 
     fn danger(&self) -> crate::agent::ToolDanger {
@@ -333,6 +531,355 @@ impl Tool for SquireInvokeTool {
             call_id: String::new(),
             output: "Internal error: invoke tool was not redirected by orchestration".to_string(),
             is_error: true,
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Batch composition syntax parser + tool (spec §3)
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Parsed function call from a batch expression.
+#[derive(Debug, Clone)]
+pub enum BatchFunc {
+    Explore {
+        resource_type: String,
+        query: String,
+        num_hops: u32,
+        max_results: u32,
+    },
+    Rdf {
+        hops: u32,
+        max_results: u32,
+    },
+    TokenToDetail {
+        token_id: String,
+    },
+}
+
+/// Parse a batch expression into groups of pipelined function calls.
+/// `|` separates pipeline stages; `&`, `;`, and newlines separate groups.
+///
+/// Examples:
+///   `explore(memory, rust, 1, 10) | rdf(2)`
+///   `explore(memory, X, 1, 5) & explore(workflow, Y, 0, 3)`
+pub fn parse_batch_expr(expr: &str) -> Result<Vec<Vec<BatchFunc>>, String> {
+    // Split into groups on &, ;, or newlines (but not inside parens/quotes)
+    let groups = split_groups(expr)?;
+    let mut result = Vec::new();
+    for group in &groups {
+        let pipeline = split_pipeline(group)?;
+        let mut funcs = Vec::new();
+        for stage in &pipeline {
+            funcs.push(parse_func_call(stage)?);
+        }
+        result.push(funcs);
+    }
+    if result.is_empty() {
+        return Err("Empty batch expression".to_string());
+    }
+    Ok(result)
+}
+
+/// Split text into groups on `&`, `;`, or newlines, respecting parens and quotes.
+fn split_groups(text: &str) -> Result<Vec<String>, String> {
+    let mut groups = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0i32;
+    let mut in_single = false;
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\'' && !in_single {
+            in_single = true;
+        } else if c == '\'' && in_single {
+            in_single = false;
+        } else if !in_single {
+            if c == '(' { depth += 1; }
+            if c == ')' { depth -= 1; if depth < 0 { return Err("Unmatched ')' in batch expression".to_string()); } }
+        }
+        if depth == 0 && !in_single && (c == '&' || c == ';' || c == '\n') {
+            let trimmed = current.trim().to_string();
+            if !trimmed.is_empty() {
+                groups.push(trimmed);
+            }
+            current = String::new();
+            i += 1;
+            continue;
+        }
+        current.push(c);
+        i += 1;
+    }
+    let trimmed = current.trim().to_string();
+    if !trimmed.is_empty() {
+        groups.push(trimmed);
+    }
+    Ok(groups)
+}
+
+/// Split a group (no separators) into pipeline stages on `|`.
+fn split_pipeline(text: &str) -> Result<Vec<String>, String> {
+    let mut stages = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0i32;
+    let mut in_single = false;
+    for c in text.chars() {
+        if c == '\'' && !in_single {
+            in_single = true;
+        } else if c == '\'' && in_single {
+            in_single = false;
+        } else if !in_single {
+            if c == '(' { depth += 1; }
+            if c == ')' { depth -= 1; if depth < 0 { return Err("Unmatched ')' in pipeline".to_string()); } }
+        }
+        if depth == 0 && !in_single && c == '|' {
+            let trimmed = current.trim().to_string();
+            if trimmed.is_empty() { return Err("Empty pipeline stage before '|'".to_string()); }
+            stages.push(trimmed);
+            current = String::new();
+            continue;
+        }
+        current.push(c);
+    }
+    let trimmed = current.trim().to_string();
+    if !trimmed.is_empty() { stages.push(trimmed); }
+    if stages.is_empty() { return Err("Empty pipeline".to_string()); }
+    Ok(stages)
+}
+
+/// Parse a single function call like `explore(memory, rust, 1, 10)`.
+fn parse_func_call(text: &str) -> Result<BatchFunc, String> {
+    let text = text.trim();
+    let open = text.find('(').ok_or_else(|| format!("Missing '(' in: {}", text))?;
+    let close = text.rfind(')').ok_or_else(|| format!("Missing ')' in: {}", text))?;
+    let name = text[..open].trim();
+    let args_str = text[open + 1..close].trim();
+    let args = parse_args(args_str)?;
+
+    match name {
+        "explore" => {
+            if args.len() < 2 {
+                return Err("explore() requires at least 2 args: (resource_type, query, [num_hops], [max_results])".to_string());
+            }
+            Ok(BatchFunc::Explore {
+                resource_type: args.get(0).cloned().unwrap_or_default(),
+                query: args.get(1).cloned().unwrap_or_default(),
+                num_hops: args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0),
+                max_results: args.get(3).and_then(|s| s.parse().ok()).unwrap_or(10),
+            })
+        }
+        "rdf" => {
+            if args.is_empty() {
+                return Err("rdf() requires at least 1 arg: (hops, [max_results])".to_string());
+            }
+            Ok(BatchFunc::Rdf {
+                hops: args.get(0).and_then(|s| s.parse().ok()).unwrap_or(1),
+                max_results: args.get(1).and_then(|s| s.parse().ok()).unwrap_or(20),
+            })
+        }
+        "token_to_detail" => {
+            if args.is_empty() {
+                return Err("token_to_detail() requires token_id".to_string());
+            }
+            Ok(BatchFunc::TokenToDetail {
+                token_id: args[0].clone(),
+            })
+        }
+        other => Err(format!("Unknown batch function: {}", other)),
+    }
+}
+
+/// Parse comma-separated args, handling single-quoted strings (which may contain commas).
+fn parse_args(s: &str) -> Result<Vec<String>, String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut in_quote = false;
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\'' && !in_quote {
+            in_quote = true;
+            i += 1;
+            continue;
+        }
+        if c == '\'' && in_quote {
+            in_quote = false;
+            i += 1;
+            continue;
+        }
+        if c == ',' && !in_quote {
+            args.push(current.trim().to_string());
+            current = String::new();
+            i += 1;
+            continue;
+        }
+        current.push(c);
+        i += 1;
+    }
+    let trimmed = current.trim().to_string();
+    if !trimmed.is_empty() { args.push(trimmed); }
+    if in_quote { return Err("Unclosed single quote in args".to_string()); }
+    Ok(args)
+}
+
+// ─────────────────────────── Batch tool ───────────────────────────
+
+pub struct SquireBatchTool {
+    pub store: Arc<dyn SquireStore>,
+    /// Tool definitions snapshot for explore() in the live registry.
+    pub tool_defs: Vec<ToolDefinition>,
+    pub session_id: SessionId,
+    /// Shared per-turn batch counter (counts as 1 call against the cap).
+    pub batch_counter: Arc<AtomicU32>,
+    pub batch_cap: u32,
+}
+
+#[async_trait]
+impl Tool for SquireBatchTool {
+    fn name(&self) -> &str { "batch" }
+    fn description(&self) -> &str {
+        "Compose explore/rdf/token_to_detail calls into one batch expression using | (pipe) and & or ; (parallel)."
+    }
+    fn input_schema(&self) -> Value {
+        built_in_tool_definitions()[4].input_schema.clone()
+    }
+    async fn execute(&self, call_id: &str, args: Value) -> ToolResult {
+        if let Some(err) = check_batch_cap(&self.batch_counter, self.batch_cap, "batch") {
+            return err;
+        }
+        let expr = args.get("expression").and_then(|v| v.as_str()).unwrap_or("");
+        if expr.is_empty() {
+            return ToolResult { call_id: call_id.to_string(), output: "Missing 'expression' argument".to_string(), is_error: true };
+        }
+
+        let groups = match parse_batch_expr(expr) {
+            Ok(g) => g,
+            Err(e) => return ToolResult { call_id: call_id.to_string(), output: format!("Batch parse error: {}", e), is_error: true },
+        };
+
+        let current_turn = self.store.current_turn(self.session_id).await;
+        let mut all_results: Vec<TokenSummary> = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        // Execute each parallel group independently, merge results
+        for group in &groups {
+            let group_results = self.exec_pipeline(group, current_turn).await;
+            for t in group_results {
+                if seen.insert(t.token_id.clone()) {
+                    all_results.push(t);
+                }
+            }
+        }
+
+        all_results.truncate(200); // cap at reasonable max
+        ToolResult {
+            call_id: call_id.to_string(),
+            output: serde_json::to_string(&all_results).unwrap_or_else(|_| "[]".to_string()),
+            is_error: false,
+        }
+    }
+}
+
+impl SquireBatchTool {
+    /// Execute a pipeline: first func produces seed tokens, each subsequent
+    /// `| rdf(hops, max)` walks from those seeds.
+    async fn exec_pipeline(&self, funcs: &[BatchFunc], current_turn: u64) -> Vec<TokenSummary> {
+        if funcs.is_empty() { return vec![]; }
+
+        // Execute first function — produces seed tokens
+        let seeds = self.exec_func(&funcs[0], &[], current_turn).await;
+
+        if funcs.len() == 1 {
+            return seeds;
+        }
+
+        // For each subsequent `| rdf(...)`, walk from all seed tokens
+        let mut current_seeds = seeds;
+        for func in &funcs[1..] {
+            current_seeds = self.exec_func(func, &current_seeds, current_turn).await;
+        }
+        current_seeds
+    }
+
+    /// Execute a single function, optionally using seeds as input for rdf.
+    async fn exec_func(&self, func: &BatchFunc, seeds: &[TokenSummary], current_turn: u64) -> Vec<TokenSummary> {
+        match func {
+            BatchFunc::Explore { resource_type, query, num_hops, max_results } => {
+                if matches!(resource_type.as_str(), "tool" | "tool_skill") {
+                    // Tool registry path — substring match
+                    let ql = query.to_lowercase();
+                    let mut results = Vec::new();
+                    for d in &self.tool_defs {
+                        let matched = ql.is_empty()
+                            || d.name.to_lowercase().contains(&ql)
+                            || d.description.to_lowercase().contains(&ql);
+                        if matched && (results.len() as u32) < *max_results {
+                            results.push(TokenSummary {
+                                token_id: d.name.clone(), token_type: "tool".to_string(),
+                                score: 1.0, short_desc: d.description.clone(),
+                                accumulated_hits: 0, hop_distance: 0, via_token_id: None,
+                            });
+                        }
+                    }
+                    if resource_type == "tool_skill" {
+                        let skills = self.store.explore_memory(
+                            "skill", query, *num_hops, *max_results, current_turn, self.session_id,
+                        ).await;
+                        results.extend(skills);
+                    }
+                    results
+                } else {
+                    self.store.explore_memory(
+                        resource_type, query, *num_hops, *max_results, current_turn, self.session_id,
+                    ).await
+                }
+            }
+            BatchFunc::Rdf { hops, max_results } => {
+                if seeds.is_empty() { return vec![]; }
+                // Build edges and nodes for traversal
+                let relationships = self.store.get_relationships(None, None, None).await;
+                let edges: Vec<(String, String)> = relationships.iter()
+                    .map(|r| (r.subject.clone(), r.object.clone())).collect();
+                let all_ids = self.store.list_token_ids().await;
+                let mut all_nodes: std::collections::HashMap<String, squire_store::TraversalNode> =
+                    std::collections::HashMap::new();
+                for id in &all_ids {
+                    if let Some(detail) = self.store.token_detail(id).await {
+                        all_nodes.insert(id.clone(), squire_store::TraversalNode {
+                            token_id: id.clone(),
+                            token_type: self.store.get_type(id).await.unwrap_or_else(|| "unknown".to_string()),
+                            short_desc: detail.short_desc.clone(),
+                        });
+                    }
+                }
+                let direct: Vec<(String, f32)> = seeds.iter()
+                    .map(|s| (s.token_id.clone(), s.score)).collect();
+                let mut results = squire_store::traverse_relationships(
+                    &direct, &edges, *hops, &all_nodes, |_| true,
+                );
+                results.sort_by(|a, b| {
+                    a.hop_distance.cmp(&b.hop_distance)
+                        .then_with(|| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal))
+                });
+                results.truncate((*max_results).max(1) as usize);
+                results
+            }
+            BatchFunc::TokenToDetail { token_id } => {
+                match self.store.token_detail(token_id).await {
+                    Some(detail) => {
+                        self.store.record_hit(token_id).await;
+                        let desc = detail.full_desc.unwrap_or(detail.short_desc);
+                        vec![TokenSummary {
+                            token_id: token_id.clone(), token_type: "detail".to_string(),
+                            score: 1.0, short_desc: desc, accumulated_hits: 0,
+                            hop_distance: 0, via_token_id: None,
+                        }]
+                    }
+                    None => vec![],
+                }
+            }
         }
     }
 }

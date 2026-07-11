@@ -1,0 +1,42 @@
+id = "WF_BatchDiscovery"
+short_desc = "Use batch composition syntax (| pipe, & parallel) for efficient retrieval"
+full_desc = """
+A retrieval-optimisation workflow that teaches the AI to compose explore/rdf/
+token_to_detail calls into batch expressions using pipe (`|`) and parallel
+(`&` or `;`) operators (spec §3).  Each batch expression counts as ONE call
+against the per-turn batch cap (default 3), saving round trips.
+
+**When to select this workflow:**
+- You anticipate needing multiple explore/rdf calls to build context
+- You know a seed token exists and want to explore both it AND its neighbours
+- The user's query could benefit from parallel searches across categories
+
+**Batch composition patterns:**
+
+1. **Pipe explore into rdf** — discover tokens AND their neighbours in one call:
+   ```
+   batch("explore(memory, 'database schema', 0, 10) | rdf(2)")
+   ```
+   This expands explore results with graph-traversal context.
+
+2. **Parallel category search** — query multiple resource types at once:
+   ```
+   batch("explore(workflow, 'debugging', 0, 3) & explore(tool, 'git', 0, 3)")
+   ```
+   Independent searches merged into one round trip.
+
+3. **Long pipeline** — chain multiple rdf hops from a single seed:
+   ```
+   batch("explore(memory, 'authentication', 0, 1) | rdf(1) | rdf(1)")
+   ```
+   Three discovery operations counting as ONE batch call.
+
+**Anti-patterns:**
+- Do NOT use batch for tool invocation — invoke() is still called directly
+- Do NOT pipe incompatible functions — only explore feeds into rdf
+- Do NOT use batch when a single explore() would suffice
+
+**When NOT to use this workflow:**
+- Simple queries needing only one explore() call
+- All context is already available in long_tokens / short_tokens
+"""

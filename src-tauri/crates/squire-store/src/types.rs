@@ -195,6 +195,13 @@ pub mod predicates {
     /// Generic hierarchy inverse: container → contained. Auto-mirrored
     /// from `HasParent` — never inserted directly.
     pub const CONTAINS: &str = "Contains";
+
+    /// Role assignment: token → role — the source token functions as this
+    /// role, assigned by predicate rather than by hardcoded token_type.
+    /// These are the spec §2 "roles are graph-assigned" constants.
+    pub const IS_A_TOOL: &str = "IS_A_TOOL";
+    pub const IS_A_SKILL: &str = "IS_A_SKILL";
+    pub const IS_A_WORKFLOW: &str = "IS_A_WORKFLOW";
 }
 
 /// Represents the currently-active process tree state for Squire bootstrap

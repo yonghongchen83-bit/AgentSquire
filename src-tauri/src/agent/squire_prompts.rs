@@ -33,6 +33,10 @@ static PROMPT_FILES: &[PromptFile] = &[
         name: "system-prompt-phase2.md",
         builtin: include_str!("../../prompts/system-prompt-phase2.md"),
     },
+    PromptFile {
+        name: "system-prompt-formatter.md",
+        builtin: include_str!("../../prompts/system-prompt-formatter.md"),
+    },
 ];
 
 struct PromptFile {

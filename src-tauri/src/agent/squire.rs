@@ -19,8 +19,8 @@ pub mod types;
 // Protocol types (SquireResponse stays local; storage types re-exported
 // via types.rs from squire-store)
 pub use types::{
-    ComplianceFailureRecord, NewTokenSpec, RawPartitionRecord, Relationship, SquireResponse,
-    TokenDetail, TokenSummary, ToolEndpoint,
+    ComplianceFailureRecord, FormatterOutput, NewTokenSpec, RawPartitionRecord, Relationship,
+    SquireResponse, TokenDetail, TokenSummary, ToolEndpoint, parse_formatter_json,
 };
 
 // Store — only InMemorySquireStore is local; trait & helpers are in squire-store
@@ -41,7 +41,7 @@ pub(crate) use ingestion::{CHUNK_SOFT_LIMIT_CHARS, first_sentence};
 pub use ingestion::{chunk_user_input, ingest_tool_registry, ingest_user_input_chunks, tool_token_id};
 
 // Tools
-pub use tools::{built_in_tool_definitions, SquireExploreTool, SquireInvokeTool, SquireTokenToDetailTool};
+pub use tools::{built_in_tool_definitions, parse_batch_expr, SquireBatchTool, SquireExploreTool, SquireInvokeTool, SquireRdfTool, SquireTokenToDetailTool};
 
 // Adapter
 pub use adapter::SquireContextAdapter;

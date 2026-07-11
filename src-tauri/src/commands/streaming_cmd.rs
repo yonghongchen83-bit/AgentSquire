@@ -246,43 +246,49 @@ pub async fn send_message_impl(
     }
 
     // Build a ModelInstance from the resolved provider + model.
-    let model_instance = state
+    let phase1_model_instance = state
         .registry
         .read()
         .map_err(|e| e.to_string())?
         .resolve_model_instance(&selected_provider_name, &selected_model, None)
         .map_err(|e| e.to_string())?;
 
-    // Build Phase 2 ModelInstance if a different provider/model was selected.
+    // Build Phase 2 ModelInstance.  If the UI selected a different
+    // provider/model for Phase 2, use that.  Otherwise clone Phase 1's
+    // instance but override options with Phase 2 defaults (thinking
+    // disabled, temperature 0).
     let phase2_model_instance = {
         let p2_prov = phase2_provider.filter(|s| !s.is_empty());
         let p2_mod = phase2_model.filter(|s| !s.is_empty());
         match (p2_prov, p2_mod) {
             (Some(ref prov), Some(ref mod_)) => {
-                match state
+                // Resolve as-is — UI provided explicit Phase 2 config
+                let mut inst = state
                     .registry
                     .read()
                     .map_err(|e| e.to_string())?
                     .resolve_model_instance(prov, mod_, None)
-                {
-                    Ok(inst) => Some(inst),
-                    Err(_) => {
-                        let _ = app.emit(
-                            "output:append",
-                            serde_json::json!({
-                                "source": "chat",
-                                "line": format!(
-                                    "WARNING: Phase 2 provider '{}' not found in registry. Falling back to Phase 1 provider.",
-                                    prov
-                                ),
-                                "timestamp": chrono::Utc::now().to_rfc3339(),
-                            }),
-                        );
-                        None
-                    }
+                    .map_err(|e| e.to_string())?;
+                // Ensure thinking is off for Phase 2 unless user explicitly
+                // configured it (resolve_model_instance with None options
+                // gives ModelOptions::default, which has thinking_level=None
+                // meaning "no override" — for Phase 2 we want "none").
+                if inst.options.thinking_level.is_none() {
+                    inst.options.thinking_level = Some("none".to_string());
                 }
+                if inst.options.temperature.is_none() {
+                    inst.options.temperature = Some(0.0);
+                }
+                inst
             }
-            _ => None,
+            _ => {
+                // No separate Phase 2 config — use same provider/model as
+                // Phase 1, but with formatter-appropriate options.
+                let mut inst = phase1_model_instance.clone();
+                inst.options.thinking_level = Some("none".to_string());
+                inst.options.temperature = Some(0.0);
+                inst
+            }
         }
     };
 
@@ -314,7 +320,7 @@ pub async fn send_message_impl(
         tool_endpoints: HashMap::new(),
         event_emitter,
         cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        model_instance,
+        phase1_model_instance,
         phase2_model_instance,
         app_handle: Some(app.clone()),
     };

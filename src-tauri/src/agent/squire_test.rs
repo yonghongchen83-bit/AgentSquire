@@ -222,7 +222,7 @@ fn validate_allows_preserve_defined_in_new_tokens() {
             short_desc: "new".to_string(),
             full_desc: None,
             endpoint: None,
-            ranges: vec![],
+            ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
         }],
         ..Default::default()
     };
@@ -249,7 +249,7 @@ fn validate_allows_inline_ref_defined_in_new_tokens() {
             short_desc: "new concept".to_string(),
             full_desc: None,
             endpoint: None,
-            ranges: vec![],
+            ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
         }],
         ..Default::default()
     };
@@ -295,7 +295,7 @@ fn validate_allows_span_ref_defined_in_new_tokens() {
             short_desc: "new ref".to_string(),
             full_desc: None,
             endpoint: None,
-            ranges: vec![],
+            ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
         }],
         ..Default::default()
     };
@@ -357,7 +357,7 @@ fn validate_allows_relationship_with_new_token() {
             short_desc: "fresh concept".to_string(),
             full_desc: None,
             endpoint: None,
-            ranges: vec![],
+            ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
         }],
         ..Default::default()
     };
@@ -387,7 +387,7 @@ fn validate_allows_valid_sigils() {
                 short_desc: "test span".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             NewTokenSpec {
                 id: "bookmark".to_string(),
@@ -395,7 +395,7 @@ fn validate_allows_valid_sigils() {
                 short_desc: "bare bookmark".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
         ],
         ..Default::default()
@@ -419,7 +419,7 @@ async fn in_memory_store_roundtrips_token_and_preserve_list() {
                 short_desc: "desc".to_string(),
                 full_desc: Some("full".to_string()),
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             1,
             SessionId::nil(),
@@ -462,7 +462,7 @@ async fn in_memory_store_clear_all_preserve_lists_wipes_every_session() {
                 short_desc: "desc".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -560,7 +560,7 @@ async fn explore_memory_filters_by_type_and_query() {
                 short_desc: "fishing locations".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -574,18 +574,18 @@ async fn explore_memory_filters_by_type_and_query() {
                 short_desc: "friendly chat".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
         )
         .await;
 
-    let results = store.explore_memory("concept", "fish", 0, 10, 0, SessionId::nil()).await;
+    let results = store.explore_memory("concept", "fish", 0, 10, 0, SessionId::nil(), "content").await;
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].token_id, "CONCEPT_Fish");
 
-    let all = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
+    let all = store.explore_memory("all", "", 0, 10, 0, SessionId::nil(), "content").await;
     assert_eq!(all.len(), 2);
 }
 
@@ -602,7 +602,7 @@ async fn explore_memory_num_hops_zero_does_not_expand() {
                 short_desc: "fishing locations".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -616,7 +616,7 @@ async fn explore_memory_num_hops_zero_does_not_expand() {
                 short_desc: "Middle Harbour bream spot".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -630,7 +630,7 @@ async fn explore_memory_num_hops_zero_does_not_expand() {
         })
         .await;
 
-    let results = store.explore_memory("all", "fish", 0, 10, 0, SessionId::nil()).await;
+    let results = store.explore_memory("all", "fish", 0, 10, 0, SessionId::nil(), "content").await;
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].token_id, "CONCEPT_Fish");
     assert_eq!(results[0].hop_distance, 0);
@@ -647,7 +647,7 @@ async fn explore_memory_num_hops_one_expands_directly_connected_token() {
                 short_desc: "fishing locations".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -661,7 +661,7 @@ async fn explore_memory_num_hops_one_expands_directly_connected_token() {
                 short_desc: "Middle Harbour is a great bream spot".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -675,7 +675,7 @@ async fn explore_memory_num_hops_one_expands_directly_connected_token() {
                 short_desc: "totally unrelated workflow".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -689,7 +689,7 @@ async fn explore_memory_num_hops_one_expands_directly_connected_token() {
         })
         .await;
 
-    let results = store.explore_memory("all", "fishing", 1, 10, 0, SessionId::nil()).await;
+    let results = store.explore_memory("all", "fishing", 1, 10, 0, SessionId::nil(), "content").await;
     let ids: Vec<&str> = results.iter().map(|t| t.token_id.as_str()).collect();
     assert!(ids.contains(&"CONCEPT_Fish"));
     assert!(ids.contains(&"TRT_Spot"));
@@ -714,7 +714,7 @@ async fn explore_memory_traversal_is_undirected_and_multi_hop() {
                     short_desc: format!("node {}", id),
                     full_desc: None,
                     endpoint: None,
-                    ranges: vec![],
+                    ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
                 },
                 0,
                 SessionId::nil(),
@@ -736,7 +736,7 @@ async fn explore_memory_traversal_is_undirected_and_multi_hop() {
         })
         .await;
 
-    let from_a = store.explore_memory("all", "node A", 2, 10, 0, SessionId::nil()).await;
+    let from_a = store.explore_memory("all", "node A", 2, 10, 0, SessionId::nil(), "content").await;
     let ids: Vec<&str> = from_a.iter().map(|t| t.token_id.as_str()).collect();
     assert!(ids.contains(&"A"));
     assert!(ids.contains(&"B"));
@@ -756,7 +756,7 @@ async fn explore_memory_traversal_still_respects_max_results() {
                 short_desc: "hub node".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -772,7 +772,7 @@ async fn explore_memory_traversal_still_respects_max_results() {
                     short_desc: "connected leaf".to_string(),
                     full_desc: None,
                     endpoint: None,
-                    ranges: vec![],
+                    ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
                 },
                 0,
             SessionId::nil(),
@@ -787,7 +787,7 @@ async fn explore_memory_traversal_still_respects_max_results() {
             .await;
     }
 
-    let results = store.explore_memory("all", "hub", 1, 2, 0, SessionId::nil()).await;
+    let results = store.explore_memory("all", "hub", 1, 2, 0, SessionId::nil(), "content").await;
     assert_eq!(results.len(), 2);
 }
 
@@ -812,18 +812,18 @@ async fn record_hit_increments_accumulated_hits() {
                 short_desc: "desc".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
         )
         .await;
-    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
+    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil(), "content").await;
     assert_eq!(results[0].accumulated_hits, 1);
 
     store.record_hit("CONCEPT_X").await;
     store.record_hit("CONCEPT_X").await;
-    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
+    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil(), "content").await;
     assert_eq!(results[0].accumulated_hits, 3);
 }
 
@@ -839,7 +839,7 @@ async fn preserved_tokens_increments_hit_on_load() {
                 short_desc: "desc".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -866,7 +866,7 @@ async fn token_to_detail_tool_increments_hit_count_on_store_backed_token() {
                 short_desc: "desc".to_string(),
                 full_desc: Some("full".to_string()),
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -884,7 +884,7 @@ async fn token_to_detail_tool_increments_hit_count_on_store_backed_token() {
     )
     .await;
 
-    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
+    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil(), "content").await;
     assert_eq!(results[0].accumulated_hits, 2);
 }
 
@@ -899,7 +899,7 @@ async fn explore_memory_breaks_near_ties_by_effective_priority() {
                 short_desc: "shared topic".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -913,7 +913,7 @@ async fn explore_memory_breaks_near_ties_by_effective_priority() {
                 short_desc: "shared topic".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -923,7 +923,7 @@ async fn explore_memory_breaks_near_ties_by_effective_priority() {
     store.record_hit("CONCEPT_Popular").await;
     store.record_hit("CONCEPT_Popular").await;
 
-    let results = store.explore_memory("all", "shared topic", 0, 10, 10, SessionId::nil()).await;
+    let results = store.explore_memory("all", "shared topic", 0, 10, 10, SessionId::nil(), "content").await;
     assert_eq!(results[0].token_id, "CONCEPT_Popular");
 }
 
@@ -968,7 +968,7 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
                 short_desc: "alpha memory".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -982,7 +982,7 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
                 short_desc: "alpha workflow".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -996,7 +996,7 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
                 short_desc: "alpha tool".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -1010,7 +1010,7 @@ async fn build_turn_input_prefetches_workflow_tool_skill_and_memory_with_individ
                 short_desc: "alpha skill".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -1092,7 +1092,7 @@ async fn build_turn_input_merges_preserved_first_then_prefetch_without_duplicate
                 short_desc: "topic".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -1180,13 +1180,13 @@ async fn finalize_turn_credits_a_hit_for_a_preexisting_token_cited_via_sigil_wit
                 short_desc: "an existing workflow".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
         )
         .await;
-    let baseline_hits = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await[0].accumulated_hits;
+    let baseline_hits = store.explore_memory("all", "", 0, 10, 0, SessionId::nil(), "content").await[0].accumulated_hits;
 
     let mut adapter = SquireContextAdapter::new(store.clone());
     let conv_store = RecordingStore {
@@ -1212,7 +1212,7 @@ async fn finalize_turn_credits_a_hit_for_a_preexisting_token_cited_via_sigil_wit
     // (hit was credited during Phase 1 processing).
     assert!(matches!(outcome, TurnOutcome::Phase2 { .. }));
 
-    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
+    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil(), "content").await;
     let after = results
         .iter()
         .find(|t| t.token_id == "WF_Existing")
@@ -1243,7 +1243,7 @@ async fn finalize_turn_does_not_double_credit_a_token_defined_and_cited_in_the_s
                 short_desc: "the answer".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -1269,7 +1269,7 @@ async fn finalize_turn_does_not_double_credit_a_token_defined_and_cited_in_the_s
     // The §! reference in content credited a hit on top of the
     // creation hit (= 1). Query by nil session to find the
     // globally-registered token.
-    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
+    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil(), "content").await;
     let token = results.iter().find(|t| t.token_id == "TRT_New").unwrap();
     assert_eq!(token.accumulated_hits, 2);
 }
@@ -1285,13 +1285,13 @@ async fn finalize_turn_credits_exactly_one_hit_for_repeated_citations_of_the_sam
                 short_desc: "cited twice".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
         )
         .await;
-    let baseline_hits = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await[0].accumulated_hits;
+    let baseline_hits = store.explore_memory("all", "", 0, 10, 0, SessionId::nil(), "content").await[0].accumulated_hits;
 
     let mut adapter = SquireContextAdapter::new(store.clone());
     let conv_store = RecordingStore {
@@ -1317,7 +1317,7 @@ async fn finalize_turn_credits_exactly_one_hit_for_repeated_citations_of_the_sam
     // (hit was credited during Phase 1 processing, deduplicated counts).
     assert!(matches!(outcome, TurnOutcome::Phase2 { .. }));
 
-    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil()).await;
+    let results = store.explore_memory("all", "", 0, 10, 0, SessionId::nil(), "content").await;
     let after = results
         .iter()
         .find(|t| t.token_id == "CONCEPT_Repeated")
@@ -1682,7 +1682,7 @@ async fn finalize_turn_ask_user_does_not_reset_retry_count() {
 #[tokio::test]
 async fn explore_tool_searches_full_tool_registry_for_resource_type_tool() {
     let mut registry = ToolRegistry::empty();
-    registry.register(Box::new(crate::agent::TerminalTool));
+    registry.register(Box::new(crate::agent::TerminalTool::new()));
     let tool_defs_snapshot = registry.definitions();
     let tool = SquireExploreTool {
         store: Arc::new(InMemorySquireStore::new()),
@@ -1727,7 +1727,7 @@ fn token_detail_and_new_token_spec_endpoint_round_trip_through_serde() {
         short_desc: "d".to_string(),
         full_desc: None,
         endpoint: Some(endpoint.clone()),
-        ranges: vec![],
+        ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
     };
     let json = serde_json::to_string(&detail).unwrap();
     let back: TokenDetail = serde_json::from_str(&json).unwrap();
@@ -1749,7 +1749,7 @@ async fn upsert_token_persists_and_returns_endpoint_via_in_memory_store() {
                 short_desc: "an mcp tool".to_string(),
                 full_desc: None,
                 endpoint: Some(endpoint.clone()),
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -1775,7 +1775,7 @@ async fn upsert_token_without_endpoint_preserves_previously_stored_endpoint() {
                 short_desc: "v1".to_string(),
                 full_desc: None,
                 endpoint: Some(endpoint.clone()),
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -1789,7 +1789,7 @@ async fn upsert_token_without_endpoint_preserves_previously_stored_endpoint() {
                 short_desc: "v2".to_string(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -1855,7 +1855,7 @@ async fn token_to_detail_tool_output_never_leaks_endpoint_data() {
                     server: server.into(),
                     remote_name: "remote_tool".to_string(),
                 }),
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -1886,7 +1886,7 @@ async fn token_to_detail_tool_output_never_leaks_endpoint_data() {
 #[tokio::test]
 async fn token_to_detail_tool_returns_tool_schema_from_store() {
     let mut registry = ToolRegistry::empty();
-    registry.register(Box::new(crate::agent::TerminalTool));
+    registry.register(Box::new(crate::agent::TerminalTool::new()));
     let store = Arc::new(InMemorySquireStore::new());
     ingest_tool_registry(&registry, store.as_ref(), &HashMap::new()).await;
     let tool = SquireTokenToDetailTool {
@@ -1941,7 +1941,7 @@ async fn ingest_tool_registry_token_id_matches_registry_name_exactly() {
 #[tokio::test]
 async fn ingest_tool_registry_full_desc_matches_token_to_detail_tools_own_full_shape() {
     let mut registry = ToolRegistry::empty();
-    registry.register(Box::new(crate::agent::TerminalTool));
+    registry.register(Box::new(crate::agent::TerminalTool::new()));
     let store = InMemorySquireStore::new();
 
     ingest_tool_registry(&registry, &store, &HashMap::new()).await;
@@ -1963,7 +1963,7 @@ async fn ingest_tool_registry_is_idempotent_and_updates_rather_than_duplicates()
     ingest_tool_registry(&registry, &store, &HashMap::new()).await;
     ingest_tool_registry(&registry, &store, &HashMap::new()).await;
 
-    let results = store.explore_memory("tool", "", 0, 100, 0, SessionId::nil()).await;
+    let results = store.explore_memory("tool", "", 0, 100, 0, SessionId::nil(), "content").await;
     assert_eq!(results.len(), registry.definitions().len());
 
     let ids: std::collections::HashSet<&str> =
@@ -2005,7 +2005,7 @@ async fn ingest_tool_registry_reflects_schema_change_on_next_ingestion() {
     ingest_tool_registry(&registry_v2, &store, &HashMap::new()).await;
     assert_eq!(store.token_detail("fake_tool").await.unwrap().short_desc, "version two");
 
-    let results = store.explore_memory("tool", "", 0, 100, 0, SessionId::nil()).await;
+    let results = store.explore_memory("tool", "", 0, 100, 0, SessionId::nil(), "content").await;
     assert_eq!(results.iter().filter(|t| t.token_id == "fake_tool").count(), 1);
 }
 
@@ -2015,10 +2015,10 @@ async fn ingested_tool_tokens_are_discoverable_via_explore_tool_skill_type_filte
     let store = InMemorySquireStore::new();
     ingest_tool_registry(&registry, &store, &HashMap::new()).await;
 
-    let by_tool_type = store.explore_memory("tool", "", 0, 100, 0, SessionId::nil()).await;
+    let by_tool_type = store.explore_memory("tool", "", 0, 100, 0, SessionId::nil(), "content").await;
     assert_eq!(by_tool_type.len(), registry.definitions().len());
 
-    let by_all = store.explore_memory("all", "", 0, 100, 0, SessionId::nil()).await;
+    let by_all = store.explore_memory("all", "", 0, 100, 0, SessionId::nil(), "content").await;
     assert!(by_all.len() >= registry.definitions().len());
 }
 
@@ -2027,7 +2027,7 @@ async fn ingest_tool_registry_with_empty_registry_writes_nothing() {
     let registry = ToolRegistry::empty();
     let store = InMemorySquireStore::new();
     ingest_tool_registry(&registry, &store, &HashMap::new()).await;
-    let results = store.explore_memory("tool", "", 0, 100, 0, SessionId::nil()).await;
+    let results = store.explore_memory("tool", "", 0, 100, 0, SessionId::nil(), "content").await;
     assert!(results.is_empty());
 }
 
@@ -2132,13 +2132,13 @@ async fn ingest_user_input_chunks_uses_system_referential_type_discoverable_via_
     ingest_user_input_chunks("Some chat message content.", 1, &store, SessionId::nil()).await;
 
     let results = store
-        .explore_memory("source", "chat message", 0, 10, 1, SessionId::nil())
+        .explore_memory("source", "chat message", 0, 10, 1, SessionId::nil(), "content")
         .await;
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].token_id, "USR_T1_001_00000000");
     assert_eq!(results[0].token_type, "source");
 
-    let via_all = store.explore_memory("all", "", 0, 100, 1, SessionId::nil()).await;
+    let via_all = store.explore_memory("all", "", 0, 100, 1, SessionId::nil(), "content").await;
     assert!(via_all.iter().any(|t| t.token_id == "USR_T1_001_00000000"));
 }
 
@@ -2148,7 +2148,7 @@ async fn explore_memory_alias_includes_system_referential_tokens() {
     ingest_user_input_chunks("Some chat message content.", 1, &store, SessionId::nil()).await;
 
     let via_memory = store
-        .explore_memory("memory", "chat message", 0, 10, 1, SessionId::nil())
+        .explore_memory("memory", "chat message", 0, 10, 1, SessionId::nil(), "content")
         .await;
     assert!(via_memory.iter().any(|t| t.token_id == "USR_T1_001_00000000"));
 }
@@ -2171,7 +2171,7 @@ async fn ingest_user_input_chunks_creation_turn_matches_the_turn_argument() {
     let store = InMemorySquireStore::new();
     ingest_user_input_chunks("Some content here.", 5, &store, SessionId::nil()).await;
 
-    let results = store.explore_memory("all", "content", 0, 10, 5, SessionId::nil()).await;
+    let results = store.explore_memory("all", "content", 0, 10, 5, SessionId::nil(), "content").await;
     let chunk = results.iter().find(|t| t.token_id == "USR_T5_001_00000000").unwrap();
     assert_eq!(chunk.accumulated_hits, 1);
 }
@@ -2180,7 +2180,7 @@ async fn ingest_user_input_chunks_creation_turn_matches_the_turn_argument() {
 async fn ingest_user_input_chunks_empty_text_writes_no_tokens() {
     let store = InMemorySquireStore::new();
     ingest_user_input_chunks("   ", 1, &store, SessionId::nil()).await;
-    let results = store.explore_memory("source", "", 0, 10, 1, SessionId::nil()).await;
+    let results = store.explore_memory("source", "", 0, 10, 1, SessionId::nil(), "content").await;
     assert!(results.is_empty());
 }
 
@@ -2225,7 +2225,7 @@ async fn ingest_user_input_chunks_does_not_write_relationships() {
     ingest_user_input_chunks("Some content.\n\nMore content.", 1, store.as_ref(), SessionId::nil()).await;
 
     let results = store
-        .explore_memory("source", "", 1, 100, 1, SessionId::nil())
+        .explore_memory("source", "", 1, 100, 1, SessionId::nil(), "content")
         .await;
     assert!(results.iter().all(|t| t.hop_distance == 0));
 }
@@ -2237,14 +2237,14 @@ async fn rdf_returns_tokens_one_hop_from_seed() {
     let store = Arc::new(InMemorySquireStore::new());
     // Seed token
     store.upsert_token(
-        NewTokenSpec { id: "HUB".to_string(), token_type: "concept".to_string(), short_desc: "hub".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        NewTokenSpec { id: "HUB".to_string(), token_type: "concept".to_string(), short_desc: "hub".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
         0, SessionId::nil(),
     ).await;
     // Three leaf tokens connected to HUB
     for i in 0..3 {
         let id = format!("LEAF_{}", i);
         store.upsert_token(
-            NewTokenSpec { id: id.clone(), token_type: "concept".to_string(), short_desc: "leaf".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+            NewTokenSpec { id: id.clone(), token_type: "concept".to_string(), short_desc: "leaf".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
             0, SessionId::nil(),
         ).await;
         store.insert_relationship(Relationship {
@@ -2267,7 +2267,7 @@ async fn rdf_returns_tokens_one_hop_from_seed() {
 async fn rdf_returns_empty_for_token_with_no_relationships() {
     let store = Arc::new(InMemorySquireStore::new());
     store.upsert_token(
-        NewTokenSpec { id: "ISOLATED".to_string(), token_type: "concept".to_string(), short_desc: "loner".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        NewTokenSpec { id: "ISOLATED".to_string(), token_type: "concept".to_string(), short_desc: "loner".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
         0, SessionId::nil(),
     ).await;
 
@@ -2291,13 +2291,13 @@ async fn rdf_errors_for_unknown_seed() {
 async fn rdf_respects_max_results() {
     let store = Arc::new(InMemorySquireStore::new());
     store.upsert_token(
-        NewTokenSpec { id: "CENTER".to_string(), token_type: "concept".to_string(), short_desc: "center".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        NewTokenSpec { id: "CENTER".to_string(), token_type: "concept".to_string(), short_desc: "center".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
         0, SessionId::nil(),
     ).await;
     for i in 0..10 {
         let id = format!("NBR_{}", i);
         store.upsert_token(
-            NewTokenSpec { id: id.clone(), token_type: "concept".to_string(), short_desc: "neighbor".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+            NewTokenSpec { id: id.clone(), token_type: "concept".to_string(), short_desc: "neighbor".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
             0, SessionId::nil(),
         ).await;
         store.insert_relationship(Relationship {
@@ -2318,7 +2318,7 @@ async fn rdf_multi_hop_discovers_transitive_neighbors() {
     // A -relatedTo-> B -relatedTo-> C
     for id in ["A", "B", "C"] {
         store.upsert_token(
-            NewTokenSpec { id: id.to_string(), token_type: "concept".to_string(), short_desc: id.to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+            NewTokenSpec { id: id.to_string(), token_type: "concept".to_string(), short_desc: id.to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
             0, SessionId::nil(),
         ).await;
     }
@@ -2344,11 +2344,11 @@ async fn rdf_multi_hop_discovers_transitive_neighbors() {
 async fn rdf_increments_hit_count_on_seed_token() {
     let store = Arc::new(InMemorySquireStore::new());
     store.upsert_token(
-        NewTokenSpec { id: "HUB".to_string(), token_type: "concept".to_string(), short_desc: "hub".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        NewTokenSpec { id: "HUB".to_string(), token_type: "concept".to_string(), short_desc: "hub".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
         0, SessionId::nil(),
     ).await;
     store.upsert_token(
-        NewTokenSpec { id: "LEAF".to_string(), token_type: "concept".to_string(), short_desc: "leaf".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        NewTokenSpec { id: "LEAF".to_string(), token_type: "concept".to_string(), short_desc: "leaf".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
         0, SessionId::nil(),
     ).await;
     store.insert_relationship(Relationship {
@@ -2362,7 +2362,7 @@ async fn rdf_increments_hit_count_on_seed_token() {
 
     // Verify hit count increased (spec §5.1: loading context = +1 hit per call)
     // TokenDetail doesn't expose accumulated_hits, so verify via explore output.
-    let results = store.explore_memory("all", "hub", 0, 10, 0, SessionId::nil()).await;
+    let results = store.explore_memory("all", "hub", 0, 10, 0, SessionId::nil(), "content").await;
     let hub = results.iter().find(|t| t.token_id == "HUB").unwrap();
     assert_eq!(hub.accumulated_hits, 3, "initial upsert (1) + two rdf calls (2) = 3 hits");
 }
@@ -2373,7 +2373,7 @@ async fn rdf_increments_hit_count_on_seed_token() {
 async fn batch_cap_blocks_excess_discovery_calls() {
     let store = Arc::new(InMemorySquireStore::new());
     store.upsert_token(
-        NewTokenSpec { id: "X".to_string(), token_type: "concept".to_string(), short_desc: "token X".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        NewTokenSpec { id: "X".to_string(), token_type: "concept".to_string(), short_desc: "token X".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
         0, SessionId::nil(),
     ).await;
 
@@ -2412,7 +2412,7 @@ async fn batch_cap_is_per_turn_not_global() {
     // Each turn gets its own counter — verify independent counters don't interfere.
     let store = Arc::new(InMemorySquireStore::new());
     store.upsert_token(
-        NewTokenSpec { id: "Y".to_string(), token_type: "concept".to_string(), short_desc: "token Y".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        NewTokenSpec { id: "Y".to_string(), token_type: "concept".to_string(), short_desc: "token Y".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
         0, SessionId::nil(),
     ).await;
 
@@ -2439,7 +2439,7 @@ async fn long_list_budget_demotes_tokens_that_exceed_remaining_chars() {
             id: "SMALL".to_string(), token_type: "concept".to_string(),
             short_desc: "small token".to_string(),
             full_desc: Some("tiny".to_string()),
-            endpoint: None, ranges: vec![],
+            endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
         },
         0, SessionId::nil(),
     ).await;
@@ -2448,7 +2448,7 @@ async fn long_list_budget_demotes_tokens_that_exceed_remaining_chars() {
             id: "BIG".to_string(), token_type: "concept".to_string(),
             short_desc: "big token".to_string(),
             full_desc: Some("a".repeat(100)),
-            endpoint: None, ranges: vec![],
+            endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
         },
         0, SessionId::nil(),
     ).await;
@@ -2556,7 +2556,7 @@ fn batch_parser_error_on_unknown_func() {
 async fn batch_tool_executes_simple_explore() {
     let store = Arc::new(InMemorySquireStore::new());
     store.upsert_token(
-        NewTokenSpec { id: "X".to_string(), token_type: "concept".to_string(), short_desc: "token X".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        NewTokenSpec { id: "X".to_string(), token_type: "concept".to_string(), short_desc: "token X".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
         0, SessionId::nil(),
     ).await;
     let tool = SquireBatchTool {
@@ -2578,11 +2578,11 @@ async fn batch_tool_pipeline_explore_rdf() {
     let store = Arc::new(InMemorySquireStore::new());
     // Create two connected tokens
     store.upsert_token(
-        NewTokenSpec { id: "HUB".to_string(), token_type: "concept".to_string(), short_desc: "hub".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        NewTokenSpec { id: "HUB".to_string(), token_type: "concept".to_string(), short_desc: "hub".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
         0, SessionId::nil(),
     ).await;
     store.upsert_token(
-        NewTokenSpec { id: "LEAF".to_string(), token_type: "concept".to_string(), short_desc: "leaf".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        NewTokenSpec { id: "LEAF".to_string(), token_type: "concept".to_string(), short_desc: "leaf".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
         0, SessionId::nil(),
     ).await;
     store.insert_relationship(Relationship {
@@ -2608,11 +2608,11 @@ async fn batch_tool_pipeline_explore_rdf() {
 async fn batch_tool_parallel_groups_merge_results() {
     let store = Arc::new(InMemorySquireStore::new());
     store.upsert_token(
-        NewTokenSpec { id: "A".to_string(), token_type: "concept".to_string(), short_desc: "alpha".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        NewTokenSpec { id: "A".to_string(), token_type: "concept".to_string(), short_desc: "alpha".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
         0, SessionId::nil(),
     ).await;
     store.upsert_token(
-        NewTokenSpec { id: "B".to_string(), token_type: "concept".to_string(), short_desc: "beta".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        NewTokenSpec { id: "B".to_string(), token_type: "concept".to_string(), short_desc: "beta".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
         0, SessionId::nil(),
     ).await;
 
@@ -2633,7 +2633,7 @@ async fn batch_tool_parallel_groups_merge_results() {
 async fn batch_tool_counts_as_one_call() {
     let store = Arc::new(InMemorySquireStore::new());
     store.upsert_token(
-        NewTokenSpec { id: "X".to_string(), token_type: "concept".to_string(), short_desc: "X".to_string(), full_desc: None, endpoint: None, ranges: vec![] },
+        NewTokenSpec { id: "X".to_string(), token_type: "concept".to_string(), short_desc: "X".to_string(), full_desc: None, endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new() },
         0, SessionId::nil(),
     ).await;
     let counter = Arc::new(AtomicU32::new(0));
@@ -2650,3 +2650,134 @@ async fn batch_tool_counts_as_one_call() {
     assert!(r2.output.contains("Batch retrieval cap"));
 }
 
+
+// ── Full-text coverage tests: verify entire user request and AI
+//    response are chunked without content loss ──
+
+#[test]
+fn chunk_user_input_covers_all_content() {
+    let text = "First paragraph with several sentences. Second sentence here!\n\nSecond paragraph with more text. Another sentence? Yes, indeed.\n\nThird paragraph.";
+    let chunks = crate::agent::squire::ingestion::chunk_user_input(text);
+    let reassembled: String = chunks.join(" ");
+    assert!(reassembled.contains("First paragraph"));
+    assert!(reassembled.contains("Second sentence"));
+    assert!(reassembled.contains("Second paragraph"));
+    assert!(reassembled.contains("Third paragraph"));
+    assert!(chunks.iter().all(|c| !c.trim().is_empty()));
+}
+
+#[test]
+fn chunk_user_input_single_line_produces_one_chunk() {
+    let text = "A simple one-liner.";
+    let chunks = crate::agent::squire::ingestion::chunk_user_input(text);
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0], text);
+}
+
+#[test]
+fn chunk_user_input_empty_returns_empty() {
+    let chunks = crate::agent::squire::ingestion::chunk_user_input("");
+    assert!(chunks.is_empty());
+    let chunks = crate::agent::squire::ingestion::chunk_user_input("   \n\n  ");
+    assert!(chunks.is_empty());
+}
+
+#[tokio::test]
+async fn ingest_text_chunks_covers_full_text() {
+    let store = Arc::new(InMemorySquireStore::new());
+    let sid = SessionId::nil();
+    let text = "Hello world. This is a test.\n\nSecond paragraph here.";
+    let ids = crate::agent::squire::ingestion::ingest_text_chunks(
+        text, 1, "USR", store.as_ref(), sid,
+    ).await;
+    assert!(!ids.is_empty(), "should create at least one chunk token");
+    for id in &ids {
+        let detail = store.token_detail(id).await;
+        assert!(detail.is_some(), "token {} should exist", id);
+        let d = detail.unwrap();
+        assert!(d.full_desc.is_some(), "token {} should have full_desc", id);
+        assert!(d.full_desc.unwrap().contains("§^"), "full_desc should contain bookmark marker");
+    }
+    for id in &ids {
+        assert!(id.starts_with("USR_T1_"), "token ID should match USR_T{{turn}}_NNN_...: {}", id);
+    }
+}
+
+#[tokio::test]
+async fn ingest_response_chunks_uses_resp_prefix() {
+    let store = Arc::new(InMemorySquireStore::new());
+    let sid = SessionId::nil();
+    let text = "The model's response text.";
+    crate::agent::squire::ingestion::ingest_response_chunks(
+        text, 2, store.as_ref(), sid,
+    ).await;
+    let all_ids = store.list_token_ids_by_session(sid).await;
+    let resp_ids: Vec<_> = all_ids.iter().filter(|id| id.starts_with("RESP_T")).collect();
+    assert!(!resp_ids.is_empty(), "should create RESP_T tokens");
+    for id in &resp_ids {
+        assert!(id.starts_with("RESP_T2_"), "RESP_T token should have turn 2: {}", id);
+    }
+}
+
+// ── Recent-turn prefetch tests ──
+
+#[tokio::test]
+async fn recent_turn_prefetch_includes_usr_resp_tokens() {
+    let store = Arc::new(InMemorySquireStore::new());
+    let session = fixture_session("find the Rust ownership docs");
+    let sid = session.session.id;
+    // Simulate turn 1 tokens
+    crate::agent::squire::ingestion::ingest_text_chunks(
+        "Previous user request about traits.", 1, "USR", store.as_ref(), sid,
+    ).await;
+    crate::agent::squire::ingestion::ingest_text_chunks(
+        "Previous response about trait bounds.", 1, "RESP", store.as_ref(), sid,
+    ).await;
+    // Set turn counter to 2
+    store.increment_turn(sid).await;
+    store.increment_turn(sid).await;
+    let mut adapter = SquireContextAdapter::new_with_prefetch(
+        store.clone(),
+        SquirePrefetchConfig { min_score: 0.0, ..Default::default() },
+    );
+    let turn_input = adapter.build_turn_input(&session, &[]).await.unwrap();
+    let ctx = extract_context(&turn_input.messages[0].content);
+
+    // Source-chunk tokens (USR_T/RESP_T) from recent turns are placed via
+    // Phase 4 (long-list candidates) — check both lists.
+    let all_context_ids: Vec<String> = ctx["long_tokens"].as_array().unwrap().iter()
+        .chain(ctx["short_tokens"].as_array().unwrap().iter())
+        .filter_map(|t| t["token_id"].as_str().map(|s| s.to_string()))
+        .collect();
+
+    let has_usr_t1 = all_context_ids.iter().any(|id| id.starts_with("USR_T1_"));
+    let has_resp_t1 = all_context_ids.iter().any(|id| id.starts_with("RESP_T1_"));
+    assert!(has_usr_t1, "context should contain USR_T1 tokens from recent turn");
+    assert!(has_resp_t1, "context should contain RESP_T1 tokens from recent turn");
+}
+
+#[tokio::test]
+async fn recent_turn_prefetch_respects_turn_boundary() {
+    let store = Arc::new(InMemorySquireStore::new());
+    let session = fixture_session("current request");
+    let sid = session.session.id;
+    crate::agent::squire::ingestion::ingest_text_chunks(
+        "Turn 1 request.", 1, "USR", store.as_ref(), sid,
+    ).await;
+    for _ in 0..5 { store.increment_turn(sid).await; }
+    let mut adapter = SquireContextAdapter::new_with_prefetch(
+        store.clone(),
+        SquirePrefetchConfig { min_score: 0.0, ..Default::default() },
+    );
+    let turn_input = adapter.build_turn_input(&session, &[]).await.unwrap();
+    let ctx = extract_context(&turn_input.messages[0].content);
+
+    // Check both long and short lists — turn 1 should be absent from both
+    let all_context_ids: Vec<String> = ctx["long_tokens"].as_array().unwrap().iter()
+        .chain(ctx["short_tokens"].as_array().unwrap().iter())
+        .filter_map(|t| t["token_id"].as_str().map(|s| s.to_string()))
+        .collect();
+
+    let has_usr_t1 = all_context_ids.iter().any(|id| id.starts_with("USR_T1_"));
+    assert!(!has_usr_t1, "USR_T1 should NOT appear — outside 3-turn window (current turn 5, window starts at 2)");
+}

@@ -630,7 +630,7 @@ impl TodoTreeTool {
                     short_desc: title_raw.to_string(),
                     full_desc: None,
                     endpoint: None,
-                    ranges: vec![],
+                    ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
                 },
                 turn,
                 self.session_id.unwrap_or_default(),

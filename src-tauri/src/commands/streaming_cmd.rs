@@ -42,18 +42,11 @@ fn split_into_chunks(text: &str, max_len: usize) -> Vec<String> {
 }
 
 /// sa-4: whether raw per-token model output should be forwarded live to the
-/// `stream-chunk` UI channel as it arrives. Legacy mode's content is always
-/// display-ready prose, so it streams live as before. Squire mode's raw
-/// content is protocol JSON containing unexpanded `§!`/`§^` sigils until
-/// `SquireContextAdapter::finalize_turn` parses and expands it — forwarding
-/// it live would violate the spec's display-boundary guarantee ("no protocol
-/// artefacts are ever visible to the user", `context_squire_spec_v2.md` §14).
-/// Extracted as a small pure function so the mode-gating policy itself is
-/// unit-testable independent of the surrounding Tauri/streaming orchestration
-/// (which has no test harness today — see `commands::streaming_cmd` has no
-/// `mod tests` because of its `AppHandle`/`State` dependencies).
-fn should_stream_live_chunks(context_mode: ContextMode) -> bool {
-    !matches!(context_mode, ContextMode::Squire)
+/// `stream-chunk` UI channel as it arrives. Both modes stream live now —
+/// Squire mode strips `§!`/`§^` protocol markers per-chunk in the engine so
+/// the user never sees raw sigils, only clean prose.
+fn should_stream_live_chunks(_context_mode: ContextMode) -> bool {
+    true
 }
 
 async fn execute_tool_with_watchdog<F>(

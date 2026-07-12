@@ -69,6 +69,13 @@ impl SquireStore for InMemorySquireStore {
                 if token.endpoint.is_some() {
                     t.endpoint = token.endpoint.clone();
                 }
+                // Update tags/properties if provided (non-empty)
+                if !token.tags.is_empty() {
+                    t.tags = token.tags.clone();
+                }
+                if !token.properties.is_empty() {
+                    t.properties = token.properties.clone();
+                }
                 // Spec §9.4 step 5 / §5.2: accumulated_hits increments on
                 // every upsert "regardless" — both the new_tokens-at-close
                 // path and the §^-span-reuse-of-existing-token path funnel
@@ -84,6 +91,8 @@ impl SquireStore for InMemorySquireStore {
                 endpoint: token.endpoint.clone(),
                 ranges: token.ranges.clone(),
                 session_id,
+                tags: token.tags.clone(),
+                properties: token.properties.clone(),
             });
     }
 
@@ -117,6 +126,8 @@ impl SquireStore for InMemorySquireStore {
                     accumulated_hits: t.accumulated_hits,
                     hop_distance: 0,
                     via_token_id: None,
+                    tags: t.tags.clone(),
+                    properties: t.properties.clone(),
                 });
             }
         }
@@ -131,6 +142,7 @@ impl SquireStore for InMemorySquireStore {
         max_results: u32,
         current_turn: u64,
         session_id: SessionId,
+        _vector: &str,
     ) -> Vec<TokenSummary> {
         let q = query.to_lowercase();
         let tokens = self.tokens.lock().await;
@@ -209,6 +221,8 @@ impl SquireStore for InMemorySquireStore {
                 accumulated_hits: t.accumulated_hits,
                 hop_distance: 0,
                 via_token_id: None,
+                tags: t.tags.clone(),
+                properties: t.properties.clone(),
             })
             .collect();
 
@@ -227,6 +241,8 @@ impl SquireStore for InMemorySquireStore {
                             token_id: id.clone(),
                             token_type: t.token_type.clone(),
                             short_desc: t.short_desc.clone(),
+                            tags: t.tags.clone(),
+                            properties: t.properties.clone(),
                         },
                     )
                 })
@@ -279,6 +295,8 @@ impl SquireStore for InMemorySquireStore {
             full_desc: t.full_desc.clone(),
             endpoint: t.endpoint.clone(),
             ranges: t.ranges.clone(),
+            tags: t.tags.clone(),
+            properties: t.properties.clone(),
         })
     }
 
@@ -367,6 +385,8 @@ impl SquireStore for InMemorySquireStore {
                     accumulated_hits: t.accumulated_hits,
                     hop_distance: 0,
                     via_token_id: None,
+                    tags: t.tags.clone(),
+                    properties: t.properties.clone(),
                 })
             })
             .collect()
@@ -386,6 +406,8 @@ impl SquireStore for InMemorySquireStore {
             accumulated_hits: t.accumulated_hits,
             hop_distance: 0,
             via_token_id: None,
+            tags: t.tags.clone(),
+            properties: t.properties.clone(),
         })
     }
 
@@ -410,6 +432,8 @@ impl SquireStore for InMemorySquireStore {
                     accumulated_hits: t.accumulated_hits,
                     hop_distance: 0,
                     via_token_id: None,
+                    tags: t.tags.clone(),
+                    properties: t.properties.clone(),
                 });
             }
         }
@@ -437,6 +461,8 @@ impl SquireStore for InMemorySquireStore {
                 accumulated_hits: t.accumulated_hits,
                 hop_distance: 0,
                 via_token_id: None,
+                tags: t.tags.clone(),
+                properties: t.properties.clone(),
             })
             .collect()
     }
@@ -457,6 +483,8 @@ impl SquireStore for InMemorySquireStore {
                     accumulated_hits: t.accumulated_hits,
                     hop_distance: 0,
                     via_token_id: None,
+                    tags: t.tags.clone(),
+                    properties: t.properties.clone(),
                 });
             };
             current = parent_rel.subject.clone();

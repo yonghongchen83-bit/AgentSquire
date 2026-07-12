@@ -36,6 +36,34 @@ Define a relationship between two other tokens (subject, predicate, object). A r
 
 **Note:** token type is not the same as *role*. A raw file is a source token, but a relationship token can additionally assert that it functions as a workflow, a policy document, or anything else. Roles are graph-assigned, not hardcoded to type.
 
+### Universal token metadata
+
+Every token, regardless of type, carries two additional standard fields beyond its type-specific content:
+
+```
+token {
+  ...type-specific fields (content, bookmarks, triplet subject/predicate/object, etc.)
+  tags: string[]               // free-text, author-curated keywords
+  properties: { key: value }   // structured, directly-addressable key/value metadata
+}
+```
+
+- **`tags`** — cheap, author-chosen keywords, indexed for fast filtering and (see below) dedicated semantic matching. Tags are *not* exact-match enforced for ecosystem/community-authored content — vocabulary drift across authors (`"c++"` vs `"cpp"`) is expected and absorbed via semantic similarity at retrieval time, not resolved once at ingestion. System/builtin content may optionally enforce exact tag vocabulary via a validation script, but this is a content-authoring convention, not a Squire-level rule.
+- **`properties`** — structured key/value metadata intended for direct, exact lookup (e.g. a hard-pinned dependency's token ID, version, status, author). Never semantically searched; read directly once a token is already known.
+
+This replaces any need for a distinct "parent/category" token structure: association between related tokens (e.g. "this workflow is similar to that one," "these workflows are both c++/coding") is entirely emergent from shared tags, discovered fresh at retrieval time via `explore(vector="tag")`, rather than requiring an authored, maintained graph node.
+
+### Dual embedding
+
+Each token generates two separate vectors, and the caller of `explore()` chooses which to search against per call (see §3):
+
+```
+content_vec = embed(content or short_desc)
+tag_vec     = embed(join(tags))
+```
+
+Rationale: for freeform content (conversation turns, ingested prose), the content vector carries most of the useful signal. For structured, self-describing content (workflows, skills, tools), a small author-curated tag set is often a cleaner, less noisy semantic match than the full prose body — tag search tends to outperform content search for this class of token.
+
 ### Knowledge categories (informational, not structural)
 - **External knowledge** — files, source code, URLs, anything not yet ingested.
 - **Internal knowledge** — anything ingested, chunked, and tokenized into the store (including tools — see §6).
@@ -52,11 +80,12 @@ Two complementary retrieval mechanisms sit behind Squire's single discovery inte
 ### Primitives
 
 ```
-explore(text, type, num_results) -> seed tokens, via vector search
-rdf(token, hops)                  -> related tokens, via triplet walk
+explore(text, type, num_results, vector: "tag" | "content" = "content") -> seed tokens, via vector search
+rdf(token, hops)                                                          -> related tokens, via triplet walk
 ```
 
-- `explore` returns candidate tokens (short-description form) ranked by relevance (vector distance), gated by relevance first — recency/frequency (see §5) is a secondary tiebreak only and never promotes an irrelevant token into results.
+- `explore` returns candidate tokens (short-description form) ranked by relevance (vector distance against the *single* vector specified — see §2 Universal Token Metadata for `content_vec` vs `tag_vec`), gated by relevance first — recency/frequency (see §5) is a secondary tiebreak only and never promotes an irrelevant token into results.
+- **`explore` searches exactly one vector per call, chosen by the caller.** Squire performs no merging or weighing of tag-vs-content results — that judgment is deliberately kept out of the gateway. If a workflow or the reasoning AI wants signal from both, it issues two separate `explore()` calls (trivially batchable, see below) and reasons over both result sets itself.
 - `rdf` performs a mechanical, non-judgmental walk of triplet edges outward from a given token, up to `hops` steps. It does not reason about which edges matter — that judgment belongs to the AI.
 - Squire performs no relational reasoning itself. Triplets exist for the AI's reasoning process; Squire is a thin gateway that returns graph-adjacent tokens on request, nothing more.
 
@@ -236,7 +265,30 @@ None of these block a working MVP; they represent areas where the current answer
 
 ---
 
-## 11. Summary: What Squire Actually Provides
+## 11. Token Authoring Standard — Workflow / Skill / Tool
+
+To make workflow, skill, and tool tokens fast to index and reliably retrievable across authors (including third-party/ecosystem-contributed content, not just system-authored), authoring follows a standard set of sections. These sections map directly onto the universal token fields (§2) and relationship tokens (§2d) at ingestion time — ingestion is where the retrievable structure gets built, not something inferred later from prose.
+
+### Workflow authoring sections
+
+1. **Name / short description** → token's `content`/short-desc field, embedded as `content_vec`.
+2. **Tags** → `tags` field (e.g. `"c++"`, `"coding"`). Free-text, soft-matched, no exact-match requirement for ecosystem content. No parent/category token is created — similarity-based workflow swapping (e.g. "this workflow didn't work, try a similar one") is achieved by re-running `explore()` against the same tags, excluding the failed token, not by walking to a category parent.
+3. **Referenced workflow(s)** → expressed as tags/keywords suggesting what to search for next (e.g. `"test plans"`), **not** a hard-bound relationship token. Resolved fresh at retrieval time via `explore(vector="tag")` against whatever workflows happen to be present in the store at that moment. This is what allows a workflow authored by one party to meaningfully chain into a workflow authored by a different party without either knowing the other's token IDs or even requiring the referenced workflow to exist yet at authoring time.
+4. **Used skills** / 5. **Used tools** → author chooses, per reference, one of two binding modes:
+   - **Hard pin** — author depends on a specific, known implementation. Resolved once at ingestion into `properties.uses_<skill|tool>_id = "<exact token id>"`. Direct lookup at runtime, no search cost, no ambiguity — used when correctness genuinely requires *that specific* skill/tool, not merely "something similar."
+   - **Soft ability reference** — author only cares about capability, not a specific implementation (e.g. "something with `search file` ability"). Expressed as a tag-string, resolved at runtime via `explore(type=skill|tool, vector="tag")` against whatever satisfies the declared ability. Allows the same workflow to run against different concrete skill/tool implementations across environments.
+6. **Detailed description** → the full procedural content, stored as the token's `content` field (long description / source body).
+
+### Skill / tool authoring requirement
+
+For soft ability-references (above) to resolve meaningfully, skill and tool tokens must declare their own capabilities using the same universal `tags` field — by convention, a skill/tool's tags describe **what it can do** (e.g. `"search file"`, `"edit file"`, `"run tests"`) rather than topic/category. No separate `abilities` field exists — this is a tagging *convention* for this token type, not a distinct schema element, consistent with keeping the token structure uniform across all types (§1).
+
+### Enforcement tiers
+
+- **System/builtin workflows, skills, tools** — tag vocabulary may be exact-match enforced via a validation/lint script at authoring time, since a single party controls this content.
+- **Ecosystem/community-authored content** — no enforcement; tag drift across authors is expected and absorbed entirely through semantic similarity at retrieval time (`explore(vector="tag")`), never through upfront coordination or a shared exact taxonomy.
+
+## 12. Summary: What Squire Actually Provides
 
 Stripped to its essence, Squire provides exactly:
 

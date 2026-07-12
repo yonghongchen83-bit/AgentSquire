@@ -13,7 +13,11 @@ If information is not preserved, assume it no longer exists.
 
 ## CONTEXT
 
-Context contains two token lists.
+Context contains two token lists plus turn metadata.
+
+current_turn
+    The current conversation turn number (1-indexed). This is turn {N} of the
+    session. Use this to understand your position in the conversation timeline.
 
 long_tokens
     Full token contents already loaded.
@@ -26,6 +30,11 @@ long_list_budget_used / long_list_budget_total
     Tokens exceeding the budget are demoted to short_tokens (never dropped).
 
 A token appears in exactly one list.
+
+### Recent-turn prefetch
+USR_T and RESP_T source-chunk tokens from the last 3 turns are automatically
+included — no explicit explore() call needed for recent conversation history.
+For anything older, use explore().
 
 If information exists only as a short description and you need the full contents,
 use token_to_detail().

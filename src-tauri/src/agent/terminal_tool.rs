@@ -3,7 +3,48 @@ use serde_json::Value;
 
 use super::{Tool, ToolDanger, ToolResult};
 
-pub struct TerminalTool;
+/// A terminal command-execution tool whose description is injected with the
+/// host OS and shell so the AI knows exactly what environment it is targeting.
+pub struct TerminalTool {
+    description: String,
+}
+
+impl TerminalTool {
+    /// Build the tool with a compile-time OS-aware description.  Because the
+    /// binary is compiled for a single target, `cfg!()` and `std::env::consts`
+    /// give us the exact platform the AI's commands will run on.
+    pub fn new() -> Self {
+        let os = std::env::consts::OS;       // e.g. "windows", "macos", "linux"
+        let family = std::env::consts::FAMILY; // e.g. "windows", "unix"
+
+        let (shell, shell_hint) = if cfg!(target_os = "windows") {
+            ("PowerShell 5.1", "Use PowerShell syntax: semicolons between commands (`a; b`), `$?` for last exit status, `$env:VAR` for env vars. Pipeline operators `&&`/`||` are NOT available — chain with `; if ($?) { ... }`. Backtick (`` ` ``) is the escape character, not backslash.")
+        } else if cfg!(target_os = "macos") {
+            ("zsh (macOS default)", "Standard POSIX shell syntax. `&&`/`||` for chaining. `$VAR` for env vars. Backslash escape.")
+        } else {
+            ("bash", "Standard POSIX shell syntax. `&&`/`||` for chaining. `$VAR` for env vars. Backslash escape.")
+        };
+
+        // Sanity check in case shell detection is off.
+        let _ = (shell, shell_hint);
+
+        let description = format!(
+            "Execute a shell command. Requires user approval.\n\
+             Host OS: {os} ({family})\n\
+             Shell: {shell}\n\
+             Shell guidance: {shell_hint}\n\
+             Returns stdout, stderr, and exit code.",
+        );
+
+        Self { description }
+    }
+}
+
+impl Default for TerminalTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[async_trait]
 impl Tool for TerminalTool {
@@ -12,7 +53,7 @@ impl Tool for TerminalTool {
     }
 
     fn description(&self) -> &str {
-        "Execute a shell command. Returns stdout, stderr, and exit code. Requires user approval."
+        &self.description
     }
 
     fn input_schema(&self) -> Value {

@@ -34,6 +34,55 @@ use crate::storage::conversation_store::{
 use super::runtime::RuntimeContext;
 use super::traits::{Engine, EngineEvent, EventEmitter};
 
+/// Strip Squire protocol markers from chunk text for safe live-stream display.
+///
+/// Removes `§!TOKEN_ID` (inline references) and `§^bookmark§^` (span markers)
+/// so the user never sees raw protocol sigils. The raw text (with markers) is
+/// preserved separately for `finalize_turn` parsing.
+///
+/// Per-chunk only — a `§^marker` split across two chunks may leave a partial
+/// sigil visible; this is rare and harmless in a live preview.
+fn strip_protocol_markers(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{00A7}' {
+            // § — section sign. Peek ahead to see if it's a protocol marker.
+            match chars.peek() {
+                Some('!') => {
+                    chars.next(); // consume '!'
+                    // §!TOKEN_ID — skip alphanumeric + _ + - until delimiter
+                    while let Some(&nc) = chars.peek() {
+                        if nc.is_alphanumeric() || nc == '_' || nc == '-' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                Some('^') => {
+                    chars.next(); // consume '^'
+                    // §^bookmark§^ — skip until closing §^
+                    loop {
+                        match chars.next() {
+                            Some('\u{00A7}') if chars.peek() == Some(&'^') => {
+                                chars.next(); // consume '^'
+                                break;
+                            }
+                            Some(_) => continue,
+                            None => break,
+                        }
+                    }
+                }
+                _ => out.push(c),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // SquireEngine
 // ═══════════════════════════════════════════════════════════════════════
@@ -394,8 +443,10 @@ impl SquireEngineRun {
             )),
         };
 
-        let stream_live_chunks =
-            !matches!(session.session.context_mode, ContextMode::Squire);
+        // Always stream live — in Squire mode protocol markers are filtered
+        // per-chunk so the user sees flowing prose, not sigils.  The raw text
+        // (with markers intact) is still accumulated for finalize_turn parsing.
+        let stream_live_chunks = true;
 
         self.emit_timing("adapter_created", &t_start, &mut t_last);
 
@@ -482,8 +533,16 @@ impl SquireEngineRun {
                 match event {
                     StreamEvent::Chunk(text) => {
                         full_response.push_str(&text);
-                        if stream_live_chunks {
-                            self.emit(EngineEvent::Chunk(text));
+                        // Squire mode: strip §! / §^ protocol markers before
+                        // display so the user sees clean prose.  Raw text
+                        // (preserved above) still carries markers for parsing.
+                        let display = if session.session.context_mode == ContextMode::Squire {
+                            strip_protocol_markers(&text)
+                        } else {
+                            text
+                        };
+                        if !display.is_empty() {
+                            self.emit(EngineEvent::Chunk(display));
                         }
                     }
                     StreamEvent::Thinking(text) => {
@@ -779,10 +838,8 @@ impl SquireEngineRun {
                             phase1_content,
                             user_request,
                         }) => {
-                            // Emit Phase 1 response immediately (user sees it).
-                            for chunk in Self::split_into_chunks(&phase1_content, 256) {
-                                self.emit(EngineEvent::Chunk(chunk));
-                            }
+                            // Already streamed live above — just emit Done
+                            // and spawn the formatter pass.
                             self.emit(EngineEvent::Done);
 
                             // ── Formatter pass (Phase 4) ─────────────────
@@ -947,5 +1004,68 @@ impl SquireEngineRun {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_protocol_markers;
+
+    #[test]
+    fn strips_inline_reference() {
+        assert_eq!(
+            strip_protocol_markers("The \u{00A7}!CON_Rust concept is key."),
+            "The  concept is key."
+        );
+    }
+
+    #[test]
+    fn strips_span_marker() {
+        assert_eq!(
+            strip_protocol_markers("Rust's \u{00A7}^bmk0\u{00A7}^ownership model\u{00A7}^bmk0\u{00A7}^ is key."),
+            "Rust's ownership model is key."
+        );
+    }
+
+    #[test]
+    fn strips_multiple_markers() {
+        assert_eq!(
+            strip_protocol_markers("See \u{00A7}!FOO and \u{00A7}^x\u{00A7}^bar\u{00A7}^x\u{00A7}^."),
+            "See  and bar."
+        );
+    }
+
+    #[test]
+    fn keeps_plain_section_sign() {
+        // A lone § not followed by ! or ^ is preserved
+        assert_eq!(
+            strip_protocol_markers("See \u{00A7} 501(c)(3) of the tax code."),
+            "See \u{00A7} 501(c)(3) of the tax code."
+        );
+    }
+
+    #[test]
+    fn handles_unclosed_span() {
+        // §^ without closing §^ — everything after the marker is consumed
+        // until end-of-chunk.  This is inherently lossy, but split markers
+        // across SSE chunks are extremely rare in practice (the model emits
+        // §^name§^ as a single token).
+        assert_eq!(
+            strip_protocol_markers("Start \u{00A7}^bmk0 more text"),
+            "Start "
+        );
+    }
+
+    #[test]
+    fn empty_input() {
+        assert_eq!(strip_protocol_markers(""), "");
+    }
+
+    #[test]
+    fn no_markers() {
+        assert_eq!(
+            strip_protocol_markers("Plain text without any markers."),
+            "Plain text without any markers."
+        );
     }
 }

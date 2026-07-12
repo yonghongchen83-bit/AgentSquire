@@ -349,7 +349,7 @@ async fn seed_store(store: &dyn SquireStore, session_id: SessionId) {
         id: "WF_BatchDiscovery".to_string(), token_type: "source".to_string(),
         short_desc: "Use batch composition syntax for efficient multi-call retrieval".to_string(),
         full_desc: Some("A retrieval-optimisation workflow: use batch() with | pipe and & parallel operators to bundle explore/rdf/token_to_detail calls into one batch call. Each batch expression counts as ONE call against the per-turn batch cap (default 3).".to_string()),
-        endpoint: None, ranges: vec![],
+        endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
     }, 0, session_id).await;
     store.add_relationship(Relationship {
         subject: "WF_BatchDiscovery".to_string(), predicate: predicates::IS_A_WORKFLOW.to_string(), object: "workflow".to_string(),
@@ -359,7 +359,7 @@ async fn seed_store(store: &dyn SquireStore, session_id: SessionId) {
         id: "CON_RustOwnership".to_string(), token_type: "concept".to_string(),
         short_desc: "Rust's ownership model: each value has exactly one owner at a time".to_string(),
         full_desc: Some("Rust's ownership system enforces memory safety at compile time. Key rules: 1) Each value has a single owner, 2) Values are dropped when the owner goes out of scope, 3) Ownership can be transferred (moved) or borrowed (&T immutable, &mut T mutable). The borrow checker enforces that references do not outlive their referents.".to_string()),
-        endpoint: None, ranges: vec![],
+        endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
     }, 0, session_id).await;
 
     store.upsert_token(NewTokenSpec {
@@ -370,7 +370,7 @@ async fn seed_store(store: &dyn SquireStore, session_id: SessionId) {
             server: squire_store::McpServerConfig { id: "git-server".to_string(), name: "Git Tools".to_string(), transport: "stdio".to_string(), command: "git-mcp".to_string(), args: vec![], url: None, enabled: true, env: Default::default(), headers: Default::default() },
             remote_name: "git_log".to_string(),
         }),
-        ranges: vec![],
+        ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
     }, 0, session_id).await;
     store.add_relationship(Relationship {
         subject: "mcp_git_git_log".to_string(), predicate: predicates::IS_A_TOOL.to_string(), object: "tool".to_string(),
@@ -380,7 +380,7 @@ async fn seed_store(store: &dyn SquireStore, session_id: SessionId) {
         id: "REF_Borrowing".to_string(), token_type: "referential".to_string(),
         short_desc: "Borrowing: Rust's mechanism for temporary access without transferring ownership".to_string(),
         full_desc: Some("Immutable borrows (&T) allow multiple readers; mutable borrows (&mut T) allow exactly one writer. Rust enforces that you cannot have both at the same time, preventing data races at compile time.".to_string()),
-        endpoint: None, ranges: vec![],
+        endpoint: None, ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
     }, 0, session_id).await;
     store.add_relationship(Relationship {
         subject: "REF_Borrowing".to_string(), predicate: "references".to_string(), object: "CON_RustOwnership".to_string(),

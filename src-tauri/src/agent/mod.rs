@@ -121,7 +121,7 @@ impl ToolRegistry {
         //        reg.register(Box::new(FileReadTool));
         //        reg.register(Box::new(FileWriteTool));
         //        reg.register(Box::new(CodeSearchTool));
-        reg.register(Box::new(TerminalTool));
+        reg.register(Box::new(TerminalTool::new()));
         reg.register(Box::new(WebFetchTool));
         // Placeholder store path; callers with a live session id override this
         // via `TodoTreeTool::for_session(..)` before the turn runs.

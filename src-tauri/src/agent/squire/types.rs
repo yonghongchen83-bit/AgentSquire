@@ -82,7 +82,7 @@ pub fn parse_bookmark_protocol(text: &str) -> SquireResponse {
                         short_desc: parts[2].trim().to_string(),
                         full_desc: parts.get(3).map(|s| s.trim().to_string()),
                         endpoint: None,
-                        ranges: vec![],
+                        ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
                     });
                 }
             }
@@ -211,7 +211,7 @@ pub fn parse_formatter_json(text: &str) -> Result<SquireResponse, String> {
             short_desc: ft.short_desc.clone(),
             full_desc: ft.full_desc.clone(),
             endpoint: None,
-            ranges: vec![],
+            ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
         });
     }
     for fr in &output.relationships {

@@ -724,7 +724,7 @@ mod tests {
                             .into(),
                     ),
                     endpoint: None,
-                    ranges: vec![],
+                    ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
                 },
                 1,
                 uuid::Uuid::nil(),
@@ -783,7 +783,7 @@ mod tests {
                 short_desc: "The combat scene".into(),
                 full_desc: Some("USR_T1_005:<BMK0>→USR_T1_005:<BMK1>".into()),
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             NewTokenSpec {
                 id: "CON_Theme".into(),
@@ -791,7 +791,7 @@ mod tests {
                 short_desc: "Theme of story".into(),
                 full_desc: None,
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
         ];
 

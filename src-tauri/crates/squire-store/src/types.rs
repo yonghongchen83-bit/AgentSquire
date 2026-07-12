@@ -4,6 +4,8 @@
 //! [`store`]), the `LanceDbSquireStore` implementation, and the main
 //! crate's adapter/protocol/ingestion layers.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 /// Session identifier — a UUID v4.
@@ -30,6 +32,16 @@ pub struct TokenSummary {
     /// direct matches themselves.
     #[serde(default)]
     pub via_token_id: Option<String>,
+    /// Free-text, author-curated keywords. Indexed for fast filtering and
+    /// semantic matching via `explore(vector="tag")`. Soft-matched — vocabulary
+    /// drift across authors is absorbed at retrieval time.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Structured, directly-addressable key/value metadata for exact lookup
+    /// (e.g. hard-pinned dependency token IDs, version, status, author). Never
+    /// semantically searched; read directly once a token is already known.
+    #[serde(default)]
+    pub properties: HashMap<String, String>,
 }
 
 /// Minimal compatible representation of a Tauri MCP server configuration,
@@ -90,6 +102,12 @@ pub struct TokenDetail {
     /// display time by the protocol layer.
     #[serde(default)]
     pub ranges: Vec<TokenRange>,
+    /// Free-text, author-curated keywords (spec §2 universal token metadata).
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Structured key/value metadata for exact lookup (spec §2).
+    #[serde(default)]
+    pub properties: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -116,6 +134,12 @@ pub struct NewTokenSpec {
     /// See ADR 0012.
     #[serde(default)]
     pub ranges: Vec<TokenRange>,
+    /// Free-text, author-curated keywords (spec §2 universal token metadata).
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Structured key/value metadata for exact lookup (spec §2).
+    #[serde(default)]
+    pub properties: HashMap<String, String>,
 }
 
 /// A byte-range slice within a chunk token, defined by bookmark + optional
@@ -139,6 +163,21 @@ pub struct TokenRange {
 impl NewTokenSpec {
     pub fn is_invocable(&self) -> bool {
         self.endpoint.is_some()
+    }
+}
+
+impl Default for NewTokenSpec {
+    fn default() -> Self {
+        NewTokenSpec {
+            id: String::new(),
+            token_type: "concept".to_string(),
+            short_desc: String::new(),
+            full_desc: None,
+            endpoint: None,
+            ranges: vec![],
+            tags: vec![],
+            properties: HashMap::new(),
+        }
     }
 }
 

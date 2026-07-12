@@ -164,7 +164,7 @@ async fn run() {
     println!("\n===== re-ingesting (simulating a second turn) =====");
     ingest_tool_registry(tool_registry.as_ref(), store.as_ref(), &std::collections::HashMap::new()).await;
     ingest_tool_registry(tool_registry.as_ref(), store.as_ref(), &std::collections::HashMap::new()).await;
-    let all_tools = store.explore_memory("tool", "", 0, 100, 0, session_id).await;
+    let all_tools = store.explore_memory("tool", "", 0, 100, 0, session_id, "content").await;
     println!("tool-typed token count after 3 ingestion passes: {}", all_tools.len());
     assert_eq!(
         all_tools.len(),

@@ -52,9 +52,22 @@ fn tokens_schema() -> Arc<ArrowSchema> {
             ),
             false,
         ),
+        // Dual embedding (§2): content_vec = embed(content or short_desc),
+        // tag_vec = embed(join(tags)). Caller of explore() chooses which to
+        // search against per call via the `vector` parameter.
+        Field::new(
+            "tag_embedding",
+            DataType::FixedSizeList(
+                Arc::new(Field::new("item", DataType::Float32, true)),
+                EMBED_DIM as i32,
+            ),
+            true,
+        ),
         Field::new("endpoint", DataType::Utf8, true),
         Field::new("ranges", DataType::Utf8, true),
         Field::new("session_id", DataType::Utf8, true),
+        Field::new("tags", DataType::Utf8, true),
+        Field::new("properties", DataType::Utf8, true),
     ]))
 }
 
@@ -320,6 +333,10 @@ struct StoredTokenRow {
     endpoint: Option<ToolEndpoint>,
     ranges: Vec<TokenRange>,
     session_id: String,
+    /// JSON-serialized `Vec<String>` — free-text author-curated keywords.
+    tags: Vec<String>,
+    /// JSON-serialized `HashMap<String, String>` — structured key/value metadata.
+    properties: std::collections::HashMap<String, String>,
 }
 
 fn rows_from_batches(batches: &[RecordBatch]) -> Vec<StoredTokenRow> {
@@ -352,6 +369,12 @@ fn rows_from_batches(batches: &[RecordBatch]) -> Vec<StoredTokenRow> {
             .map(|c| c.as_string::<i32>().clone());
         let session_ids = batch
             .column_by_name("session_id")
+            .map(|c| c.as_string::<i32>().clone());
+        let tags_col = batch
+            .column_by_name("tags")
+            .map(|c| c.as_string::<i32>().clone());
+        let properties_col = batch
+            .column_by_name("properties")
             .map(|c| c.as_string::<i32>().clone());
         for i in 0..batch.num_rows() {
             out.push(StoredTokenRow {
@@ -389,6 +412,18 @@ fn rows_from_batches(batches: &[RecordBatch]) -> Vec<StoredTokenRow> {
                         if s.is_null(i) { None } else { Some(s.value(i).to_string()) }
                     })
                     .unwrap_or_default(),
+                tags: tags_col
+                    .as_ref()
+                    .and_then(|t| {
+                        if t.is_null(i) { None } else { serde_json::from_str::<Vec<String>>(t.value(i)).ok() }
+                    })
+                    .unwrap_or_default(),
+                properties: properties_col
+                    .as_ref()
+                    .and_then(|p| {
+                        if p.is_null(i) { None } else { serde_json::from_str::<std::collections::HashMap<String, String>>(p.value(i)).ok() }
+                    })
+                    .unwrap_or_default(),
             });
         }
     }
@@ -418,19 +453,27 @@ impl SquireStore for LanceDbSquireStore {
             return;
         };
 
-        let (final_creation_turn, final_full_desc, final_hits, final_endpoint) =
+        let (final_creation_turn, final_full_desc, final_hits, final_endpoint, final_tags, final_properties) =
             match self.find_token_row(&token.id).await {
-                Ok(Some(existing)) => (
-                    existing.creation_turn,
-                    token.full_desc.clone().or(existing.full_desc),
-                    existing.accumulated_hits + 1,
-                    token.endpoint.clone().or(existing.endpoint),
-                ),
+                Ok(Some(existing)) => {
+                    let merged_tags = if !token.tags.is_empty() { token.tags.clone() } else { existing.tags };
+                    let merged_props = if !token.properties.is_empty() { token.properties.clone() } else { existing.properties };
+                    (
+                        existing.creation_turn,
+                        token.full_desc.clone().or(existing.full_desc),
+                        existing.accumulated_hits + 1,
+                        token.endpoint.clone().or(existing.endpoint),
+                        merged_tags,
+                        merged_props,
+                    )
+                }
                 _ => (
                     creation_turn,
                     token.full_desc.clone(),
                     1u64,
                     token.endpoint.clone(),
+                    token.tags.clone(),
+                    token.properties.clone(),
                 ),
             };
 
@@ -439,10 +482,16 @@ impl SquireStore for LanceDbSquireStore {
 
         let embed_source = format!("{} {}", token.id, token.short_desc);
         let embedding = embed_text(&embed_source);
+        // Dual embedding (§2): separate tag vector for tag-based semantic search.
+        // Always computed — if tags are empty, it's the embedding of the empty string.
+        let tag_source = final_tags.join(" ");
+        let tag_embedding = embed_text(&tag_source);
 
         let final_endpoint_json = final_endpoint
             .as_ref()
             .and_then(|e| serde_json::to_string(e).ok());
+        let final_tags_json = serde_json::to_string(&final_tags).ok();
+        let final_properties_json = serde_json::to_string(&final_properties).ok();
 
         let sid = session_id.to_string();
 
@@ -457,9 +506,12 @@ impl SquireStore for LanceDbSquireStore {
                 Arc::new(UInt64Array::from(vec![final_creation_turn])),
                 Arc::new(UInt64Array::from(vec![final_hits])),
                 Arc::new(embedding_array(&[embedding])),
+                Arc::new(embedding_array(&[tag_embedding])),
                 Arc::new(StringArray::from(vec![final_endpoint_json])),
                 Arc::new(StringArray::from(vec![serde_json::to_string(&token.ranges).unwrap_or_default()])),
                 Arc::new(StringArray::from(vec![sid])),
+                Arc::new(StringArray::from(vec![final_tags_json])),
+                Arc::new(StringArray::from(vec![final_properties_json])),
             ],
         );
         let Ok(batch) = batch else { return };
@@ -554,6 +606,8 @@ impl SquireStore for LanceDbSquireStore {
                     accumulated_hits: row.accumulated_hits + 1,
                     hop_distance: 0,
                     via_token_id: None,
+                    tags: row.tags.clone(),
+                    properties: row.properties.clone(),
                 });
             }
         }
@@ -568,6 +622,7 @@ impl SquireStore for LanceDbSquireStore {
         max_results: u32,
         current_turn: u64,
         session_id: SessionId,
+        vector: &str,
     ) -> Vec<TokenSummary> {
         let Ok(table) = self.tokens().await else {
             return Vec::new();
@@ -650,7 +705,13 @@ impl SquireStore for LanceDbSquireStore {
             let Some(shorts_col) = batch.column_by_name("short_desc") else {
                 continue;
             };
-            let Some(embed_col) = batch.column_by_name("embedding") else {
+            let embed_col_name = if vector == "tag" { "tag_embedding" } else { "embedding" };
+            let embed_col = batch.column_by_name(embed_col_name).or_else(|| {
+                // Fallback: if tag_embedding column doesn't exist yet (pre-migration store),
+                // use the content embedding as an approximation.
+                batch.column_by_name("embedding")
+            });
+            let Some(embed_col) = embed_col else {
                 continue;
             };
             let ids = ids_col.as_string::<i32>();
@@ -668,6 +729,9 @@ impl SquireStore for LanceDbSquireStore {
 
             // Read session_id column (nullable — pre-migration stores won't have it)
             let sid_col = batch.column_by_name("session_id").map(|c| c.as_string::<i32>());
+            // Read tags and properties columns (nullable — pre-migration stores won't have them)
+            let tags_col = batch.column_by_name("tags").map(|c| c.as_string::<i32>());
+            let props_col = batch.column_by_name("properties").map(|c| c.as_string::<i32>());
 
             for i in 0..batch.num_rows() {
                 let token_type = types.value(i);
@@ -675,6 +739,14 @@ impl SquireStore for LanceDbSquireStore {
                 let short_desc = shorts.value(i);
                 let accumulated_hits = hits_col.map(|a| a.value(i)).unwrap_or(0);
                 let creation_turn = turns_col.map(|a| a.value(i)).unwrap_or(0);
+                let row_tags: Vec<String> = tags_col
+                    .as_ref()
+                    .and_then(|t| if t.is_null(i) { None } else { serde_json::from_str(t.value(i)).ok() })
+                    .unwrap_or_default();
+                let row_props: std::collections::HashMap<String, String> = props_col
+                    .as_ref()
+                    .and_then(|p| if p.is_null(i) { None } else { serde_json::from_str(p.value(i)).ok() })
+                    .unwrap_or_default();
 
                 // Read row-level session_id, defaulting to empty (global)
                 let row_sid = sid_col
@@ -694,6 +766,8 @@ impl SquireStore for LanceDbSquireStore {
                         endpoint: None,
                         ranges: vec![],
                         session_id: row_sid.to_string(),
+                        tags: row_tags.clone(),
+                        properties: row_props.clone(),
                     },
                 );
 
@@ -757,6 +831,8 @@ impl SquireStore for LanceDbSquireStore {
                     accumulated_hits,
                     hop_distance: 0,
                     via_token_id: None,
+                    tags: row_tags.clone(),
+                    properties: row_props.clone(),
                 });
             }
         }
@@ -772,6 +848,8 @@ impl SquireStore for LanceDbSquireStore {
                                 token_id: row.token_id.clone(),
                                 token_type: row.token_type.clone(),
                                 short_desc: row.short_desc.clone(),
+                                tags: row.tags.clone(),
+                                properties: row.properties.clone(),
                             },
                         )
                     })
@@ -883,6 +961,8 @@ impl SquireStore for LanceDbSquireStore {
                 full_desc: row.full_desc,
                 endpoint: row.endpoint,
                 ranges: row.ranges,
+                tags: row.tags,
+                properties: row.properties,
             })
     }
 
@@ -1184,6 +1264,8 @@ impl SquireStore for LanceDbSquireStore {
                     accumulated_hits: row.accumulated_hits,
                     hop_distance: 0,
                     via_token_id: None,
+                    tags: row.tags.clone(),
+                    properties: row.properties.clone(),
                 });
             }
         }
@@ -1204,6 +1286,8 @@ impl SquireStore for LanceDbSquireStore {
             accumulated_hits: row.accumulated_hits,
             hop_distance: 0,
             via_token_id: None,
+            tags: row.tags.clone(),
+            properties: row.properties.clone(),
         })
     }
 
@@ -1227,6 +1311,8 @@ impl SquireStore for LanceDbSquireStore {
                     accumulated_hits: row.accumulated_hits,
                     hop_distance: 0,
                     via_token_id: None,
+                    tags: row.tags.clone(),
+                    properties: row.properties.clone(),
                 });
             }
         }
@@ -1252,6 +1338,8 @@ impl SquireStore for LanceDbSquireStore {
                         accumulated_hits: row.accumulated_hits,
                         hop_distance: 0,
                         via_token_id: None,
+                        tags: row.tags.clone(),
+                        properties: row.properties.clone(),
                     });
                 }
             }
@@ -1276,6 +1364,8 @@ impl SquireStore for LanceDbSquireStore {
                     accumulated_hits: row.accumulated_hits,
                     hop_distance: 0,
                     via_token_id: None,
+                    tags: row.tags.clone(),
+                    properties: row.properties.clone(),
                 });
             };
             current = parent_rel.subject.clone();

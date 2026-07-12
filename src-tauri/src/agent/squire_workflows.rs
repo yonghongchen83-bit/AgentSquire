@@ -164,7 +164,7 @@ pub async fn ingest_one_workflow(store: &dyn SquireStore, wf: &WorkflowDef) {
                 short_desc: wf.short_desc.clone(),
                 full_desc: Some(wf.full_desc.clone()),
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -505,7 +505,7 @@ full_desc = "Body"
 
         // Explore for workflow tokens.
         let results = store
-            .explore_memory("workflow", "roundtrip", 1, 10, 0, SessionId::nil())
+            .explore_memory("workflow", "roundtrip", 1, 10, 0, SessionId::nil(), "content")
             .await;
 
         // We should find our token among the results.

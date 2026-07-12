@@ -144,7 +144,7 @@ pub async fn ingest_one_skill(store: &dyn SquireStore, sk: &SkillDef) {
                 short_desc: sk.short_desc.clone(),
                 full_desc: Some(sk.full_desc.clone()),
                 endpoint: None,
-                ranges: vec![],
+                ranges: vec![], tags: vec![], properties: HashMap::new(),
             },
             0,
             SessionId::nil(),
@@ -478,7 +478,7 @@ full_desc = "Body"
 
         // Explore for skill tokens.
         let results = store
-            .explore_memory("skill", "roundtrip", 1, 10, 0, SessionId::nil())
+            .explore_memory("skill", "roundtrip", 1, 10, 0, SessionId::nil(), "content")
             .await;
 
         // We should find our token among the results.

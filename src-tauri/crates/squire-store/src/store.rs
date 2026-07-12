@@ -32,6 +32,10 @@ pub trait SquireStore: Send + Sync {
         max_results: u32,
         current_turn: u64,
         session_id: SessionId,
+        // Which embedding vector to search against: `"content"` (default) or `"tag"`.
+        // Spec §2/§3 — tag search uses the token's `tags`-derived embedding for
+        // cleaner semantic matching of structured, self-describing content.
+        vector: &str,
     ) -> Vec<TokenSummary>;
     async fn token_detail(&self, token_id: &str) -> Option<TokenDetail>;
     async fn current_turn(&self, session_id: SessionId) -> u64;
@@ -290,6 +294,10 @@ pub struct StoredToken {
     pub endpoint: Option<ToolEndpoint>,
     pub ranges: Vec<TokenRange>,
     pub session_id: SessionId,
+    /// Free-text, author-curated keywords (spec §2).
+    pub tags: Vec<String>,
+    /// Structured key/value metadata (spec §2).
+    pub properties: std::collections::HashMap<String, String>,
 }
 
 /// `effective_priority = accumulated_hits - (current_turn - creation_turn)`
@@ -325,6 +333,8 @@ pub struct TraversalNode {
     pub token_id: String,
     pub token_type: String,
     pub short_desc: String,
+    pub tags: Vec<String>,
+    pub properties: std::collections::HashMap<String, String>,
 }
 
 /// Backend-agnostic BFS: given the directly-matched hop-0 tokens (with their
@@ -395,6 +405,8 @@ pub fn traverse_relationships(
                 accumulated_hits: 0,
                 hop_distance,
                 via_token_id: Some(via_token_id),
+                tags: node.tags.clone(),
+                properties: node.properties.clone(),
             })
         })
         .collect()

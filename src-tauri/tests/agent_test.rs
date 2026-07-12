@@ -85,7 +85,7 @@ async fn test_search_code_tool_missing_query() {
 
 #[tokio::test]
 async fn test_terminal_tool_missing_command() {
-    let tool = TerminalTool;
+    let tool = TerminalTool::new();
     assert_eq!(tool.danger(), ToolDanger::Destructive);
     let result = tool.execute("call_1", json!({})).await;
     assert!(result.is_error);

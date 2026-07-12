@@ -53,7 +53,7 @@ pub fn built_in_tool_definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition {
             name: "explore".to_string(),
-            description: "Search Squire memory and registered resources by semantic similarity, optionally expanding via graph traversal.".to_string(),
+            description: "Search Squire memory and registered resources by semantic similarity, optionally expanding via graph traversal. Use vector='tag' to search against author-curated tags (best for structured content like workflows/skills/tools), vector='content' to search against full prose (default, best for freeform text).".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -63,7 +63,12 @@ pub fn built_in_tool_definitions() -> Vec<ToolDefinition> {
                     },
                     "query": {"type": "string"},
                     "num_hops": {"type": "integer", "minimum": 0},
-                    "max_results": {"type": "integer", "minimum": 1}
+                    "max_results": {"type": "integer", "minimum": 1},
+                    "vector": {
+                        "type": "string",
+                        "enum": ["content", "tag"],
+                        "description": "Which embedding to search: 'content' (default) for prose body, 'tag' for author-curated keyword vector. Tag search is best for structured, self-describing content like workflows, skills, and tools."
+                    }
                 },
                 "required": ["resource_type", "query"]
             }),
@@ -188,6 +193,10 @@ impl Tool for SquireExploreTool {
             .get("max_results")
             .and_then(|v| v.as_u64())
             .unwrap_or(10) as u32;
+        let vector = args
+            .get("vector")
+            .and_then(|v| v.as_str())
+            .unwrap_or("content");
         let current_turn = self.store.current_turn(self.session_id).await;
 
         // ── Token-ID resolution fallback ──────────────────────────────────
@@ -235,7 +244,7 @@ impl Tool for SquireExploreTool {
                         short_desc: d.description.clone(),
                         accumulated_hits: 0,
                         hop_distance: 0,
-                        via_token_id: None,
+                        via_token_id: None, tags: vec![], properties: std::collections::HashMap::new(),
                     });
                 } else if tracing {
                     // Either it didn't match the substring filter, or it
@@ -252,7 +261,7 @@ impl Tool for SquireExploreTool {
             if resource_type == "tool_skill" {
                 let skills = self
                     .store
-                    .explore_memory("skill", &effective_query, num_hops, max_results, current_turn, self.session_id)
+                    .explore_memory("skill", &effective_query, num_hops, max_results, current_turn, self.session_id, vector)
                     .await;
                 tool_results.extend(skills);
             }
@@ -292,7 +301,7 @@ impl Tool for SquireExploreTool {
             tool_results
         } else {
             self.store
-                .explore_memory(&resource_type, &effective_query, num_hops, max_results, current_turn, self.session_id)
+                .explore_memory(&resource_type, &effective_query, num_hops, max_results, current_turn, self.session_id, vector)
                 .await
         };
 
@@ -457,6 +466,8 @@ impl Tool for SquireRdfTool {
                             .await
                             .unwrap_or_else(|| "unknown".to_string()),
                         short_desc: detail.short_desc.clone(),
+                        tags: detail.tags.clone(),
+                        properties: detail.properties.clone(),
                     },
                 );
             }
@@ -547,6 +558,8 @@ pub enum BatchFunc {
         query: String,
         num_hops: u32,
         max_results: u32,
+        /// Which embedding to search: "content" (default) or "tag".
+        vector: String,
     },
     Rdf {
         hops: u32,
@@ -660,13 +673,14 @@ fn parse_func_call(text: &str) -> Result<BatchFunc, String> {
     match name {
         "explore" => {
             if args.len() < 2 {
-                return Err("explore() requires at least 2 args: (resource_type, query, [num_hops], [max_results])".to_string());
+                return Err("explore() requires at least 2 args: (resource_type, query, [num_hops], [max_results], [vector])".to_string());
             }
             Ok(BatchFunc::Explore {
                 resource_type: args.get(0).cloned().unwrap_or_default(),
                 query: args.get(1).cloned().unwrap_or_default(),
                 num_hops: args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0),
                 max_results: args.get(3).and_then(|s| s.parse().ok()).unwrap_or(10),
+                vector: args.get(4).cloned().unwrap_or_else(|| "content".to_string()),
             })
         }
         "rdf" => {
@@ -806,7 +820,7 @@ impl SquireBatchTool {
     /// Execute a single function, optionally using seeds as input for rdf.
     async fn exec_func(&self, func: &BatchFunc, seeds: &[TokenSummary], current_turn: u64) -> Vec<TokenSummary> {
         match func {
-            BatchFunc::Explore { resource_type, query, num_hops, max_results } => {
+            BatchFunc::Explore { resource_type, query, num_hops, max_results, vector } => {
                 if matches!(resource_type.as_str(), "tool" | "tool_skill") {
                     // Tool registry path — substring match
                     let ql = query.to_lowercase();
@@ -819,20 +833,20 @@ impl SquireBatchTool {
                             results.push(TokenSummary {
                                 token_id: d.name.clone(), token_type: "tool".to_string(),
                                 score: 1.0, short_desc: d.description.clone(),
-                                accumulated_hits: 0, hop_distance: 0, via_token_id: None,
+                                accumulated_hits: 0, hop_distance: 0, via_token_id: None, tags: vec![], properties: std::collections::HashMap::new(),
                             });
                         }
                     }
                     if resource_type == "tool_skill" {
                         let skills = self.store.explore_memory(
-                            "skill", query, *num_hops, *max_results, current_turn, self.session_id,
+                            "skill", query, *num_hops, *max_results, current_turn, self.session_id, vector,
                         ).await;
                         results.extend(skills);
                     }
                     results
                 } else {
                     self.store.explore_memory(
-                        resource_type, query, *num_hops, *max_results, current_turn, self.session_id,
+                        resource_type, query, *num_hops, *max_results, current_turn, self.session_id, vector,
                     ).await
                 }
             }
@@ -851,6 +865,8 @@ impl SquireBatchTool {
                             token_id: id.clone(),
                             token_type: self.store.get_type(id).await.unwrap_or_else(|| "unknown".to_string()),
                             short_desc: detail.short_desc.clone(),
+                            tags: detail.tags.clone(),
+                            properties: detail.properties.clone(),
                         });
                     }
                 }
@@ -874,7 +890,7 @@ impl SquireBatchTool {
                         vec![TokenSummary {
                             token_id: token_id.clone(), token_type: "detail".to_string(),
                             score: 1.0, short_desc: desc, accumulated_hits: 0,
-                            hop_distance: 0, via_token_id: None,
+                            hop_distance: 0, via_token_id: None, tags: vec![], properties: std::collections::HashMap::new(),
                         }]
                     }
                     None => vec![],

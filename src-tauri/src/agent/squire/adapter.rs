@@ -306,20 +306,64 @@ impl ContextManagerAdapter for SquireContextAdapter {
         // like memory do not crowd out workflow/tool/skill candidates.
         let memory_prefetched = self
             .store
-            .explore_memory("memory", &user_text, 1, self.prefetch.memory_top_k, current_turn, session.session.id)
+            .explore_memory("memory", &user_text, 1, self.prefetch.memory_top_k, current_turn, session.session.id, "content")
             .await;
         let workflow_prefetched = self
             .store
-            .explore_memory("workflow", &user_text, 1, self.prefetch.workflow_top_k, current_turn, session.session.id)
+            .explore_memory("workflow", &user_text, 1, self.prefetch.workflow_top_k, current_turn, session.session.id, "content")
             .await;
         let tool_prefetched = self
             .store
-            .explore_memory("tool", &user_text, 1, self.prefetch.tool_top_k, current_turn, session.session.id)
+            .explore_memory("tool", &user_text, 1, self.prefetch.tool_top_k, current_turn, session.session.id, "content")
             .await;
         let skill_prefetched = self
             .store
-            .explore_memory("skill", &user_text, 1, self.prefetch.skill_top_k, current_turn, session.session.id)
+            .explore_memory("skill", &user_text, 1, self.prefetch.skill_top_k, current_turn, session.session.id, "content")
             .await;
+
+        // ═══════════════════════════════════════════════════════════════
+        // Recent-turn prefetch: always pull USR_T/RESP_T source-chunk
+        // tokens from the last N turns so the model can reference recent
+        // conversation context without relying solely on semantic search.
+        // ═══════════════════════════════════════════════════════════════
+        const RECENT_TURN_COUNT: u64 = 3;
+        let recent_turn_start = current_turn.saturating_sub(RECENT_TURN_COUNT).max(1);
+        let mut recent_turn_tokens: Vec<TokenSummary> = Vec::new();
+        {
+            let all_ids = self.store.list_token_ids_by_session(session.session.id).await;
+            for id in &all_ids {
+                // Match USR_T{turn}_ or RESP_T{turn}_ for turns in [recent_turn_start, current_turn]
+                let is_source_chunk = id.starts_with("USR_T") || id.starts_with("RESP_T");
+                if !is_source_chunk {
+                    continue;
+                }
+                // Parse the turn number from the token ID: PREFIX_T{turn}_NNN_...
+                let turn_in_id = id
+                    .find('T')
+                    .and_then(|t_pos| {
+                        let after_t = &id[t_pos + 1..];
+                        after_t.find('_').map(|u_pos| &after_t[..u_pos])
+                    })
+                    .and_then(|s| s.parse::<u64>().ok());
+                if let Some(t) = turn_in_id {
+                    if t >= recent_turn_start && t <= current_turn {
+                        if let Some(detail) = self.store.token_detail(id).await {
+                            recent_turn_tokens.push(TokenSummary {
+                                token_id: id.clone(),
+                                token_type: "source".to_string(),
+                                score: 1.0, // explicit inclusion, not semantic
+                                short_desc: detail.short_desc,
+                                accumulated_hits: 0,
+                                hop_distance: 0,
+                                via_token_id: None,
+                                tags: detail.tags,
+                                properties: detail.properties,
+                            });
+                        }
+                    }
+                }
+            }
+        }
 
         // ═══════════════════════════════════════════════════════════════
         // Context assembly — Short List / Long List algorithm (spec §4)
@@ -348,6 +392,7 @@ impl ContextManagerAdapter for SquireContextAdapter {
 
         // Merge prefetched tokens (deduplicated across resource classes).
         // Prefetched tokens below min_score are discarded.
+        // Recent-turn tokens are always included (score = 1.0).
         let mut all_prefetched: Vec<TokenSummary> = Vec::new();
         {
             let mut seen_prefetch: HashSet<String> = HashSet::new();
@@ -356,6 +401,7 @@ impl ContextManagerAdapter for SquireContextAdapter {
                 .chain(workflow_prefetched.into_iter())
                 .chain(tool_prefetched.into_iter())
                 .chain(skill_prefetched.into_iter())
+                .chain(recent_turn_tokens.into_iter())
             {
                 if token.score < min_score {
                     continue;
@@ -484,6 +530,7 @@ impl ContextManagerAdapter for SquireContextAdapter {
             self.store.compute_active_process_state(session.session.id).await;
 
         let context = serde_json::json!({
+            "current_turn": current_turn,
             "long_tokens": long_tokens,
             "short_tokens": short_tokens,
             "long_list_budget_used": long_list_budget.saturating_sub(remaining_budget),

@@ -75,7 +75,7 @@ impl SquireContextAdapter {
         Self {
             store,
             prefetch,
-            max_retries: 3,
+            max_retries: 2,
             retry_count: 0,
             phase: SquirePhase::Phase1,
             user_request_text: String::new(),

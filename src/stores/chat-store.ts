@@ -254,7 +254,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         streamingMessageId: assistantId,
         streamingText: '',
         streamingThinkingText: '',
-        streamingStatus: 'Starting generation...',
+        streamingStatus: 'Preparing context...',
         streamingBlocks: [],
         error: null,
         pendingApprovals: [],

@@ -19,6 +19,8 @@ export function ChatPanel() {
   const [activeTab, setActiveTab] = useState<'chat' | 'conversations' | 'mcp' | 'squire'>('chat')
   const [activeMcpCount, setActiveMcpCount] = useState(0)
   const [takingLong, setTakingLong] = useState(false)
+  const [isPreparing, setIsPreparing] = useState(false)
+  const [prepTime, setPrepTime] = useState(0)
   const [askUserAnswerDraft, setAskUserAnswerDraft] = useState('')
   const conversations = useChatStore((s) => s.conversations)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
@@ -109,11 +111,36 @@ export function ChatPanel() {
     }
   }, [])
 
+  // Separate the "taking long" timeout from the preparation phase.
+  // Preparation (build_turn_input, semantic prefetch) is metered
+  // separately and does NOT trigger the urgent "taking long" banner.
+  // The 12s timer only starts after the backend signals "Contacting model...".
   useEffect(() => {
     if (!isStreaming) {
       setTakingLong(false)
+      setIsPreparing(false)
+      setPrepTime(0)
       return
     }
+
+    const isPrep =
+      streamingStatus === 'Starting generation...' ||
+      streamingStatus === 'Preparing context...' ||
+      streamingStatus.startsWith('Preparing')
+
+    if (isPrep) {
+      setIsPreparing(true)
+      setTakingLong(false)
+      // Track how long prep takes (separate metering)
+      const prepStart = Date.now()
+      const prepTimer = setInterval(() => {
+        setPrepTime(Date.now() - prepStart)
+      }, 500)
+      return () => clearInterval(prepTimer)
+    }
+
+    // Not in prep phase anymore — start the normal "taking long" timer
+    setIsPreparing(false)
     setTakingLong(false)
     const timer = window.setTimeout(() => {
       setTakingLong(true)
@@ -384,21 +411,37 @@ export function ChatPanel() {
               <div className="border-t border-border bg-[#F8F9FB] px-4 py-2 space-y-2">
                 {isStreaming && (
                   <div className="flex items-center gap-2 text-xs text-[#6B7B8D]">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    <span className="flex-1">
-                      {streamingStatus || 'Working...'}
-                    </span>
-                    {takingLong && (
-                      <button
-                        onClick={cancelStreaming}
-                        className="px-2 py-0.5 rounded bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
-                      >
-                        Stop
-                      </button>
+                    {isPreparing ? (
+                      <>
+                        <div className="h-3.5 w-3.5 rounded-full border-2 border-[#6B7B8D] border-t-transparent animate-spin" />
+                        <span className="flex-1">
+                          {streamingStatus || 'Preparing context...'}
+                        </span>
+                        {prepTime > 3000 && (
+                          <span className="text-[10px] text-[#9AA8B9] tabular-nums">
+                            {Math.round(prepTime / 1000)}s
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        <span className="flex-1">
+                          {streamingStatus || 'Working...'}
+                        </span>
+                        {takingLong && (
+                          <button
+                            onClick={cancelStreaming}
+                            className="px-2 py-0.5 rounded bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+                          >
+                            Stop
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
-                {takingLong && isStreaming && (
+                {!isPreparing && takingLong && isStreaming && (
                   <div className="text-[11px] text-amber-700">
                     This is taking longer than usual. You can keep waiting or stop it now.
                   </div>

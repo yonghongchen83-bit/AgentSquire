@@ -547,7 +547,18 @@ impl SquireEngineRun {
                     }
                     StreamEvent::Thinking(text) => {
                         full_thinking.push_str(&text);
-                        self.emit(EngineEvent::Thinking(text));
+                        // Squire mode: strip §! / §^ protocol markers from
+                        // thinking content too — the model may reference
+                        // token IDs and bookmarks in its internal reasoning,
+                        // which should not leak to the user as raw sigils.
+                        let display = if session.session.context_mode == ContextMode::Squire {
+                            strip_protocol_markers(&text)
+                        } else {
+                            text
+                        };
+                        if !display.is_empty() {
+                            self.emit(EngineEvent::Thinking(display));
+                        }
                     }
                     StreamEvent::ToolCall(mut tc) => {
                         // Rewrite "invoke" tool calls in Squire mode

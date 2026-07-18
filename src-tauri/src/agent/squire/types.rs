@@ -190,40 +190,71 @@ fn try_extract_json(text: &str) -> Option<String> {
     None
 }
 
-/// Parse the formatter model's JSON output into a `SquireResponse` suitable
-/// for `finalize_phase2`. Returns an error string on parse failure.
+/// Parse the formatter model's output into a `SquireResponse` suitable
+/// for `finalize_phase2`. Supports both Bookmark Protocol (§# sections,
+/// pipe-delimited) and legacy JSON format.
+///
+/// The formatter prompt was updated to use Bookmark Protocol format
+/// (more robust, no JSON escaping issues). Legacy JSON is still accepted
+/// via `detect_and_parse` for backward compatibility.
 pub fn parse_formatter_json(text: &str) -> Result<SquireResponse, String> {
-    let json_str = try_extract_json(text)
-        .ok_or_else(|| "Formatter output contains no JSON object".to_string())?;
-
-    let output: FormatterOutput = serde_json::from_str(&json_str)
-        .map_err(|e| format!("Formatter JSON parse error: {}", e))?;
-
-    let mut resp = SquireResponse::default();
-    // Formatter doesn't produce content or ask_user — it's a pure curation pass
-    resp.content = String::new();
-    resp.ask_user = String::new();
-
-    for ft in &output.new_tokens {
-        resp.new_tokens.push(NewTokenSpec {
-            id: ft.id.clone(),
-            token_type: ft.token_type.clone(),
-            short_desc: ft.short_desc.clone(),
-            full_desc: ft.full_desc.clone(),
-            endpoint: None,
-            ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
-        });
+    // If it looks like Bookmark Protocol (starts with §# or text), use
+    // the robust detect_and_parse which auto-detects format.
+    let trimmed = text.trim();
+    if !trimmed.starts_with('{') {
+        return detect_and_parse(text);
     }
-    for fr in &output.relationships {
-        resp.relationships.push(Relationship {
-            subject: fr.subject.clone(),
-            predicate: fr.predicate.clone(),
-            object: fr.object.clone(),
-        });
-    }
-    resp.preserve = output.preserve.clone();
 
-    Ok(resp)
+    // Legacy JSON format — try to extract and parse, with repair.
+    let json_str = match try_extract_json(text) {
+        Some(s) => s,
+        None => {
+            // JSON extraction failed — maybe has markdown fences or commentary.
+            // Fall back to detect_and_parse which handles bookmarks too.
+            return detect_and_parse(text);
+        }
+    };
+
+    let cleaned = crate::commands::utils::clean_deepseek_json(&json_str);
+
+    match serde_json::from_str::<FormatterOutput>(&cleaned) {
+        Ok(output) => {
+            let mut resp = SquireResponse::default();
+            resp.content = String::new();
+            resp.ask_user = String::new();
+            for ft in &output.new_tokens {
+                resp.new_tokens.push(NewTokenSpec {
+                    id: ft.id.clone(),
+                    token_type: ft.token_type.clone(),
+                    short_desc: ft.short_desc.clone(),
+                    full_desc: ft.full_desc.clone(),
+                    endpoint: None,
+                    ranges: vec![], tags: vec![], properties: std::collections::HashMap::new(),
+                });
+            }
+            for fr in &output.relationships {
+                resp.relationships.push(Relationship {
+                    subject: fr.subject.clone(),
+                    predicate: fr.predicate.clone(),
+                    object: fr.object.clone(),
+                });
+            }
+            resp.preserve = output.preserve.clone();
+            Ok(resp)
+        }
+        Err(json_err) => {
+            // JSON parsing failed — try Bookmark Protocol as fallback.
+            // The model may have ignored the JSON instruction and used
+            // the more natural Bookmark Protocol format instead.
+            match detect_and_parse(text) {
+                Ok(resp) => Ok(resp),
+                Err(_) => Err(format!(
+                    "Formatter output parse failed: JSON error: {}, also not valid Bookmark Protocol",
+                    json_err
+                )),
+            }
+        }
+    }
 }
 
 #[cfg(test)]

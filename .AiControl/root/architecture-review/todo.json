@@ -1,0 +1,45 @@
+{
+  "nodePath": "root/architecture-review",
+  "items": [
+    {
+      "id": "ar-1",
+      "title": "Inventory project structure and map top-level layout",
+      "status": "done"
+    },
+    {
+      "id": "ar-2",
+      "title": "Examine Rust backend module architecture (Squire engine, adapter, store, tools)",
+      "status": "done"
+    },
+    {
+      "id": "ar-3",
+      "title": "Examine frontend component tree and state management",
+      "status": "skipped"
+    },
+    {
+      "id": "ar-4",
+      "title": "Map data flow and IPC boundaries",
+      "status": "done"
+    },
+    {
+      "id": "ar-5",
+      "title": "Review integration points and external dependencies",
+      "status": "done"
+    },
+    {
+      "id": "ar-6",
+      "title": "Review existing ADRs and architecture documentation",
+      "status": "done"
+    },
+    {
+      "id": "ar-7",
+      "title": "Identify risks, gaps, and technical debt",
+      "status": "done"
+    },
+    {
+      "id": "ar-8",
+      "title": "Compile final architecture review report",
+      "status": "done"
+    }
+  ]
+}
